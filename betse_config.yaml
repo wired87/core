@@ -1,0 +1,520 @@
+sim config file: null
+results options:
+  enumerate cells: true
+  plot cell index: 0
+  show cells: true
+  overlay currents: true
+  streamline density: 4.0
+  plot total current: true
+  plot cutlines: true
+  plot masked geometry: true
+  default colormap: RdBu_r
+  background colormap: RdBu_r
+  network colormap: rainbow
+  gj colormap: bone_r
+  vector and stream color: k
+  plot networks: true
+  plot networks single cell: true
+
+  while solving:
+    animations:
+      show: false
+      save: true
+      pipeline:
+        - type: voltage_membrane
+          enabled: true
+          colorbar:
+            autoscale: true
+        - type: electric_intra
+          enabled: true
+          colorbar:
+            autoscale: true
+        - type: currents_membrane
+          enabled: true
+          colorbar:
+            autoscale: true
+
+  after solving:
+    csvs:
+      save: true
+      pipeline:
+        - type: cell_series
+          enabled: true
+        - type: cells_vmem
+          enabled: true
+        - type: cells_ions
+          enabled: true
+        - type: currents_membrane
+          enabled: true
+        - type: electric_fields
+          enabled: true
+        - type: biomolecules
+          enabled: true
+
+    plots:
+      show: false
+      save: true
+      single cell pipeline:
+        - type: voltage_membrane
+          enabled: true
+        - type: currents_membrane
+          enabled: true
+        - type: ions_intracellular
+          enabled: true
+
+      cell cluster pipeline:
+        - type: voltage_membrane
+          enabled: true
+          colorbar:
+            autoscale: true
+        - type: electric_intra
+          enabled: true
+          colorbar:
+            autoscale: true
+        - type: currents_membrane
+          enabled: true
+          colorbar:
+            autoscale: true
+        - type: ions_intracellular
+          enabled: true
+          colorbar:
+            autoscale: true
+
+    animations:
+      show: false
+      save: true
+      pipeline:
+        - type: voltage_membrane
+          enabled: true
+          colorbar:
+            autoscale: true
+        - type: electric_intra
+          enabled: true
+          colorbar:
+            autoscale: true
+        - type: currents_membrane
+          enabled: true
+          colorbar:
+            autoscale: true
+
+  save:
+    csvs:
+      filetype: csv
+    plots:
+      filetype: png
+      dpi: 300
+    animations:
+      images:
+        enabled: true
+        filetype: png
+        dpi: 300
+      video:
+        enabled: false
+        filetype: mp4
+        dpi: 150
+        bitrate: 6000
+        framerate: 30
+        metadata:
+          artist: BETSE
+          genre: Bioinformatics
+          subject: Bioelectric Simulations
+          comment: Produced by BETSE simulation
+        writers:
+          - ffmpeg
+          - avconv
+          - mencoder
+          - imagemagick
+        codecs:
+          - auto
+
+  plot cluster mask: true
+
+variable settings:
+  env boundary concentrations:
+    Na: 145.0
+    K: 4.0
+    Cl: 115.0
+    Ca: 2.0
+    P: 9.0
+    M: 29.0
+  fluid flow:
+    include fluid flow: false
+    water viscocity: 1.0
+  deformation:
+    turn on: false
+    galvanotropism: 1.0e-09
+    viscous damping: 0.01
+    fixed cluster boundary: true
+    young modulus: 1000.0
+  temperature: 310
+  pressures:
+    include osmotic pressure: false
+    membrane water conductivity: 0.01
+  noise:
+    static noise level: 0
+    dynamic noise: false
+    dynamic noise level: 1.0e-06
+  gap junctions:
+    gap junction surface area: 5.0e-08
+    voltage sensitive gj: false
+    gj voltage threshold: 15
+    gj voltage window: 15
+    gj minimum: 0.1
+  tight junction scaling: 1.0
+  tight junction relative diffusion:
+    Na: 1
+    K: 1
+    Cl: 1
+    Ca: 1
+    M: 1
+    P: 1
+  adherens junction scaling: 1.0
+  microtubules:
+    use microtubules: false
+    charge per micrometer: -360
+    radius: 1.5e-08
+    length: 1.0e-05
+    tethered tubule: true
+    time dilation factor: 1.0
+    microtubule density: null
+    initial x coorinate: null
+    initial y coorinate: null
+    rotate initialization axis: 0.0
+  use Goldman calculator: false
+internal parameters:
+  Do_Na: 1.33e-09
+  Do_K: 1.96e-09
+  Do_Cl: 2.03e-09
+  Do_Ca: 1.0e-10
+  Do_M: 1.0e-09
+  Do_P: 0.0
+  alpha_NaK: 1.0e-07
+  alpha_Ca: 5.0e-08
+  substances affect Vmem: true
+  environment volume multiplier: 1.0
+  membrane capacitance: 0.05
+  cell polarizability: 0.0
+  dielectric constant: 6.0
+  fast update ecm: false
+  sharpness env: 1.0
+  sharpness cell: 0.5
+  true cell size: 1.0e-05
+solver settings:
+  solver options:
+    type: full
+file handling:
+  init file saving:
+    directory: INITS
+    worldfile: world_1.betse.gz
+    file: init_1.betse.gz
+  sim file saving:
+    directory: SIMS
+    file: sim_1.betse.gz
+  results file saving:
+    init directory: RESULTS\init_1
+    sim directory: RESULTS\sim_1
+init time settings:
+  time step: 0.01
+  total time: 5.0
+  sampling rate: 1.0
+automatically run initialization: true
+sim time settings:
+  time step: 0.01
+  total time: 10.0
+  sampling rate: 0.1
+general options:
+  comp grid size: 25
+  simulate extracellular spaces: true
+  ion profile: basic
+  customized ion profile:
+    extracellular Na+ concentration: 145.0
+    extracellular K+ concentration: 5.0
+    extracellular Cl- concentration: 115.0
+    extracellular Ca2+ concentration: 2.0
+    extracellular protein- concentration: 10.0
+    cytosolic Na+ concentration: 12.0
+    cytosolic K+ concentration: 139.0
+    cytosolic Cl- concentration: 4.0
+    cytosolic Ca2+ concentration: 2.0e-05
+    cytosolic protein- concentration: 135.0
+    endoplasmic reticulum Ca2: 0.1
+world options:
+  world size: 0.00015
+  cell radius: 5.0e-06
+  cell height: 1.0e-05
+  cell spacing: 2.6e-08
+  lattice type: hex
+  lattice disorder: 0.4
+  mesh refinement:
+    refine mesh: true
+    maximum steps: 25
+    convergence threshold: 1.5
+  alpha_shape: 0.01
+  use centers: false
+tissue profile definition:
+  profiles enabled: true
+  tissue:
+    default:
+      name: Base
+      image: geo/circle/circle_Base.png
+      diffusion constants:
+        Dm_Na: 1.0e-18
+        Dm_K: 5.0e-17
+        Dm_Cl: 1.0e-18
+        Dm_Ca: 1.0e-18
+        Dm_M: 1.0e-18
+        Dm_P: 0.0
+    profiles:
+    - name: Spot
+      insular: false
+      diffusion constants:
+        Dm_Na: 2.0e-18
+        Dm_K: 1.0e-18
+        Dm_Cl: 1.0e-18
+        Dm_Ca: 1.0e-18
+        Dm_M: 1.0e-18
+        Dm_P: 0.0
+      cell targets:
+        type: image
+        color: ff0000
+        image: geo/circle/spot_3.png
+        indices:
+        - 3
+        - 14
+        - 15
+        - 9
+        - 265
+        percent: 50
+    - name: Zone
+      insular: false
+      diffusion constants:
+        Dm_Na: 2.0e-18
+        Dm_K: 1.0e-18
+        Dm_Cl: 1.0e-18
+        Dm_Ca: 1.0e-18
+        Dm_M: 1.0e-18
+        Dm_P: 0.0
+      cell targets:
+        type: image
+        color: ff0000
+        image: geo/circle/spot_2.png
+        indices:
+        - 3
+        - 14
+        - 15
+        - 9
+        - 265
+        percent: 50
+  cut profiles:
+  - name: surgery
+    image: geo/circle/wedge.png
+change Na mem:
+  event happens: false
+  change start: 1.0
+  change finish: 4.0
+  change rate: 1.0
+  multiplier: 10.0
+  modulator function: null
+  apply to:
+  - Spot
+change K mem:
+  event happens: false
+  change start: 1.0
+  change finish: 2.0
+  change rate: 0.5
+  multiplier: 50.0
+  modulator function: null
+  apply to:
+  - Spot
+change Cl mem:
+  event happens: false
+  change start: 1.0
+  change finish: 4.0
+  change rate: 0.5
+  multiplier: 10
+  modulator function: null
+  apply to:
+  - Spot
+change Ca mem:
+  event happens: false
+  change start: 2.0
+  change finish: 8.0
+  change rate: 1.0
+  multiplier: 10
+  modulator function: null
+  apply to:
+  - Base
+apply pressure:
+  event happens: false
+  change start: 0.0
+  change finish: 1.0
+  change rate: 0.05
+  multiplier: 100
+  modulator function: null
+  apply to:
+  - Spot
+apply external voltage:
+  event happens: false
+  change start: 0.5
+  change finish: 1.0
+  change rate: 0.1
+  peak voltage: 0.001
+  positive voltage boundary: top
+  negative voltage boundary: bottom
+break ecm junctions:
+  event happens: false
+  change start: 2.0
+  change finish: 7.0
+  change rate: 0.5
+  multiplier: 0.0
+  modulator function: null
+  apply to:
+  - Spot
+cutting event:
+  event happens: true
+  apply to:
+  - surgery
+  break TJ: true
+  wound TJ: 0.1
+change K env:
+  event happens: false
+  change start: 1.0
+  change finish: 12.0
+  change rate: 1.0
+  multiplier: 20.0
+change Cl env:
+  event happens: false
+  change start: 5.0
+  change finish: 25.0
+  change rate: 2.0
+  multiplier: 10.0
+change Na env:
+  event happens: false
+  change start: 1.0
+  change finish: 9.0
+  change rate: 1.0
+  multiplier: 5.0
+change temperature:
+  event happens: false
+  change start: 1.0
+  change finish: 9.0
+  change rate: 0.5
+  multiplier: 0.5
+block gap junctions:
+  event happens: false
+  change start: 2.0
+  change finish: 6.0
+  change rate: 1.5
+  random fraction: 100
+block NaKATP pump:
+  event happens: false
+  change start: 5
+  change finish: 25
+  change rate: 1.0
+modulator function properties:
+  gradient_x:
+    slope: 1.0
+    x-offset: 0
+    z-offset: 0
+    exponent: 1
+  gradient_y:
+    slope: 1.0
+    x-offset: 0
+    z-offset: 0
+    exponent: 1
+  gradient_r:
+    slope: 1.0
+    x-offset: 0
+    z-offset: 0
+    exponent: 1
+  periodic:
+    frequency: 10
+    phase: 0
+  f_sweep:
+    start frequency: 100.0
+    end frequency: 1000.0
+  gradient_bitmap:
+    file: geo/ellipse/gradient.png
+    z-offset: 0.0
+  single cell:
+    z-offset: 0.0
+general network:
+  implement network: true
+  expression data file: expression_data.yaml
+  biomolecules:
+  - name: X
+    Dm: 0.0
+    Do: 1.0e-10
+    Dgj: 1.0e-15
+    z: 0
+    env conc: 0.0
+    cell conc: 0.0
+    scale factor: 1.0
+    update intracellular: false
+    use time dilation: false
+    transmem: false
+    initial asymmetry: null
+    TJ permeable: false
+    GJ impermeable: false
+    TJ factor: 1.0
+    plotting:
+      plot 2D: true
+      animate: true
+      autoscale colorbar: true
+      max val: 2.0
+      min val: 0.0
+    growth and decay:
+      production rate: 0.1
+      decay rate: 0.1
+      apply to:
+      - Spot
+      modulator function: null
+  channels:
+  - name: Nav
+    channel class: Na
+    channel type: Nav1p3
+    max Dm: 2.0e-14
+    apply to: all
+    init active: false
+  - name: Kv
+    channel class: K
+    channel type: Kv1p5
+    max Dm: 1.0e-15
+    apply to: all
+    init active: false
+  - name: K_Leak
+    channel class: K
+    channel type: KLeak
+    max Dm: 6.0e-18
+    apply to: all
+    init active: true
+    channel inhibitors:
+    - X
+    inhibitor Km:
+    - 0.05
+    inhibitor n:
+    - 2.0
+    inhibitor zone:
+    - cell
+gene regulatory network settings:
+  gene regulatory network simulated: false
+  gene regulatory network config: grn_basic.yaml
+  sim-grn settings:
+    run as sim: false
+    run network on: seed
+    load from: ''
+    time step: 0.1
+    total time: 180.0
+    sampling rate: 18.0
+    save to directory: RESULTS\GRN
+    save to file: GRN_1.betse.gz
+sim file saving:
+  directory: SIMS
+  file: sim_1.betse.gz
+init file saving:
+  directory: INITS
+  file: init_1.betse.gz
+  worldfile: world_1.betse.gz
+results file saving:
+  init directory: RESULTS\init_1
+  sim directory: RESULTS\sim_1
