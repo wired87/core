@@ -17,6 +17,10 @@ headers = {
     "Content-Type": "application/json"   # <-- MANDATORY
 }
 
+import requests
+
 if __name__ == "__main__":
-    r = requests.post("https://www.bestbrain.tech/betse/run/", json=load_yaml(r"C:\Users\wired\OneDrive\Desktop\base_dj\betse_app\betse-1.5.0\betse\data\yaml\sim_config.yaml"), headers=headers)
-    print(r.json())
+    with open(r"C:\Users\wired\OneDrive\Desktop\base_dj\betse_app\betse-1.5.0\betse\data\yaml\sim_config.yaml", "rb") as f:
+        files = {"sim_config_file":  f}
+        r = requests.post("https://www.bestbrain.tech/betse/run/", json=files, headers=headers)
+        print(r.json())
