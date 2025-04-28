@@ -13,13 +13,10 @@ r"""if __name__ == "__main__":
     with open(input_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 """
-
+headers = {
+    "Content-Type": "application/json"   # <-- MANDATORY
+}
 
 if __name__ == "__main__":
-    """god = CreateGWorld()
-    # asyncio.run(god.reinit())
-    asyncio.run(god.hello_world())
-    world = World(g_utils=god.g_utils)
-    world.run_world()"""
-    r = requests.post("https://www.bestbrain.tech/betse/run/", json=load_yaml(r"C:\Users\wired\OneDrive\Desktop\base_dj\betse_app\betse-1.5.0\betse\data\yaml\sim_config.yaml"))
+    r = requests.post("https://www.bestbrain.tech/betse/run/", json=load_yaml(r"C:\Users\wired\OneDrive\Desktop\base_dj\betse_app\betse-1.5.0\betse\data\yaml\sim_config.yaml"), headers=headers)
     print(r.json())
