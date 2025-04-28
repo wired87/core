@@ -2,7 +2,7 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/_betse" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/betse_app" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/file" vcs="Git" />
   </component>
 </project>
