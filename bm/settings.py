@@ -10,7 +10,7 @@ from bm.logging_custom import cpr
 import dotenv
 
 
-"""if os.name == "nt":
+r"""if os.name == "nt":
     GOOGLE_APPLICATION_CREDENTIALS = r"C:\\Users\\wired\\OneDrive\\Desktop\\Projects\\bm\utils\ggoogle\\g_auth\\aixr-401704-59fb7f12485c.json"
 else:
     GOOGLE_APPLICATION_CREDENTIALS = "/home/derbenedikt_sterra/bm/utils/ggoogle/g_auth/aixr-401704-59fb7f12485c.json"
