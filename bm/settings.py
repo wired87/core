@@ -1,4 +1,4 @@
-
+import sys
 from pathlib import Path
 import os
 from datetime import timedelta
@@ -10,14 +10,17 @@ from bm.logging_custom import cpr
 import dotenv
 
 
-if os.name == "nt":
+"""if os.name == "nt":
     GOOGLE_APPLICATION_CREDENTIALS = r"C:\\Users\\wired\\OneDrive\\Desktop\\Projects\\bm\utils\ggoogle\\g_auth\\aixr-401704-59fb7f12485c.json"
 else:
     GOOGLE_APPLICATION_CREDENTIALS = "/home/derbenedikt_sterra/bm/utils/ggoogle/g_auth/aixr-401704-59fb7f12485c.json"
 
 os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", GOOGLE_APPLICATION_CREDENTIALS)
-
+"""
 dotenv.load_dotenv()
+
+# Set absolute path to pythonpath
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 cpr("HI!")
