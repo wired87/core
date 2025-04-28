@@ -50,6 +50,24 @@ CORS_ALLOW_ALL_ORIGINS = True
 allowed_main_host=REQUEST_URL.replace("https:", "").replace("http:", "").replace("/", "").replace(":8000", "")
 
 
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'level': 'DEBUG',  # or INFO
+            'class': 'logging.StreamHandler',
+            'stream': sys.stdout,
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'DEBUG',  # or INFO
+    },
+}
+
+
+
 CORS_ALLOW_METHODS = [
     "GET",
     "POST",
