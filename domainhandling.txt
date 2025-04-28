@@ -111,3 +111,7 @@ dig NS bestbrain.tech +short ->ns.udag.net. ns.udag.de. ns.udag.org.
 
 UPDATE CHANGES AFTER PULL
 sudo systemctl restart gunicorn
+
+
+CHECK LOGS
+sudo journalctl -u gunicorn -f

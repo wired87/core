@@ -2,8 +2,9 @@ import json
 
 import requests
 
+from file.yaml import load_yaml
 
-if __name__ == "__main__":
+r"""if __name__ == "__main__":
     input_path = r"C:\Users\wired\OneDrive\Desktop\Projects\bm\gnn\processing\layer\uniprot\cc_pred_ckpt.json"
 
     with open(input_path, "r", encoding="utf-8") as f:
@@ -11,7 +12,7 @@ if __name__ == "__main__":
 
     with open(input_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
-
+"""
 
 
 if __name__ == "__main__":
@@ -20,5 +21,5 @@ if __name__ == "__main__":
     asyncio.run(god.hello_world())
     world = World(g_utils=god.g_utils)
     world.run_world()"""
-    r = requests.post("https://bm2-1004568990634.asia-east1.run.app/sp/mvp", data={"hi": "betse"})
+    r = requests.post("https://www.bestbrain.tech/betse/run/", json=load_yaml(r"C:\Users\wired\OneDrive\Desktop\base_dj\betse_app\betse-1.5.0\betse\data\yaml\sim_config.yaml"))
     print(r.json())
