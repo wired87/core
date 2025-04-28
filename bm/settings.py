@@ -37,20 +37,18 @@ if os.name == "nt":
     TEST_USER_ID = "rajtigesomnlhfyqzbvx"
     REQUEST_URL = "http://127.0.0.1:8000/"
     GCP_TOKEN =r"C:\Users\wired\OneDrive\Desktop\Projects\bm\ggoogle\g_auth\token.json"
+    ALLOWED_HOSTS = ["*"]
 else:
-    DEBUG = True
+    DEBUG = False
     TEST_USER_ID = "rajtigesomnlhfyqzbvx" # todo
     REQUEST_URL = "https://bm2-1004568990634.asia-east1.run.app/"
     GCP_TOKEN="utils/ggoogle/g_auth/token.json"
+    ALLOWED_HOSTS = ['bestbrain.tech', 'www.bestbrain.tech']
 
 CORS_ALLOW_ALL_ORIGINS = True
 
 allowed_main_host=REQUEST_URL.replace("https:", "").replace("http:", "").replace("/", "").replace(":8000", "")
 
-
-ALLOWED_HOSTS = [
-    "*"
-]
 
 CORS_ALLOW_METHODS = [
     "GET",
