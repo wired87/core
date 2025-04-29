@@ -135,7 +135,7 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,  # Blacklist old tokens after refreshing
 }
 REST_FRAMEWORK = {
-    'DEFAULT_RENDERER_CLASSES': [
+    """    'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
     ],
     'DEFAULT_PARSER_CLASSES': [
@@ -143,11 +143,11 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',  # default deny unless explicitly allowed
-    ],
+    ],"""
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
-    'UNAUTHENTICATED_USER': None,  # Disallow Django auto-login fallback
+    #'UNAUTHENTICATED_USER': None,  # Disallow Django auto-login fallback
 }
 
 DB_NAME = os.getenv("DB_NAME")
