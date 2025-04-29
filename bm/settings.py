@@ -48,7 +48,9 @@ else:
 CORS_ALLOW_ALL_ORIGINS = True
 
 allowed_main_host=REQUEST_URL.replace("https:", "").replace("http:", "").replace("/", "").replace(":8000", "")
+
 """
+SOMETHIN HER EPROTECTS GET REQUESTS = !DRF
 ##########################################
 # FIREWALL
 ##########################################
