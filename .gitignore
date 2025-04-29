@@ -9,7 +9,7 @@ data/files
 data/table_content
 data/table_schema
 
-
+.env
 data/main_ckpt/sne/
 data/main_ckpt/gene.json
 data/main_ckpt/transcriptome.json

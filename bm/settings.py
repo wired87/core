@@ -49,8 +49,6 @@ CORS_ALLOW_ALL_ORIGINS = True
 
 allowed_main_host=REQUEST_URL.replace("https:", "").replace("http:", "").replace("/", "").replace(":8000", "")
 
-
-
 ##########################################
 # FIREWALL
 ##########################################
@@ -124,7 +122,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'bm.middleware.AllowedMethodsMiddleware',
+    #'bm.middleware.AllowedMethodsMiddleware',
 ]
 
 ROOT_URLCONF = 'bm.urls'
@@ -268,8 +266,6 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
-
-
 
 
 LANGUAGE_CODE = 'en-us'
