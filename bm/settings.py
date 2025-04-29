@@ -48,7 +48,7 @@ else:
 CORS_ALLOW_ALL_ORIGINS = True
 
 allowed_main_host=REQUEST_URL.replace("https:", "").replace("http:", "").replace("/", "").replace(":8000", "")
-
+"""
 ##########################################
 # FIREWALL
 ##########################################
@@ -69,7 +69,7 @@ SECURE_BROWSER_XSS_FILTER = True
 # HSTS - Force HTTPS for all future connections
 SECURE_HSTS_SECONDS = 31536000  # 1 year
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-SECURE_HSTS_PRELOAD = True
+SECURE_HSTS_PRELOAD = True"""
 
 
 
