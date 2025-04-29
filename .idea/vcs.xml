@@ -4,6 +4,5 @@
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/betse_app" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/file" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/google" vcs="Git" />
   </component>
 </project>
