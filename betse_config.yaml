@@ -1,4 +1,3 @@
-sim config file: null
 results options:
   enumerate cells: true
   plot cell index: 0
