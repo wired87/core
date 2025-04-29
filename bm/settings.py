@@ -43,7 +43,7 @@ else:
     TEST_USER_ID = "rajtigesomnlhfyqzbvx" # todo
     REQUEST_URL = "https://bm2-1004568990634.asia-east1.run.app/"
     GCP_TOKEN="utils/ggoogle/g_auth/token.json"
-    ALLOWED_HOSTS = ['bestbrain.tech', 'www.bestbrain.tech', "34.134.30.102", "127.0.0.1"]
+    ALLOWED_HOSTS = ['bestbrain.tech', 'www.bestbrain.tech', "34.9.162.2", "127.0.0.1"]
 
 CORS_ALLOW_ALL_ORIGINS = True
 

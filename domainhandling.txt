@@ -1,4 +1,29 @@
 
+############## NAMESERVER
+At your domain provider (where you bought bestbrain.tech):
+
+Create an A record:
+
+Type: A
+
+Host/Name: @ (or empty depending on provider)
+
+Value: your VM public IP address
+
+TTL: default (e.g., 30min or 1h)
+
+Create another A record (for www):
+
+Type: A
+
+Host/Name: www
+
+Value: your VM public IP address
+
+TTL: default
+
+###########################
+
 
 ########### nginx
 sudo apt update
@@ -29,30 +54,7 @@ sudo certbot --nginx -d bestbrain.tech -d www.bestbrain.tech
 
 
 
-############## NAMESERVER
-At your domain provider (where you bought bestbrain.tech):
 
-Create an A record:
-
-Type: A
-
-Host/Name: @ (or empty depending on provider)
-
-Value: your VM public IP address
-
-TTL: default (e.g., 30min or 1h)
-
-Create another A record (for www):
-
-Type: A
-
-Host/Name: www
-
-Value: your VM public IP address
-
-TTL: default
-
-###########################
 
 check it dns records worked:
 ping bestbrain.tech
