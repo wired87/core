@@ -1,4 +1,5 @@
 import json
+import os.path
 import pprint
 
 import requests
@@ -20,7 +21,8 @@ headers = {
 }
 
 if __name__ == "__main__":
-    content=load_yaml(r"C:\Users\wired\OneDrive\Desktop\base_dj\betse_app\betse-1.5.0\betse\data\yaml\sim_config.yaml")
+    r"""content=load_yaml(r"C:\Users\wired\OneDrive\Desktop\base_dj\betse_app\betse-1.5.0\betse\data\yaml\sim_config.yaml")
     pprint.pp(content)
     r = requests.post("http://127.0.0.1:8000/betse/run/", json={"sim_config_data": content }, headers=headers)
-    print(r.json())
+    print(r.json())"""
+    print(os.path.relpath("AUTHORS.md", start="betse_app"))
