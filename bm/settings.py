@@ -50,6 +50,36 @@ CORS_ALLOW_ALL_ORIGINS = True
 allowed_main_host=REQUEST_URL.replace("https:", "").replace("http:", "").replace("/", "").replace(":8000", "")
 
 
+
+##########################################
+# FIREWALL
+##########################################
+SECURE_SSL_REDIRECT = True
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+
+CSRF_TRUSTED_ORIGINS = ['https://bestbrain.tech', 'https://www.bestbrain.tech']
+# X-Frame Protection (clickjacking)
+X_FRAME_OPTIONS = 'DENY'
+
+# Content sniffing protection
+SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# Browser cross-site protections
+SECURE_BROWSER_XSS_FILTER = True
+
+# HSTS - Force HTTPS for all future connections
+SECURE_HSTS_SECONDS = 31536000  # 1 year
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+
+
+
+
+
+
+
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -94,6 +124,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'bm.middleware.AllowedMethodsMiddleware',
 ]
 
 ROOT_URLCONF = 'bm.urls'
