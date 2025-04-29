@@ -6,7 +6,9 @@ After=network.target
 StandardOutput=journal
 StandardError=journal
 
-Environment=PYTHONUNBUFFERED=1
+Environment="PATH=/home/derbenedikt_sterra/workenv/bin"
+Environment="PYTHONUNBUFFERED=1"
+
 User=derbenedikt_sterra
 
 Group=www-data

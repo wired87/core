@@ -75,7 +75,10 @@ Will auto-restart if it crashes
 Will auto-run after VM reboot
 
 
-
+RELOAD
+sudo systemctl daemon-reexec
+sudo systemctl daemon-reload
+sudo systemctl restart gunicorn
 
 DEBUGGOING
 sudo apt update
