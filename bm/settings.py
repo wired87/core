@@ -45,8 +45,8 @@ else:
     TEST_USER_ID = "rajtigesomnlhfyqzbvx" # todo
     REQUEST_URL = "https://bm2-1004568990634.asia-east1.run.app/"
     GCP_TOKEN="utils/ggoogle/g_auth/token.json"
-    ALLOWED_HOSTS = ['bestbrain.tech', 'www.bestbrain.tech', "34.69.187.50", "127.0.0.1"]
-    WS_URL = "ws://127.0.0.1:8000/" # todo
+    ALLOWED_HOSTS = ['bestbrain.tech', 'www.bestbrain.tech', "34.69.187.50", "localhost", "127.0.0.1"]
+    WS_URL = "ws://bestbrain.tech/" # todo
 CORS_ALLOW_ALL_ORIGINS = True
 
 allowed_main_host=REQUEST_URL.replace("https:", "").replace("http:", "").replace("/", "").replace(":8000", "")
