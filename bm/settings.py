@@ -39,6 +39,7 @@ if os.name == "nt":
     GCP_TOKEN =r"C:\Users\wired\OneDrive\Desktop\Projects\bm\ggoogle\g_auth\token.json"
     ALLOWED_HOSTS = ["*"]
     WS_URL = "ws://127.0.0.1:8000/"
+    FIREBASE_CREDENTIALS = r"C:\\Users\\wired\OneDrive\\Desktop\\Projects\\Brainmaster\\_google\\g_auth\\firebase_creds.json"
 
 else:
     DEBUG = False
@@ -47,8 +48,11 @@ else:
     GCP_TOKEN="utils/ggoogle/g_auth/token.json"
     ALLOWED_HOSTS = ['bestbrain.tech', 'www.bestbrain.tech', "34.69.187.50", "localhost", "127.0.0.1"]
     WS_URL = "wss://bestbrain.tech/"
+    FIREBASE_CREDENTIALS = r"_google/g_auth/firebase_creds.json"
+
 CORS_ALLOW_ALL_ORIGINS = True
 
+os.environ.setdefault("FIREBASE_CREDENTIALS", FIREBASE_CREDENTIALS)
 allowed_main_host=REQUEST_URL.replace("https:", "").replace("http:", "").replace("/", "").replace(":8000", "")
 
 """
