@@ -5,18 +5,18 @@ from datetime import timedelta
 import logging
 import resend
 from bm.logging_custom import cpr
-
-
 import dotenv
 
+OS_NAME = os.name
+print("OS_NAME", OS_NAME)
 
-r"""if os.name == "nt":
-    GOOGLE_APPLICATION_CREDENTIALS = r"C:\\Users\\wired\\OneDrive\\Desktop\\Projects\\bm\utils\ggoogle\\g_auth\\aixr-401704-59fb7f12485c.json"
+if OS_NAME == "nt":
+    GOOGLE_APPLICATION_CREDENTIALS = r"C:\\Users\\wired\\OneDrive\\Desktop\\Projects\\Brainmaster\\_google\\g_auth\\aixr-401704-59fb7f12485c.json"
+
 else:
     GOOGLE_APPLICATION_CREDENTIALS = "/home/derbenedikt_sterra/bm/utils/ggoogle/g_auth/aixr-401704-59fb7f12485c.json"
 
-os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", GOOGLE_APPLICATION_CREDENTIALS)
-"""
+
 dotenv.load_dotenv()
 
 # Set absolute path to pythonpath
@@ -38,13 +38,15 @@ if os.name == "nt":
     REQUEST_URL = "http://127.0.0.1:8000/"
     GCP_TOKEN =r"C:\Users\wired\OneDrive\Desktop\Projects\bm\ggoogle\g_auth\token.json"
     ALLOWED_HOSTS = ["*"]
+    WS_URL = "ws://127.0.0.1:8000/"
+
 else:
     DEBUG = False
     TEST_USER_ID = "rajtigesomnlhfyqzbvx" # todo
     REQUEST_URL = "https://bm2-1004568990634.asia-east1.run.app/"
     GCP_TOKEN="utils/ggoogle/g_auth/token.json"
     ALLOWED_HOSTS = ['bestbrain.tech', 'www.bestbrain.tech', "34.9.162.2", "127.0.0.1"]
-
+    WS_URL = "ws://127.0.0.1:8000/" # todo
 CORS_ALLOW_ALL_ORIGINS = True
 
 allowed_main_host=REQUEST_URL.replace("https:", "").replace("http:", "").replace("/", "").replace(":8000", "")
@@ -101,6 +103,8 @@ CORS_ALLOW_CREDENTIALS = True
 
 
 INSTALLED_APPS = [
+    "daphne",
+    "channels",
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -111,8 +115,9 @@ INSTALLED_APPS = [
     "corsheaders",
     'rest_framework.authtoken',
     'rest_framework_simplejwt.token_blacklist',
-    "betse_app",
+    "_betse",
 ]
+ASGI_APPLICATION = "bm.asgi.application"
 
 
 MIDDLEWARE = [

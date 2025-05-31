@@ -2,7 +2,12 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/betse_app" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_betse" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_betse/file" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_google" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/embedder" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/file" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/qf_sim" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/utils" vcs="Git" />
   </component>
 </project>
