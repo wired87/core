@@ -50,7 +50,7 @@ After=network.target
 Environment=PYTHONUNBUFFERED=1
 User=derbenedikt_sterra
 Group=www-data
-WorkingDirectory=/home/derbenedikt_sterra/betse_drf
+WorkingDirectory=/home/derbenedikt_sterra/BestBrain
 ExecStart=/home/derbenedikt_sterra/workenv/bin/gunicorn bm.wsgi:application --bind 127.0.0.1:8000 --capture-output --log-level debug
 
 Restart=always

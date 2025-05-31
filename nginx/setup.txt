@@ -1,6 +1,7 @@
 ########### nginx
 sudo apt update
-sudo apt install nginx
+sudo apt install certbot nginx python3-certbot-nginx
+
 systemctl status nginx
 sudo systemctl start nginx
 
@@ -20,13 +21,12 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
     location /static/ {
-        alias /home/derbenedikt_sterra/betse_drf/static_root/;
+        alias /home/derbenedikt_sterra/BestBrain/static_root/;
     }
 
     location /media/ {
-        alias /home/derbenedikt_sterra/betse_drf/media/;
+        alias /home/derbenedikt_sterra/BestBrain/media/;
     }
-
 }
 -> save (strg X -> y)
 sudo ln -s /etc/nginx/sites-available/bestbrain.tech /etc/nginx/sites-enabled/
@@ -51,7 +51,7 @@ Optional (in http block for global scope):
 send_timeout 600s;
 
 
-RELOAD
+RELOAD (after each pull)
 ------
 sudo nginx -t
 sudo systemctl reload nginx
