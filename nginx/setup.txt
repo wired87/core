@@ -65,8 +65,6 @@ location /qf-sim/ {
 }
 !#############
 
-
-
 RELOAD (after each pull)
 ------
 sudo nginx -t

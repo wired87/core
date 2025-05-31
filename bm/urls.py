@@ -6,7 +6,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('betse/', include("_betse.urls")),
 
-    path('qf/', include("qf_sim.dj.urls")),
+    path('world/', include("qf_sim.dj.urls")),
 ]
 
 """    path('client/', include("client.dashboard.urls.client")),
