@@ -22,6 +22,7 @@ if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") is None:
         GOOGLE_APPLICATION_CREDENTIALS = "/home/derbenedikt_sterra/bm/utils/ggoogle/g_auth/aixr-401704-59fb7f12485c.json"
         FIREBASE_CREDENTIALS = r"_google/g_auth/firebase_creds.json"
     os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", GOOGLE_APPLICATION_CREDENTIALS)
+    os.environ.setdefault("FIREBASE_CREDENTIALS", FIREBASE_CREDENTIALS)
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'bm.settings')
 
