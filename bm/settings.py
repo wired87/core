@@ -11,10 +11,10 @@ OS_NAME = os.name
 print("OS_NAME", OS_NAME)
 
 if OS_NAME == "nt":
-    GOOGLE_APPLICATION_CREDENTIALS = r"C:\\Users\\wired\\OneDrive\\Desktop\\Projects\\Brainmaster\\_google\\g_auth\\aixr-401704-59fb7f12485c.json"
+    GOOGLE_APPLICATION_CREDENTIALS = r"C:\\Users\\wired\\OneDrive\\Desktop\\Projects\\BestBrain\\_google\\g_auth\\aixr-401704-59fb7f12485c.json"
 
 else:
-    GOOGLE_APPLICATION_CREDENTIALS = "/home/derbenedikt_sterra/bm/utils/ggoogle/g_auth/aixr-401704-59fb7f12485c.json"
+    GOOGLE_APPLICATION_CREDENTIALS = "/home/derbenedikt_sterra/BestBrain/_google/g_auth/aixr-401704-59fb7f12485c.json"
 
 
 dotenv.load_dotenv()
@@ -29,7 +29,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'django-insecure-gq0rr+q=s$=lci8=r%whnubclama3db!wnl1gpmh!_z2x5u_i3'
 
-R_URL_PROD="https://bm2-1004568990634.asia-east1.run.app/"
 resend.api_key = "re_XaUKeMuq_EzcpCLqdqEk2o1m2H3tdBbw9"
 
 if os.name == "nt":
