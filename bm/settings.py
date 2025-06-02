@@ -121,7 +121,7 @@ INSTALLED_APPS = [
 ]
 ASGI_APPLICATION = "bm.asgi.application"
 
-
+# todo db basiert env speichern. -> fetch - set außerhalb proj
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  # Ensure this is FIRST
     'django.middleware.security.SecurityMiddleware',
@@ -135,6 +135,21 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = 'bm.urls'
+"""
+# Beispiel-Konfiguration für Nginx, um den Zugriff zu blockieren:
+location ~ /\.env {
+    deny all;
+    return 404; # Oder 403, um weniger Informationen preiszugeben
+}
+
+location ~ /\.git {
+    deny all;
+    return 404;
+}
+
+"""
+
+
 
 # JWT
 SIMPLE_JWT = {
