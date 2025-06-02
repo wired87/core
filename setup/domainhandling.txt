@@ -99,7 +99,6 @@ Your app will stay up 24/7
 Will auto-restart if it crashes
 Will auto-run after VM reboot
 
-
 RELOAD
 sudo systemctl daemon-reexec
 sudo systemctl daemon-reload
@@ -119,3 +118,7 @@ sudo systemctl restart gunicorn
 
 CHECK LOGS
 sudo journalctl -u gunicorn -f
+
+
+
+

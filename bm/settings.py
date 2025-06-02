@@ -106,7 +106,6 @@ CORS_ALLOW_CREDENTIALS = True
 
 
 INSTALLED_APPS = [
-    "daphne",
     "channels",
     'django.contrib.admin',
     'django.contrib.auth',
