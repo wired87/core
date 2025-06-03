@@ -36,6 +36,8 @@ if os.name == "nt":
     TEST_USER_ID = "rajtigesomnlhfyqzbvx"
     REQUEST_URL = "http://127.0.0.1:8000/"
     GCP_TOKEN =r"C:\Users\wired\OneDrive\Desktop\Projects\bm\ggoogle\g_auth\token.json"
+
+    TEST_ENV_ID="env_bare_rajtigesomnlhfyqzbvx"
     ALLOWED_HOSTS = ["*"]
     WS_URL = "ws://127.0.0.1:8000/"
     FIREBASE_CREDENTIALS = r"C:\\Users\\wired\OneDrive\\Desktop\\Projects\\Brainmaster\\_google\\g_auth\\firebase_creds.json"
@@ -43,6 +45,7 @@ if os.name == "nt":
 else:
     DEBUG = False
     TEST_USER_ID = "rajtigesomnlhfyqzbvx" # todo
+    TEST_ENV_ID="env_bare_rajtigesomnlhfyqzbvx"
     REQUEST_URL = "https://bm2-1004568990634.asia-east1.run.app/"
     GCP_TOKEN="utils/ggoogle/g_auth/token.json"
     ALLOWED_HOSTS = ['bestbrain.tech', 'www.bestbrain.tech', "34.69.187.50", "localhost", "127.0.0.1"]

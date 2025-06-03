@@ -13,13 +13,11 @@ import os
 
 from bm import routing
 
-if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") is None:
-    if os.name == "nt":
-        GOOGLE_APPLICATION_CREDENTIALS = r"C:\\Users\\wired\\OneDrive\\Desktop\\Projects\\BestBrain\\_google\\g_auth\\aixr-401704-59fb7f12485c.json"
-
-    else:
-        GOOGLE_APPLICATION_CREDENTIALS = "/home/derbenedikt_sterra/BestBrain/_google/g_auth/aixr-401704-59fb7f12485c.json"
-    os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", GOOGLE_APPLICATION_CREDENTIALS)
+if os.name == "nt":
+    GOOGLE_APPLICATION_CREDENTIALS = r"C:\Users\wired\OneDrive\Desktop\BestBrain\_google\g_auth\aixr-401704-59fb7f12485c.json"
+else:
+    GOOGLE_APPLICATION_CREDENTIALS = "/home/derbenedikt_sterra/BestBrain/_google/g_auth/aixr-401704-59fb7f12485c.json"
+os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", GOOGLE_APPLICATION_CREDENTIALS)
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'bm.settings')
 
