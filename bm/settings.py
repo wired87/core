@@ -110,6 +110,7 @@ CORS_ALLOW_CREDENTIALS = True
 
 INSTALLED_APPS = [
     "channels",
+    "qf_sim",
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -117,6 +118,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    "django_unicorn",
     "corsheaders",
     'rest_framework.authtoken',
     'rest_framework_simplejwt.token_blacklist',
