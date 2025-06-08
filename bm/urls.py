@@ -12,7 +12,5 @@ urlpatterns = [
     # frontend
     path('unicorn/', include("django_unicorn.urls")),
 
-
-
 ]
 
