@@ -48,7 +48,7 @@ else:
     TEST_ENV_ID="env_bare_rajtigesomnlhfyqzbvx"
     REQUEST_URL = "https://bm2-1004568990634.asia-east1.run.app/"
     GCP_TOKEN="utils/ggoogle/g_auth/token.json"
-    ALLOWED_HOSTS = ['bestbrain.tech', 'www.bestbrain.tech', "34.69.187.50", "localhost", "127.0.0.1"]
+    ALLOWED_HOSTS = ['bestbrain.tech', 'www.bestbrain.tech', "34.69.187.50", "6000-firebase-studio-1749574544448.cluster-jbb3mjctu5cbgsi6hwq6u4btwe.cloudworkstations.dev"]
     WS_URL = "wss://bestbrain.tech/"
     FIREBASE_CREDENTIALS = r"_google/g_auth/firebase_creds.json"
 
@@ -118,11 +118,12 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-    "django_unicorn",
     "corsheaders",
     'rest_framework.authtoken',
     'rest_framework_simplejwt.token_blacklist',
     "_betse",
+    "django_unicorn",
+
 ]
 ASGI_APPLICATION = "bm.asgi.application"
 
