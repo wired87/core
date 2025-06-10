@@ -54,7 +54,10 @@ else:
 
 CORS_ALLOW_ALL_ORIGINS = True
 
+
 os.environ.setdefault("FIREBASE_CREDENTIALS", FIREBASE_CREDENTIALS)
+
+
 allowed_main_host=REQUEST_URL.replace("https:", "").replace("http:", "").replace("/", "").replace(":8000", "")
 
 """
