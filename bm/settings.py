@@ -122,7 +122,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'rest_framework_simplejwt.token_blacklist',
     "_betse",
-    "django_unicorn",
+
 
 ]
 ASGI_APPLICATION = "bm.asgi.application"
