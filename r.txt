@@ -13,6 +13,7 @@ ansicon
 anyio
 anytree
 bamnostic
+ray
 apify
 apify_client
 apify_shared

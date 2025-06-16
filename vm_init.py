@@ -10,9 +10,10 @@ source workenv/bin/activate && cd betse_drf && export PYTHONPATH=$PYTHONPATH:$(p
 
 gunicorn_restart=rf"""
 
-sudo systemctl stop gunicorn 
-ps aux | grep gunicorn 
-sudo kill -9 <PID> 
-sudo systemctl start gunicorn
+sudo nginx -t
+sudo systemctl reload nginx
+sudo systemctl restart gunicorn
+sudo systemctl restart fail2ban
+sudo journalctl -u gunicorn -f
 
 """
