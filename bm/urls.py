@@ -1,7 +1,6 @@
 
 from django.contrib import admin
 from django.urls import path, include
-import django_unicorn
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('betse/', include("_betse.urls")),
@@ -11,6 +10,5 @@ urlpatterns = [
 
     # frontend
     path('unicorn/', include("django_unicorn.urls")),
-
 ]
 

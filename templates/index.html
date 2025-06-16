@@ -1,0 +1,10 @@
+<!-- index.html -->
+{% load unicorn %}
+<html>
+  <head>
+    {% unicorn_scripts %}
+  </head>
+  <body>
+    {% csrf_token %}
+  </body>
+</html>

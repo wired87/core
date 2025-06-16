@@ -113,6 +113,8 @@ CORS_ALLOW_CREDENTIALS = True
 
 INSTALLED_APPS = [
     "channels",
+    "django_unicorn",
+    "frontend",
     "qf_sim",
     'django.contrib.admin',
     'django.contrib.auth',
