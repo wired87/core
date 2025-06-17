@@ -12,8 +12,10 @@ annotated-types
 ansicon
 anyio
 anytree
+django-unicorn
 bamnostic
-ray
+"ray[default]"
+kubernetes
 apify
 apify_client
 apify_shared

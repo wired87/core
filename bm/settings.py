@@ -127,9 +127,8 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'rest_framework_simplejwt.token_blacklist',
     "_betse",
-
-
 ]
+
 ASGI_APPLICATION = "bm.asgi.application"
 
 # todo db basiert env speichern. -> fetch - set außerhalb proj
