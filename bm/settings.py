@@ -1,3 +1,4 @@
+import io
 import sys
 from pathlib import Path
 import os
@@ -9,7 +10,7 @@ import dotenv
 
 OS_NAME = os.name
 print("OS_NAME", OS_NAME)
-
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 if OS_NAME == "nt":
     GOOGLE_APPLICATION_CREDENTIALS = r"C:\\Users\\wired\\OneDrive\\Desktop\\Projects\\BestBrain\\_google\\g_auth\\aixr-401704-59fb7f12485c.json"
 
@@ -315,7 +316,7 @@ STATIC_ROOT = os.path.join(BASE_DIR, "static_root")
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, "static"),
+    #os.path.join(BASE_DIR, "static"),
 ]
 
 MEDIA_ROOT = os.path.join(BASE_DIR, "media")

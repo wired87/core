@@ -7,7 +7,6 @@
     <mapping directory="$PROJECT_DIR$/_google" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/embedder" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/file" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/mg5amcnlo" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/qf_sim" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/utils" vcs="Git" />
   </component>
