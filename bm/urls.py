@@ -6,6 +6,7 @@ urlpatterns = [
     #path('betse/', include("_betse.urls")),
 
     path('world/', include("qf_sim.dj.urls")),
+    path('eval/', include("qf_sim.evaluation.dj.urls")),
     #path('graph/', include("utils.graph.dj.urls")),
 
     # frontend
