@@ -133,8 +133,8 @@ INSTALLED_APPS = [
     "_betse",
 ]
 
-ASGI_APPLICATION = "bm.asgi.application"
-
+#ASGI_APPLICATION = "bm.asgi.application"
+WSGI_APPLICATION = "bm.wsgi.application"
 # todo db basiert env speichern. -> fetch - set außerhalb proj
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  # Ensure this is FIRST
