@@ -57,6 +57,7 @@ click
 cloudpickle
 colorama
 comm
+tkintertable
 contourpy
 cookiecutter
 crawlee

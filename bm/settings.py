@@ -4,6 +4,8 @@ from pathlib import Path
 import os
 from datetime import timedelta
 import logging
+
+import matplotlib
 import resend
 from bm.logging_custom import cpr
 import dotenv
@@ -37,13 +39,14 @@ if os.name == "nt":
     TEST_USER_ID = "rajtigesomnlhfyqzbvx"
     REQUEST_URL = "http://127.0.0.1:8000/"
     GCP_TOKEN =r"C:\Users\wired\OneDrive\Desktop\Projects\bm\ggoogle\g_auth\token.json"
-
+    matplotlib.use("TkAgg")
     TEST_ENV_ID="env_bare_rajtigesomnlhfyqzbvx"
     ALLOWED_HOSTS = ["*"]
     WS_URL = "ws://127.0.0.1:8000/"
     FIREBASE_CREDENTIALS = r"C:\\Users\\wired\OneDrive\\Desktop\\Projects\\Brainmaster\\_google\\g_auth\\firebase_creds.json"
 
 else:
+    matplotlib.use("Agg")
     DEBUG = False
     TEST_USER_ID = "rajtigesomnlhfyqzbvx" # todo
     TEST_ENV_ID="env_bare_rajtigesomnlhfyqzbvx"
