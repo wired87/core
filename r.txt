@@ -18,6 +18,7 @@ bamnostic
 kubernetes
 apify
 apify_client
+qutip
 apify_shared
 argon2-cffi
 argon2-cffi-bindings
