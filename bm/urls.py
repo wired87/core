@@ -7,7 +7,7 @@ urlpatterns = [
 
     path('world/', include("qf_sim.dj.urls")),
     path('eval/', include("qf_sim.evaluation.dj.urls")),
-    #path('graph/', include("utils.graph.dj.urls")),
+    path('auth/', include("auth.urls")),
 
     # frontend
     #path('unicorn/', include("django_unicorn.urls")),
