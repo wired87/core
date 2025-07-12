@@ -2,9 +2,9 @@ import os
 
 import ray
 
-from qf_sim.cluster.nodes.db_worker import DBWorker
-from qf_sim.cluster.nodes.receiver import ReceiverWorker
-from qf_sim.cluster.nodes.updator_worker import UpdatorWorker
+from qf_sim._qfn_cluster_node.nodes.db_worker import DBWorker
+from qf_sim._qfn_cluster_node.nodes.receiver import ReceiverWorker
+from qf_sim._qfn_cluster_node.nodes.updator_worker import UpdatorWorker
 from utils.graph.local_graph_utils import GUtils
 from utils.logger import LOGGER
 from utils.queue_handler import QueueHandler

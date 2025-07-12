@@ -2,7 +2,7 @@
 helm repo add kuberay https://ray-project.github.io/kuberay-helm/
 helm repo update
 helm install kuberay-operator
-helm install raycluster kuberay/ray-cluster --version 1.0.0
+helm install raycluster kuberay/ray-_qfn_cluster_node --version 1.0.0
 """
 
 

@@ -14,7 +14,7 @@ anyscale login # authenticate
 
 
 Struktur:
-Erstlle immer ein Dockerfile für das gesammte cluster
+Erstlle immer ein Dockerfile für das gesammte _qfn_cluster_node
 
 
 

@@ -27,7 +27,7 @@ class RaySetup:
             print("Ray is already initialized.")
 
     def _filter_graph(self):
-        # specifies Nodes for the _ray cluster
+        # specifies Nodes for the _ray _qfn_cluster_node
         self.sensor_nodes = [n for n, data in self.g.G.nodes(data=True) if data.get('type') == 'sensor']
         self.other_nodes = [n for n, data in self.g.G.nodes(data=True) if data.get('type') != 'sensor']
         print("Sample graph created.")

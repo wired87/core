@@ -23,8 +23,9 @@ class GHAccess(APIView):
             ]
         elif req_type == "qfn":
             repos = [
-                "_qfn",
-                "_google_database",
+                "_qfn"
+                "_qf_sim",
+                "_google", # todo _database
                 "_utils"
             ]
 
