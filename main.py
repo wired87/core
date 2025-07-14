@@ -1,10 +1,4 @@
-import json
 import os.path
-import pprint
-
-import requests
-
-from file.yaml import load_yaml
 
 r"""if __name__ == "__main__":
     input_path = r"C:\Users\wired\OneDrive\Desktop\Projects\bm\gnn\processing\layer\uniprot\cc_pred_ckpt.json"

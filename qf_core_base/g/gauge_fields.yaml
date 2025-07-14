@@ -1,0 +1,59 @@
+photon:
+  charge: 0.0
+  mass: 0.0
+  g: 1.0
+  gauge_group: U(1)_Y
+  spin: 1
+  polarization_vector:
+  - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+w_plus:
+  charge: 1
+  mass: 80.379
+  g: 0.653
+  gauge_group: SU(2)_L
+  spin: 1
+  polarization_vector:
+  - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+w_minus:
+  charge: -1
+  mass: 80.379
+  g: 0.653
+  gauge_group: SU(2)_L
+  spin: 1
+  polarization_vector:
+  - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+z_boson:
+  charge: 0
+  mass: 91.1876
+  g: 0.743
+  gauge_group: SU(2)_L x U(1)_Y
+  spin: 1
+  polarization_vector:
+  - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+gluon:
+  charge: 0
+  mass: 0.0
+  g: 1.217
+  gauge_group: SU(3)_C
+  spin: 1
+  color_charge:
+  - r
+  - g
+  - b
+  - rg
+  - rb
+  - gb
+  - "r\u0305g"
+  - "r\u0305b"

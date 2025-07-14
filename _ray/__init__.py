@@ -39,7 +39,7 @@ ray start --head --port=6379
 
 
 
-from _google.gke._ray.base import RayBase
+from _google.gke._ray.qf_core_base import RayBase
 
 _ray = RayBase()
 _ray.start()

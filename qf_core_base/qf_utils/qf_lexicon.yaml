@@ -1,0 +1,2177 @@
+#🔗 1. gauge_fermion_coupling_term
+#Meaning: Interaction between gauge fields (like photons, W/Z bosons) and fermion fields (like electrons or quarks).
+#
+#Equation: g * ψ̄ * γ^μ * A_μ * ψ
+#
+#Use: Connects particles (fermions) with force fields (gauge bosons); use to model charged particles interacting with fields (e.g. current in E-field).
+#
+#🔗 2. fermion_higgs_yukawa_interaction
+#Meaning: Higgs field coupling with fermions (gives particles mass).
+#
+#Equation: -yukawa * ψ̄ * ψ * φ
+#
+#Use: Use when Higgs field influences a fermion; models mass generation based on local Higgs strength.
+#
+#🔗 3. flavor_mixing_term
+#Meaning: Flavor change between quarks via CKM matrix.
+#
+#Equation: ū · V_CKM · d
+#
+#Use: Use when modeling quark transitions yu(like u → d), often in weak interaction contexts.
+#
+#🔗 4. higgs_z_coupling, higgs_w_coupling
+#Meaning: Interaction between Higgs field and W/Z bosons.
+#
+#Equation:
+#
+#Z: 0.5 * g / cos(θ_W) * M_Z * H * Z_μ·Z^μ
+#
+#W: g * M_W * H * W⁺·W⁻
+#
+#Use: When Higgs field stabilizes W/Z bosons—model mass contributions to weak bosons.
+#
+#🔗 5. bsm_scalar_higgs_coupling
+#Meaning: Custom interaction between Higgs and BSM scalar field X.
+#
+#Equation: -g_XH * X2 * H
+#
+#Use: For new physics models, this defines how a new scalar interacts with Higgs—extendable to new node types.
+
+
+
+
+
+# DU MUSST DEN PATHWAYS GEHEN -> NICHT ALLES VON
+# VORN HEREIN DEFINIEREN
+
+
+
+
+
+
+
+
+
+
+
+##############################
+# MEASURED DATA
+
+
+epsilon_0:
+  semantic_tag: vacuum permittivity
+  unit: F/m
+  description: Electric constant, permittivity of free space
+  type: float
+  value: 8.854187817e-12
+  symbol: ε₀
+  origin: measured
+
+
+
+
+c:
+  semantic_tag: c
+  unit: m/s
+  description: Speed of light in vacuum
+  type: float
+  category: constant
+  value: 299792458
+  required: true
+  symbol: c
+  origin: measured
+
+
+W_mu:
+  semantic_tag: W_mu
+  unit: GeV
+  description: Weak interaction field (W boson)
+  type: np.array
+  category: gauge_field
+  value:
+  - 0.0
+  - 0.5
+  - 0.0
+  - 0.0
+  ontology_ref: QUDT:WeakField
+  required: false
+  datatype_constraints: {}
+  symbol: W_μ
+  origin: measured
+
+
+
+
+
+
+
+delta_t:
+  semantic_tag: time step
+  unit: s
+  description: "Simulation time step for updating the field
+  dauer des zeitschrittes
+  "
+  type: float
+  value: 1e-3
+  symbol: Δt
+  origin: measured
+
+E_field:
+  semantic_tag: electric field vector
+  unit: V/m
+  description: Electric field vector through the surface
+  type: np.ndarray
+  value:
+  - 100.0
+  - 0.0
+  - 0.0
+  symbol: E⃗
+  origin: measured
+surface_area_vector:
+  unit: m2
+  description: Vector representing surface area and its orientation
+  type: np.ndarray
+  value:
+  - 0.0
+  - 1.0
+  - 0.0
+  symbol: A⃗
+  origin: measured
+heat_energy:
+  unit: J
+  description: Amount of heat transferred to the system
+  type: float
+  value: 84.0
+  symbol: Q
+  origin: measured
+absolute_temperature:
+  unit: C
+  description: Temperature at which heat is transferred
+  type: float
+  value: 32.0
+  symbol: T
+  origin: measured
+internal_energy:
+  unit: J
+  description: Change in internal energy from heat and work
+  type: float
+  value: 50.0
+  symbol:
+  - U
+  - ΔU
+  origin: measured
+mechanical_work:
+  semantic_tag: null
+  unit: J
+  description: Energy used by the system to do work
+  type: float
+  value: 30.0
+  symbol: W
+  origin: measured
+
+
+
+
+electric_current:
+  unit: A
+  description: Electric current flowing through the circuit
+  type: float
+  value: 2.0
+  symbol: I
+  origin: measured
+voltage:
+  unit: V
+  description: Electric potential difference across the component
+  type: float
+  value: 5.0
+  symbol: U
+  origin: measured
+resistance:
+  unit: Ω
+  description: Electrical resistance of the component
+  type: float
+  value: 2.5
+  symbol: R
+  origin: measured
+gravitational_potential_energy:
+  semantic_tag: gravitational potential energy
+  unit: J
+  description: Energy of a mass due to its position in a gravitational field
+  type: float
+  value: -98.1
+  symbol: U
+  origin: measured
+
+
+g_XH:
+  semantic_tag: bsm_scalar_X_higgs_coupling_constant
+  unit: dimensionless
+  description: Coupling constant for the interaction between BSM field X and Higgs
+    field H. The unit depends on the precise form of the interaction term in the Lagrangian;
+    for -g_XH * X * X * H, if X and H are energy dimension 1, g_XH is energy dimension
+    -1. If X and H are dimensionless (normalized fields), g_XH is energy. Let's assume
+    it's a coefficient making the whole term an energy density. Often set as dimensionless
+    by absorbing mass scales. For simplicity here, let's assume an effective coupling.
+  type: float
+  category: fundamental_parameter_bsm
+  value: 0.1
+  symbol: g_{XH}
+  origin: measured
+
+
+gluon_field_tensor:
+  semantic_tag: gluon field strength tensor
+  unit: GeV2
+  description: SU(3) gauge field strength tensor component Gᵃ_μν
+  type: np.array
+  value:
+    - - 0.0
+      - 10.0
+      - 0.0
+      - 0.0
+    - - -10.0
+      - 0.0
+      - 0.0
+      - 0.0
+    - - 0.0
+      - 0.0
+      - 0.0
+      - 5.0
+    - - 0.0
+      - 0.0
+      - -5.0
+      - 0.0
+  symbol: Gᵃ_μν
+  origin: measured
+
+weak_field_strength:
+  unit: GeV2
+  description: SU(2) Tensor field representing the strength and dynamics of the weak
+    interaction (W bosons) in the Standard Model
+  type: np.ndarray
+  symbol: Wᵢ_μν
+  value:
+  - - 0.0
+    - 80.0
+    - 0.0
+    - 0.0
+  - - -80.0
+    - 0.0
+    - 0.0
+    - 0.0
+  - - 0.0
+    - 0.0
+    - 0.0
+    - 45.0
+  - - 0.0
+    - 0.0
+    - -45.0
+    - 0.0
+  origin: measured
+
+
+
+
+M_H:
+  semantic_tag: Higgs boson mass
+  unit: GeV
+  description: Mass of the Higgs boson
+  type: float
+  value: 125.1
+  symbol: M_H
+  origin: measured
+
+
+mu:
+  semantic_tag: up quark mass
+  unit: GeV/c2
+  description: Mass of the up-type quark
+  type: float
+  value: 0.002
+  symbol: μ
+  origin: measured
+
+md:
+  semantic_tag: down quark mass
+  unit: GeV/c2
+  description: Mass of the down-type quark
+  type: float
+  value: 0.005
+  symbol: m_d
+  origin: measured
+
+
+
+
+###################################
+# Z BOSON
+
+z_boson_mass_energy:
+  unit: GeV2
+  description: Mass energy term of the Z boson from the electroweak symmetry breaking
+  type: float
+  value: 8.3e-11
+  symbol: ℒ_Z
+  origin: calculated
+
+M_Z:
+  semantic_tag: Z boson mass
+  unit: GeV/c2
+  description: Mass of the Z boson particle
+  type: float
+  value: 91.1876
+  symbol: M_Z
+  origin: measured
+
+Z_mu:
+  semantic_tag: Z boson field component
+  unit: 1 (field value)
+  description: 4-vector field component of the Z boson
+  type: np.ndarray
+  symbol: Z_μ
+  value:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  origin: measured
+
+
+
+
+
+
+
+
+
+
+# QUARK MEASUREMENTS
+# Quarks are diferenciated throguh their charge props
+#Up-type quarks: up (u), charm (c), top (t) → charge +2/3
+#Down-type quarks: down (d), strange (s), bottom (b) → charge –1/3
+#
+#Nucleons are made from them:
+#Proton = uud
+#Neutron = udd
+u:
+  semantic_tag: up quark field
+  unit: field
+  description: Quantum field of the up-type quark
+  type: np.array
+  value:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  symbol: u
+  origin: measured
+
+d:
+  semantic_tag: down-type quark spinor
+  unit: unitless
+  description: Spinor representing a down-type quark state
+  type: np.array
+  value:
+    t: 1e-12
+    x: 1e-9
+    y: 1e-9
+    z: 1e-9
+    xy_pp: 1.4142e-9
+    xy_pm: 1.4142e-9
+    xz_pp: 1.4142e-9
+    xz_pm: 1.4142e-9
+    yz_pp: 1.4142e-9
+    yz_pm: 1.4142e-9
+    xyz_ppp: 1.7320e-9
+    xyz_ppm: 1.7320e-9
+    xyz_pmp: 1.7320e-9
+    xyz_pmm: 1.7320e-9
+  symbol: d
+  origin: measured
+
+
+
+me:
+  semantic_tag: lepton mass
+  unit: kg
+  description: Rest mass of the lepton (e.g. electron)
+  type: float
+  value: 9.11e-31
+  symbol: mₑ
+  origin: measured
+
+
+
+
+
+
+
+theta_W:
+  semantic_tag: cosine of Weinberg angle
+  unit: dimensionless
+  description: "
+  Cosine of the electroweak mixing angle
+  Wechselwirkiung Photon & Z-Boson
+  "
+  type: float
+  value: 0.88
+  symbol: θ_W
+  origin: measured
+
+
+m_nu:
+  semantic_tag: neutrino mass
+  unit: eV/c2
+  description: Mass of the neutrino
+  type: float
+  value: 0.0001
+  symbol: m_ν
+  origin: measured
+nu_L:
+  semantic_tag: left-handed neutrino field
+  unit: arbitrary (quantum field)
+  description: Quantum field for left-chiral neutrinos
+  type: np.array
+  value:
+  - 0.0
+  - 0.0
+  - 0.0
+  symbol: ν_L
+  origin: measured
+
+
+V_CKM:
+  semantic_tag: CKM matrix
+  unit: unitless
+  description: Cabibbo–Kobayashi–Maskawa matrix encoding quark flavor transitions
+  type: np.array
+  value:
+  - - 0.974
+    - 0.225
+    - 0.003 # or 008
+  - - 0.225
+    - 0.973
+    - 0.041 # 040
+  - - 0.009 # 003
+    - 0.04 # 041
+    - 0.999
+  symbol: V_CKM
+  origin: measured
+
+
+j_nu:
+  semantic_tag: CKM matrix
+  unit: unitless
+  description: "
+  Es beschreibt, wie viel Ladung oder Strom an jedem Punkt im Raum-Zeit existiert, die das Gauge-Feld „füttert“.
+  Der Strom jμ ist wie der Datenfluss in einem Netzwerk. Er gibt an, wie viele Daten 
+  (oder Teilchen) pro Zeiteinheit durch ein bestimmtes Volumen fließen.
+  Jnu bildet sich imemer aqus dem gekoppelten psi wert.
+  Wir haben einen jmu wert pro symmetriegruppe 
+  "
+  type: np.array
+  value:
+  symbol: j_mu
+  origin: calculated
+
+
+F_mu_nu:
+  semantic_tag: electromagnetic field strength tensor
+  unit: V/m2
+  description: "
+  🎯 1️⃣ Feldstärketensor (Yang-Mills)
+  ✅ Bedeutung:
+  Beschreibt die Feldstärke des Gaugefelds.
+  Enthält alle Informationen über elektrische und magnetische Felder der Theorie.
+  → magnetische Komponenten
+  Wirkt wie ein „Speicher“ der Dynamik und Krümmung des Feldes.
+  ✅ Interpretation:
+  Kein Energieparameter an sich, sondern der Baustein der Dynamik.
+  Er wird z.B. im Energie-Impuls-Tensor verwendet, um Energie- und Impulsdichten zu berechnen.
+  "
+  type: np.ndarray
+  value:
+  - - 0.0
+    - -1e3
+    - 0.0
+    - 0.0
+  - - 1e3
+    - 0.0
+    - 0.0
+    - 0.0
+  - - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+  - - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+  symbol: F_μν
+  origin: measured
+
+
+
+
+
+G_F:
+  semantic_tag: Fermi coupling constant
+  unit: GeV2
+  description: Fundamental constant describing the strength of weak interactions (used to derive the Higgs VEV)
+  type: float
+  value: 1.1663787e-5
+  symbol: G_F
+  origin: measured
+
+##########################################
+# HIGGS
+phi:
+  semantic_tag: Higgs field
+  unit: eV
+  description: "
+  Higgs feld gibt Teilchen / Objekten Ihre Paramter Masse
+  Besteht aus 4 skalarwerten welche das SU2 Doublet bilden.
+  Das doublet (phi_plus, phi_minus/phi_zero) besteht aus je 2elementen
+  und ergibt 
+  "
+  type: float
+  value:
+    - 0.0
+    - 0.0
+    - 0.1
+    - 0.0
+  symbol: φ
+  origin: measured
+
+dmu_phi:
+  semantic_tag: Spacetime derivative of Higgs field
+  unit: eV2
+  description: "
+  Wird berechnet aus allen gegebenen nachbarn.
+  Unterschiedlich als bei laplacian unterteilen wir gegebene 
+  phis (von nachbarn) nach ihrer position 
+  (x_plus = x-achse nächster, y_minus = y-achse vorheriger usw.) 
+  
+  Der sinn in dmuphi liegt also darin die unterschiedliche 
+  stärke der nachbar felder für die eigene ausrichtung zu berechnen.
+  
+  Das wird verwendet um die weiterleitung von signalen/wellen/energie
+  zu berechnen wodurch sich ein genauer pathway ableitet 
+  was wir hier zu simulieren versuchen.
+  "
+  type: np.array
+  symbol: ∂μφ
+  value:
+  - 0.1
+  - 0.0
+  - 0.0
+  - 0.0
+  origin: calculated
+
+
+
+
+
+
+h:
+  semantic_tag: Physikalisch verbleibende Skalaramplitude nach Symmetriebruch
+  unit: GeV
+  description: |
+    Die einzige Komponente des Higgs-Feldes, die nach dem Symmetriebruch eigenständig
+    bleibt. Sie oszilliert um den Vakuumwert v und entspricht dem beobachtbaren Higgs-Boson.
+    Ihre Stärke beeinflusst die Masse aller Teilchen, die an das Feld gekoppelt sind.
+  type: float
+  symbol: h
+  origin: Eigenständige skalare Feldkomponente (ϕ₄ = v + h(x))
+
+
+vev:
+  semantic_tag: Higgs field
+  unit: eV
+  description: phi in a vacuum -> the bottom of the hill
+  type: float
+  value: 246e9
+  symbol: φ
+  origin: measured
+
+lambda_H:
+  semantic_tag: Higgs self-coupling constant
+  unit: dimensionless
+  description: "
+  Was drückt λ physikalisch aus?
+  Wie stark das Higgs-Feld sich selbst beeinflusst (Selbstkopplung)
+  Wie „steil“ das Potential ansteigt, wenn das Feld vom Minimum abweicht
+  Wie stark Higgs-Bosonen sich gegenseitig streuen (z. B. in Higgs-Higgs-Kollisionen)
+  "
+  type: float
+  value: 0.13
+  symbol: λ
+  origin: measured
+
+
+mu_squared_H:
+  semantic_tag: Mass
+  unit: GeV2
+  description: "
+  Direkter trigger für potential 
+  Negatives Vorzeichen → zwingt das Potential in die 
+  „Mexican Hat“-Form.
+  Kein direkt messbarer Wert, sondern internesr Modellparameter.
+  "
+  type: float
+  value: 7865
+  symbol: λ
+  origin: measured
+
+
+energy_H:
+  semantic_tag: energy of the point in space
+  unit: GeV2
+  description: "
+  Wichtiger Term:
+  Da energy -> masse gibt an wv 
+  masse erstellt werden kann
+  "
+  type: float
+  value: 7865
+  symbol: λ
+  origin: measured
+
+dphi_d:
+  type: np.array
+  unit: GeV
+  description: "Änderung des Higgs-Feldwerts durch Gradientenfluss zu Nachbarn"
+  origin: "berechnet aus phi-Unterschieden mit Nachbarn über Kopplungsfaktor k"
+  symbol: dphi_d
+D:
+  semantic_tag: Higgs thermal coefficient
+  unit: dimensionless
+  description: |
+    Skalierungsfaktor für den temperaturabhängigen Anteil im effektiven Higgs-Potential.
+    Bestimmt, wie stark die Temperatur T das Verhalten des Feldes beeinflusst.
+  type: float
+  value: 0.1
+  symbol: D
+  origin: theoretical (perturbative expansion in thermal field theory)
+
+Tc:
+  semantic_tag: Electroweak phase transition temperature
+  unit: GeV
+  description: |
+    Kritische Temperatur, unterhalb der das Higgs-Feld in den Vakuumzustand übergeht (Symmetriebruch).
+    Bei T < Tc wird das Feld aktiv und Teilchen erhalten Masse.
+  type: float
+  value: 160.0
+  symbol: T_c
+  origin: theoretical (from cosmological models and lattice QCD)
+
+
+H3D:
+  semantic_tag: physical Higgs scalar field (3D field)
+  unit: GeV
+  description: 3D scalar field representing the Higgs field across space
+  type: np.ndarray
+  value:
+    - 0.0
+    - 0.0
+    - 0.0
+  symbol: H
+  origin: calculated
+
+laplacian_H:
+  semantic_tag: spatial laplacian of Higgs field
+  unit: GeV2
+  description: "
+  Sum of second spatial derivatives of the Higgs field (∇2H)
+  Regelt die interaktion zu benachbarten higgs punkten 
+  und ausbreitung des on/off switches 
+  
+  
+  🧠 Analogie:
+  μ² < 0 → stellt den Schalter auf „umlegen ist möglich“
+  ϕ(x) fällt an einem Punkt → erste lokale Instabilität
+  Laplacian verteilt den Effekt (abschwächend von node zu node)→ alle anderen Punkte folgen → Feld schaltet global um
+  "
+  type: float
+  value: 0.0
+  symbol: ∇2H
+  origin: calculated
+
+##########################
+# FERMION
+# Particle expression
+# Need calc the threshold by Einstein (y/n cond.)
+# Calc amount of particles epressd = E_psi * m_psi *
+# IMPORTANT
+#The excess energy is converted into the kinetic
+# energy of the created particles, and its
+# distribution is governed by the specific
+# interaction and conservation laws (like momentum
+# conservation).
+#
+psi:
+  semantic_tag: fermion field
+  description: "
+  
+  Erstellt Materie-Teilchen (Objekt)
+  
+  Represents the Fermion field.
+  Die einzelnen feldkomponenten/elemente sind keine 
+  Teilchen anzahlen, sondern Feldamplituden -> 
+  Die bewegung ( spin up/down) an genau diesem 
+  Punkt im Raum.
+  
+  Alle feldtypen existieren immer.
+  Es kommt nur darauf an wie stark einzelne werte sind
+  (enkodiert interaktion 
+  
+  Der Spin-Zustand ist entscheidend für die Kopplung und mehr:
+  
+  Das Spinorfeld an sich ist default im passiven 
+  Zustand.
+  Nur durch externen input aus einer bestimmten 
+  Richtung wird der zustand angepasst = partikel expression 
+  
+  Was macht das Feld aktiv?
+  Wenn ich dem feld eine richtung durch eine 
+  initialen enrgiesotß gebe, diesn dann aber 
+  entferen, rotiert es weiter in die selbe richtung
+  
+  
+  Das bedeutet wir brauchen eine algorithmus welcher und den anfangszustand festlegt um so ein circuit aus vielen verschiedenen punkten im Feld zu erzeugen
+  Ja – ein Initialisierungs-Algorithmus für das Feld legt fest, was später passiert.
+  Damit kannst du ganze Kreise, Wege, Muster oder logische Zustände im Feld definieren – nur durch den Start.
+  
+  Das circuit kann seinen platz im raum über knoten hinweg
+  welbst definieren /verändern 
+  Teilchen	Entstehendes Feld (Name)	Feldtyp
+  Elektron	Elektronenfeld (ψₑ)	Fermionfeld
+  Muon	Myonfeld (ψ_μ)	Fermionfeld
+  Tauon	Tau-Feld (ψ_τ)	Fermionfeld
+  Elektron-Neutrino	Neutrinofeld (νₑ)	Fermionfeld
+  Muon-Neutrino	Neutrinofeld (ν_μ)	Fermionfeld
+  Tau-Neutrino	Neutrinofeld (ν_τ)	Fermionfeld
+  Up-Quark	Up-Quark-Feld (ψᵤ)	Fermionfeld
+  Down-Quark	Down-Quark-Feld (ψ_d)	Fermionfeld
+  Charm, Strange, Top, Bottom	Eigene Quark-Felder (ψ_c, ψ_s, ...)	Fermionfelder
+    
+  ψ= 
+  Spin-Up, positive Energie
+  Spin-Down, positive Energie
+  Spin-Up, negative Energie
+  Spin-Down, negative Energie
+  
+
+  Das fermion feld an sich repräsentiert nur die summe
+  aller sub-felder. (Ψ = ψe + ψμ + ψτ + ...)->
+  Es besitzt also kein psi
+    fermion - node (als globaler sammelpunkt) -> sub feld (für einzeöne clacs) ->
+  "
+  type: np.ndarray
+  value:
+    - 1.0  # Obere Komponente → Teilchen mit Spin ↑ (z.B. Elektron mit Spin up)
+    - 0.0  # Obere Komponente → Teilchen mit Spin ↓ (Elektron mit Spin down)
+    - 0.0  # Untere Komponente → Antiteilchen mit Spin ↑ (Positron mit Spin up)
+    - 0.0   # Untere Komponente → Antiteilchen mit Spin ↓ (Positron mit Spin down)
+  symbol: ψ
+  origin: measured
+  contextual_phase: 0 # 0 = active 1 = passive
+  field_alignment: aligned
+  symmetry_relation: symmetric
+  sign: +
+  dimension: 1
+  interaction_role: neutral
+  similarity_score: 0.0 # muss für jede interaktio berechent werden
+  energy_potential: 0.6 # Mittelstark → beeinflusst, aber nicht Quelle
+
+
+
+
+
+
+# todo ???
+fermion_kinetic_term:
+  semantic_tag: Dirac fermion kinetic term
+  unit: GeV
+  description: Kinetic energy contribution of a spin-½ fermion field in the Lagrangian
+  type: float
+  value: 0.0
+  symbol: ℒ_ψ
+  origin: calculated
+
+
+laplacian_P:
+  semantic_tag: spatial laplacian of phi
+  unit: GeV2
+  description: Sum of second spatial derivatives of the Higgs field (∇2H)
+  type: float
+  value: 0.0
+  symbol: ∇2H
+  origin: calculated
+
+
+
+
+
+
+
+#########################################
+# GAUGE
+g:
+  semantic_tag: gauge coupling constant
+  unit: dimensionless
+  description: "
+  Kraftvermittler (Bosonen)
+  Verteilt teilchen 
+    
+  Photon	Photonfeld (A_μ)	Gauge-Feld
+W-Boson	W-Feld (W_μ)	Gauge-Feld
+Z-Boson	Z-Feld (Z_μ)	Gauge-Feld
+Gluon	Gluonenfeld (G_μᵃ)	Gauge-Feld
+Higgs-Boson	Higgs-Feld (φ)	Skalarfeld
+Graviton (hypothetisch)	Gravitationsfeld (g_μν)	Tensorfeld
+  "
+  type: float
+  value: 0.653
+  symbol: g
+  origin: measured
+
+A_mu:
+  semantic_tag: gauge field vector
+  unit: V
+  description: Gauge field (like photon, W, or gluon) acting on the fermion
+  type: np.ndarray
+  symbol: A_μ
+  value:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  origin: measured
+
+
+d_mu_A_nu:
+  semantic_tag: partial derivative of vector potential
+  unit: GeV
+  description: Partial derivative of the ν-th component of the gauge field A with respect to the μ-th spacetime coordinate
+  type: float
+  value: 0.0
+  symbol: ∂_μ A_ν
+  origin: calculated
+
+
+d_nu_A_mu:
+  semantic_tag: partial derivative of vector potential
+  unit: GeV
+  description: Partial derivative of the μ-th component of the gauge field A with respect to the ν-th spacetime coordinate
+  type: float
+  value: 0.0
+  symbol: ∂_ν A_μ
+  origin: calculated
+
+
+
+laplacian_G:
+  semantic_tag: spatial laplacian of Gauge field
+  unit: GeV2
+  description: Sum of second spatial derivatives of the Higgs field (∇2H)
+  type: float
+  value: 0.0
+  symbol: ∇2H
+  origin: calculated
+
+## W BOSON FIELD
+M_W:
+  semantic_tag: W boson mass
+  unit: GeV
+  description: Mass of the W boson
+  type: float
+  value: 80.4
+  symbol: M_W
+  origin: measured
+
+W_mu_plus:
+  semantic_tag: W⁺ boson field
+  unit: 1
+  description: Quantum field of the positively charged W boson
+  type: np.array
+  symbol: W_μ⁺
+  value:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  origin: calculated
+
+W_mu_minus:
+  semantic_tag: W⁻ boson field
+  unit: 1
+  description: Quantum field of the negatively charged W boson
+  type: np.array
+  symbol: W_μ⁻
+  value:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  origin: calculated
+
+
+
+
+###########################################
+# ELECTRON
+e:
+  semantic_tag: lepton spinor
+  unit: dimensionless
+  description: Lepton field (spinor representation)
+  type: np.ndarray
+  value: [-1.6e-19, -1.6e-19, -1.6e-19, -1.6e-19]
+  symbol: e
+  origin: measured
+
+e_bar:
+  semantic_tag: adjoint lepton spinor
+  unit: dimensionless
+  description: Dirac adjoint of the lepton field
+  type: np.ndarray
+  value:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  symbol: ē
+  origin: calculated
+
+
+#######################################
+# Custom
+
+
+nphi:
+  unit: int
+  description: Collection of all neighbors phi values
+  type: np.ndarray
+  value:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  symbol: None
+  origin: calculated
+
+
+potential_energy_H:
+  unit: GeV
+  description: higgs potential describes the local energy
+  type: float
+  value: 0.0
+  symbol: None
+  origin: measured
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+G_mu:
+  semantic_tag: gluon_field_octet
+  unit: GeV
+  description: SU(3) octet gluon field with Lorentz components.
+  type: np.ndarray
+  shape: [8, 4]
+  category: gauge_field
+  value:
+    - [0.1, 0.0, 0.0, 0.0]  # G_μ^1
+    - [0.2, 0.0, 0.0, 0.0]  # G_μ^2
+    - [0.3, 0.0, 0.0, 0.0]  # G_μ^3
+    - [0.0, 0.1, 0.0, 0.0]  # G_μ^4
+    - [0.0, 0.2, 0.0, 0.0]  # G_μ^5
+    - [0.0, 0.0, 0.1, 0.0]  # G_μ^6
+    - [0.0, 0.0, 0.2, 0.0]  # G_μ^7
+    - [0.0, 0.0, 0.0, 0.1]  # G_μ^8
+  ontology_ref: QUDT:GluonField
+  symbol: G_μ^i
+  origin: calculated
+
+
+T_i:
+  semantic_tag: su3_generator
+  unit: unitless
+  description: Fixed set of 3×3 matrices representing the generators of the SU(3) Lie algebra in the fundamental (quark) representation. Used to model gluon-quark coupling via Gell-Mann matrices λᵢ / 2.
+  type: np.ndarray
+  value:
+    - [[0.0, 0.5, 0.0], [0.5, 0.0, 0.0], [0.0, 0.0, 0.0]]         # T1
+    - [[0.0, -0.5, 0.0], [0.5, 0.0, 0.0], [0.0, 0.0, 0.0]]      # T2
+    - [[0.5, 0.0, 0.0], [0.0, -0.5, 0.0], [0.0, 0.0, 0.0]]        # T3
+    - [[0.0, 0.0, 0.5], [0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]         # T4
+    - [[0.0, 0.0, -0.5], [0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]      # T5
+    - [[0.0, 0.0, 0.0], [0.0, 0.0, 0.5], [0.0, 0.5, 0.0]]         # T6
+    - [[0.0, 0.0, 0.0], [0.0, 0.0, -0.5], [0.0, 0.5, 0.0]]      # T7
+    - [[.3, 0.0, 0.0], [0.0, .3, 0.0], [0.0, 0.0, -.6]]        # T8
+  symbol: Tᵢ
+  origin: SU(3) group theory (Gell-Mann basis)
+  fixed: true
+
+d_mu:
+  semantic_tag: d_mu
+  unit: 1/m
+  description: Partial derivative with respect to spacetime coordinates
+  type: np.array
+  category: calculus
+  value: '[∂_t, ∂_x, ∂_y, ∂_z]'
+  ontology_ref: QUDT:PartialDerivative
+  required: true
+  datatype_constraints: {}
+  symbol: ∂_μ
+  origin: calculated
+D_mu:
+  semantic_tag: D_mu
+  unit: 1/m
+  description: Gauge-covariant derivative
+  type: np.array
+  category: calculus
+  value: '[∂_μ - igA_μ]'
+  ontology_ref: QUDT:CovariantDerivative
+  required: true
+  datatype_constraints: {}
+  symbol: D_μ
+  origin: calculated
+lambda:
+  semantic_tag: lambda
+  unit: unitless
+  description: Higgs self-interaction strength
+  type: float
+  category: interaction
+  value: 0.13
+  ontology_ref: QUDT:HiggsLambda
+  required: false
+  datatype_constraints:
+    min: 0.0
+  symbol: λ
+  origin: calculated
+
+mass:
+  unit: kg
+  description: Mass of an object
+  type: float
+  value: 299792458
+  symbol: M
+  origin: calculated
+
+r_vec:
+  semantic_tag: gravity position vector
+  unit: m
+  description: 4D Vector from the gravity source to the target position
+  type: np.ndarray
+  symbol: r⃗
+  origin: calculated
+x_mu:
+  semantic_tag: position vector
+  unit: m
+  description: 4D position Vector in a vacuum
+  type: np.ndarray
+  symbol: xμ
+  value:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  origin: calculated
+
+distance_magnitude:
+  semantic_tag: distance magnitude
+  unit: m
+  description: Euclidean distance between source and target position
+  type: np.array
+  value: 1.0
+  symbol:
+  - r
+  - '|r⃗|'
+  origin: calculated
+
+lorentz_force:
+  semantic_tag: Lorentz force vector
+  unit: N
+  description: Force experienced by a charged particle moving through a magnetic field
+  type: np.ndarray
+  value:
+  - 0.0
+  - 0.0
+  - 1.0
+  symbol: F⃗_L
+  origin: calculated
+
+delta_p:
+  semantic_tag: momentum uncertainty
+  unit: kg·m/s
+  description: Minimum uncertainty in momentum derived from position uncertainty
+  type: float
+  value: 1.055e-34
+  symbol: Δp
+  origin: calculated
+delta_x:
+  semantic_tag: position uncertainty
+  unit: m
+  description: Uncertainty in the position measurement
+  type: float
+  value: 1e-10
+  symbol: Δx
+  origin: calculated
+
+
+
+
+
+gamma5:
+  semantic_tag: gamma5 matrix
+  unit: unitless
+  description: Gamma five matrix used to project left- and right-handed fermions.
+  type: np.ndarray
+  value:
+    - [0, 0, 0, -1]
+    - [0, 0, -1, 0]
+    - [0, 1, 0, 0]
+    - [1, 0, 0, 0]
+  symbol: γ⁵
+  origin: calculated
+
+
+
+
+
+
+entropy:
+  semantic_tag: null
+  unit: J/K
+  description: Entropy of the system according to Boltzmann's formula
+  type: float
+  value: 1.38e-23
+  symbol:
+  - S
+  - ΔS
+  origin: calculated
+
+
+number_microstates:
+  unit: dimensionless
+  description: Number of possible microscopic configurations of the system
+  type: float
+  value: 1e23
+  symbol: W
+  origin: calculated
+
+electric_flux:
+  semantic_tag: electric flux
+  unit: V·m
+  description: Total electric flux through a surface
+  type: float
+  value: 1200.0
+  symbol: Φ_E
+  origin: calculated
+
+n_xyz:
+  semantic_tag: quantum numbers in 3D
+  unit: unitless
+  description: Quantum numbers in x, y, z directions (n₁, n₂, n₃)
+  type: np.ndarray
+  value:
+  - 1
+  - 1
+  - 1
+  symbol: n⃗
+  origin: calculated
+L_xyz:
+  semantic_tag: box dimensions
+  unit: m
+  description: Length of the potential box in x, y, z directions
+  type: np.ndarray
+  value:
+  - 1e-9
+  - 1e-9
+  - 1e-9
+  symbol: L⃗
+  origin: calculated
+quantum_energy:
+  unit: J
+  description: Energy of a quantum particle in a 3D potential box
+  type: float
+  value: 6.626e-34
+  symbol: E
+  origin: calculated
+speed_light:
+  unit: m/s
+  description: Speed of light in vacuum
+  type: float
+  value: 299792458
+  symbol: c
+  origin: calculated
+rest_mass_energy:
+  unit: J
+  description: Energy equivalent of a given mass
+  type: float
+  value: 9e16
+  symbol: E
+  origin: calculated
+
+kinetic_energy:
+  unit: J
+  description: Kinetic energy of the object due to motion
+  type: float
+  value: 125.0
+  symbol: Eₖ
+  origin: calculated
+force_vector:
+  unit: N (kg·m/s2)
+  description: Resulting force acting on the object
+  type: np.ndarray
+  value:
+  - 10.0
+  - 0.0
+  - 0.0
+  symbol: F⃗
+  origin: calculated
+acceleration_vector:
+  semantic_tag: null
+  unit: m/s2
+  description: Acceleration experienced by the object
+  type: np.ndarray
+  value:
+  - 2.0
+  - 0.0
+  - 0.0
+  symbol: a⃗
+  origin: calculated
+F_e:
+  semantic_tag: electrostatic force
+  unit: N
+  description: Electrostatic force between two point charges
+  type: float
+  value: 8990000000.0
+  symbol: Fₑ
+  origin: calculated
+coulombs_constant:
+  semantic_tag: coulombs_constant
+  unit: N·m2/C2
+  description: Electrostatic constant (Coulomb's constant)
+  type: float
+  value: 8987500000.0
+  symbol: kₑ
+  origin: calculated
+
+
+
+
+bsm_scalar_field_X:
+  semantic_tag: bsm_scalar_field_X
+  unit: GeV
+  description: Hypothetical BSM (Beyond Standard Model) scalar field X.
+  type: float
+  category: quantum_field_scalar_bsm
+  value: 1000.0
+  symbol: X
+  origin: calculated
+
+L_gluon:
+  semantic_tag: gluon kinetic term
+  unit: GeV #4 - alltimes
+  description: Kinetic and self-interaction energy density of the gluon field in SU(3)
+  type: float
+  value: 1e6
+  symbol: L_gluon
+  origin: calculated
+
+
+
+
+
+
+
+L_em:
+  semantic_tag: electromagnetic kinetic term
+  unit: J/m
+  description: Kinetic energy density term for the electromagnetic field in the Lagrangian
+  type: float
+  value: 0.0
+  symbol: ℒ_em
+  origin: calculated
+
+weak_kinetic_term:
+  unit: GeV
+  description: Kinetic term in the Lagrangian density for SU(2) gauge fields (W bosons)
+  type: float
+  value: 0.0
+  symbol: ℒ_W
+  origin: calculated
+higgs_potential:
+  unit: GeV
+  description: Potential energy responsible for spontaneous symmetry breaking -> how high up the hill you are → the field "wants" to go to v
+  type: float
+  value: -1e8
+  symbol: V_H
+  origin: calculated
+higgs_kinetic_term:
+  unit: GeV
+  description: Kinetic energy term of the Higgs field.
+  type: float
+  value: 0.0
+  symbol: ℒ_H
+  origin: calculated
+
+
+
+phi_squared:
+  semantic_tag: squared Higgs field value
+  unit: GeV2
+  description: Squared magnitude of the Higgs field
+  type: float
+  symbol: ϕ2
+  value: 60516.0
+  origin: calculated
+
+v_squared:
+  semantic_tag: squared vacuum expectation value
+  unit: GeV2
+  description: Squared value of the Higgs vacuum expectation value (VEV)
+  type: float
+  value: 60516.0
+  symbol: v2
+  origin: calculated
+  var: constant # does not change
+
+psi_bar:
+  semantic_tag: adjoint fermion spinor
+  unit: 1
+  description: Complex conjugate transpose of the fermion spinor field (ψ̄)
+  type: np.ndarray
+  symbol: ψ̄
+  value:
+  - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+  origin: calculated
+
+
+dphi_dt_potential:
+  semantic_tag: potential_contribution_to_higgs_dynamics
+  unit: GeV2 # Einheit der Ableitung des Potenzials nach dem Feld, wenn phi in GeV ist.
+  description: "
+    Dieser Term repräsentiert den Beitrag des Higgs-Potenzials zur zeitlichen Entwicklung
+    (Dynamik) des Higgs-Feldes (φ). Er beschreibt die 'Kraft' oder den Gradienten,
+    der das Feld in Richtung des Minimums des 'Mexican Hat'-Potenzials (des VEVs) treibt.
+    Er ist ein zentraler Bestandteil der Bewegungsgleichung des Higgs-Feldes und
+    entscheidend für die Simulation des spontanen Symmetriebruchs und der Massenerzeugung.
+    "
+  type: float # Oder np.ndarray, falls phi selbst ein np.array/Spinor wäre, aber hier float angenommen
+  symbol: ∂V_H/∂φ # oder F_H (Kraft), oder V'_H
+  origin: calculated # Wird aus dem Higgs-Potenzial abgeleitet
+
+
+gamma_mu:
+  semantic_tag: gamma matrix
+  unit: 1
+  description: "
+  Summe aller gamma Werte im 
+  4 x 4 Array
+  
+  Global definiert 
+  
+  Wie die firmware des Universums für 
+  Spinorfelder
+  
+  Raum-Zeit-Mapper
+  
+  0 steht für die Zeit-Dimension.
+  1,2,3 stehen für die view Raum-Zeit-Dimensionen (t, x, y, z).
+  Die einzelnen Zahlenwerte in den Gamma-Arrays sind absolut fest und unveränderlich.
+
+  
+  
+  Dh: gamma_mu muss in jedem Zeitschritt
+  neu berechnet werden und somit jeder psi wert
+  Die Multiplikation γ 
+  μ
+   Ψ (als Teil der Gleichungen) berechnet dann jeden neuen Wert im Ergebnis-Vektor, indem sie eine Zeile der γ 
+  μ
+   -Matrix mit der gesamten Spalte des Ψ-Vektors multipliziert und die Produkte addiert.
+  Verändere ienzlene werte und du kannst in andere dimnesinenen durch die zeit reisen
+  "
+  type: np.ndarray
+  symbol: γ^μ
+  value:
+  - # gamma_0
+    - [1, 0, 0, 0]
+    - [0, 1, 0, 0]
+    - [0, 0, -1, 0]
+    - [0, 0, 0, -1]
+  - # gamma_1
+    - [0, 0, 0, 1]
+    - [0, 0, 1, 0]
+    - [0, -1, 0, 0]
+    - [-1, 0, 0, 0]
+  - # gamma_2
+    - [0, 0, 0, -1j] # -i
+    - [0, 0, 1j, 0]  # i
+    - [0, 1j, 0, 0]  # i
+    - [-1j, 0, 0, 0] # -i
+  - # gamma_3
+    - [0, 0, 1, 0]
+    - [0, 0, 0, -1]
+    - [-1, 0, 0, 0]
+    - [0, 1, 0, 0]
+
+
+  origin: calculated
+
+
+dmu_psi:
+  semantic_tag: spacetime derivative of spinor
+  unit: 1/m
+  description: Four-gradient of the fermion field ψ with respect to spacetime (∂_μψ)
+  type: np.ndarray
+  symbol: ∂_μψ
+  value:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  origin: calculated
+
+L_y:
+  semantic_tag: Yukawa interaction term
+  unit: eV
+  description: Interaction energy between Higgs field and fermions via Yukawa coupling
+  type: float
+  value: 1.0e6
+  symbol: 𝓛ᵧ
+  origin: calculated
+
+yukawa:
+  semantic_tag: Yukawa coupling constant
+  unit: dimensionless
+  description: Strength of the coupling between a fermion and the Higgs field -> somethimes referec as "y_psi"
+  type: float
+  value: 2e-6
+  symbol: y
+  origin: calculated
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+gauge_fermion_coupling_term:
+  unit: GeV
+  description: Interaction energy term between fermions and gauge fields via minimal
+    coupling
+  type: float
+  value: 0.0
+  symbol: 𝓛_int
+  origin: calculated
+
+w_boson_mass_term:
+  semantic_tag: W boson mass energy term
+  unit: GeV2
+  description: Mass term energy contribution of W bosons after electroweak symmetry
+    breaking
+  type: float
+  value: 6464.0
+  symbol: E_W
+  origin: calculated
+
+
+
+
+
+higgs_mass_term:
+  unit: GeV2
+  description: Scalar potential energy contribution from the Higgs boson mass term
+  type: float
+  value: 1.56e4
+  symbol: V_H
+  origin: calculated
+
+m_psi:
+  unit: GeV2
+  description: Mass of the fermion field
+  type: float
+  value: 0.0
+  symbol: m_f
+  origin: calculated
+
+
+
+
+
+higgs_self_interaction_term:
+  semantic_tag: Higgs quartic self-interaction energy term
+  unit: GeV4
+  description: The contribution to the Lagrangian density (or potential energy density)
+    from the Higgs field's quartic self-interaction. According to the linked equation,
+    this term is calculated as -λ_H * H^4, where λ_H is the dimensionless Higgs self-coupling
+    constant and H is the Higgs field strength (typically in units of GeV).
+  type: float
+  value: -1.3e7
+  symbol: -λH
+  origin: calculated
+quark_mass_energy:
+  semantic_tag: total mass energy of quark fields
+  unit: GeV
+  description: Mass energy contribution from up and down quarks
+  type: float
+  value: 0.01
+  symbol: E_q
+  origin: calculated
+
+
+
+
+
+
+u_bar:
+  semantic_tag: up quark field (conjugate)
+  unit: field
+  description: Conjugate field of the up-type quark
+  type: np.array
+  symbol: ū
+  value:
+  - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+  origin: calculated
+
+
+
+
+
+
+
+
+
+
+
+# !
+
+
+d_bar:
+  semantic_tag: down quark field (conjugate)
+  unit: field
+  description: Conjugate field of the down-type quark
+  type: np.array
+  value:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  symbol: d̄
+  origin: calculated
+
+lepton_mass_energy:
+  semantic_tag: lepton rest mass energy
+  unit: J
+  description: Mass-energy term for charged leptons
+  type: float
+  value: 0.0
+  symbol: Eₗ
+  origin: calculated
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+higgs_w_coupling:
+  semantic_tag: Higgs–W boson interaction term
+  unit: GeV2
+  description: Interaction term contributing to the W boson mass via Higgs mechanism
+  type: float
+  value: 12898.0
+  symbol: 𝓛_HW
+  origin: calculated
+L_HZ:
+  semantic_tag: Higgs–Z boson interaction term
+  unit: GeV2
+  description: Term representing the coupling between the Higgs field and the Z boson
+    in the electroweak Lagrangian
+  type: float
+  value: 91.1876
+  symbol: ℒₕZ
+  origin: calculated
+
+
+
+
+
+
+
+V_H:
+  semantic_tag: Higgs self-interaction potential
+  unit: GeV
+  description: Potential energy from the self-interaction of the Higgs field
+  type: float
+  value: 1.0e8
+  symbol: V_H
+  origin: calculated
+
+
+g_s:
+  semantic_tag: strong coupling constant
+  unit: dimensionless
+  description: Strength of the interaction between gluons and quarks in Quantum Chromodynamics (QCD). Determines how strongly quarks couple to the gluon field.
+  type: float
+  value: 1.2  # Approximate value at low energies (e.g., ~1 GeV scale)
+  symbol: g_s
+  origin: experimental fit to QCD
+
+neutrino_kinetic_term:
+  semantic_tag: kinetic Lagrangian term for neutrinos
+  unit: J/m
+  description: Describes the kinetic behavior of neutrino fields in spacetime
+  type: float
+  value: 1e-20
+  symbol: 𝓛_ν^kin
+  origin: calculated
+
+nu_bar:
+  semantic_tag: Dirac adjoint of neutrino field
+  unit: 1
+  description: Conjugate transpose of the neutrino spinor field
+  type: np.ndarray
+  symbol: v # ν̄
+  value:
+  - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+  origin: calculated
+dmu_nu:
+  semantic_tag: covariant derivative of neutrino field
+  unit: 1/m
+  description: Derivative of the neutrino field with respect to spacetime coordinates
+  type: np.ndarray
+  value:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+  symbol: ∂_μν
+  origin: calculated
+
+
+neutrino_mass_term:
+  semantic_tag: Majorana mass contribution
+  unit: kg 
+  description: Mass term for neutrino from Majorana field coupling
+  type: float
+  value: 1e-37
+  symbol: m_term
+  origin: calculated
+
+
+flavor_mixing_term:
+  semantic_tag: quark flavor transition amplitude
+  unit: unitless
+  description: Amplitude contribution from quark flavor mixing via CKM matrix (ū · V_CKM · d)
+  type: float
+  value: 0.0
+  symbol: 𝓜_flavor
+  origin: calculated
+
+
+bsm_scalar_mass_term:
+  semantic_tag: mass term of a BSM scalar field
+  unit: GeV2
+  description: Mass term of a scalar field beyond the Standard Model (BSM), contributing negatively to the potential energy.
+  type: float
+  category: potential_terms
+  value: 0.0
+  symbol: L_mass
+  origin: calculated
+
+bsm_scalar_field_kinetic_term:
+  semantic_tag: kinetic energy of BSM scalar field
+  unit: GeV2
+  description: Kinetic term of a scalar field beyond the Standard Model, describing propagation dynamics.
+  type: float
+  category: kinetic_terms
+  value: 0.0
+  symbol: L_kinetic
+  origin: calculated
+
+dmu_W:
+  semantic_tag: spacetime derivative of W boson field
+  unit: 1/m
+  description: Partial derivative of the SU(2) W boson gauge field with respect to spacetime coordinates.
+  type: np.array
+  category: gauge_terms
+  value: [0.0, 0.0, 0.0, 0.0]
+  symbol: ∂_μW
+  origin: calculated
+
+
+
+
+
+
+bsm_scalar_field_kinetic:
+  semantic_tag: kinetic term of scalar field X
+  unit: GeV
+  description: Kinetic energy density of the hypothetical BSM scalar field X
+  type: float
+  value: 0.5
+  symbol: ½(∂ₘX)(∂^ₘX)
+  origin: calculated
+dmu_X:
+  semantic_tag: spacetime derivative of scalar field X
+  unit: GeV
+  description: 4-vector derivative of scalar field X (∂μX)
+  type: np.ndarray
+  value:
+  - 0.1
+  - 0.0
+  - 0.0
+  - 0.0
+  symbol: ∂μX
+  origin: calculated
+X:
+  semantic_tag: BSM scalar field
+  unit: unitless (or GeV^½ depending on context)
+  description: Hypothetical scalar field beyond the Standard Model
+  type: float
+  value: 1.0
+  symbol: X
+  origin: calculated
+M_X:
+  semantic_tag: mass of BSM scalar field
+  unit: GeV
+  description: Mass parameter associated with the scalar field X
+  type: float
+  value: 125.0
+  symbol: Mₓ
+  origin: calculated
+scalar_mass_energy:
+  semantic_tag: scalar field mass term
+  unit: GeV2
+  description: Energy contribution due to the scalar field mass
+  type: float
+  value: 7812.5
+  symbol: Eₓ
+  origin: calculated
+bsm_scalar_higgs_coupling:
+  semantic_tag: BSM scalar–Higgs interaction term
+  unit: GeV2
+  description: Coupling term between a beyond-Standard-Model scalar field X and the
+    Higgs field
+  type: float
+  value: -0.05
+  symbol: L_XH
+  origin: calculated
+L_total:
+  semantic_tag: total lagrangian
+  unit: GeV
+  description: The sum of all terms in the Standard Model (and possibly BSM) Lagrangian
+    density.
+  type: float
+  symbol: L
+  value: 0.0
+  origin: calculated
+
+
+bsm_fermion_higgs_yukawa:
+  semantic_tag: exotic Yukawa coupling
+  unit: GeV
+  description: Coupling between a hypothetical BSM fermion and the Higgs field, similar to FSM Yukawa terms.
+  type: float
+  symbol: y_{Xψ}
+  value: 1e-3
+  origin: hypothetical
+
+bsm_fermion_sm_fermion_coupling:
+  semantic_tag: dark sector–FSM fermion interaction
+  unit: GeV
+  description: Coupling between BSM fermion and Standard Model fermion (portal interaction).
+  type: float
+  symbol: g_{Xψ}
+  value: 1e-2
+  origin: hypothetical
+
+pmns_matrix:
+  semantic_tag: neutrino mixing matrix
+  unit: unitless
+  description: Pontecorvo–Maki–Nakagawa–Sakata matrix for lepton flavor mixing in the neutrino sector.
+  type: np.array
+  symbol: U_PMNS
+  value:
+    - [0.821, 0.550, 0.150]
+    - [0.408, 0.620, 0.670]
+    - [0.392, 0.560, 0.730]
+  origin: measured
+
+neutrino_flavor_mixing_term:
+  semantic_tag: neutrino flavor transition amplitude
+  unit: unitless
+  description: Contribution to the Lagrangian from neutrino flavor mixing via PMNS matrix (ν̄ · U_PMNS · ν).
+  type: float
+  symbol: 𝓜_ν
+  value: 0.0
+  origin: calculated
+
+
+
+
+###########################
+# FERMION
+hypercharge:
+  semantic_tag: vacuum permittivity
+  unit: int
+  description: "
+  Hypercharge ist eine fest 
+  definierte Quantenzahl jedes 
+  Fermionfelds und steuert dessen 
+  B-Feld-Kopplung via g₁.
+  -> Fixed for specific ferm fields
+  "
+  type: float
+  value: 0.0
+  symbol: Y
+  origin: measured
+
+
+
+vl:
+  class: fermion
+  physical: true
+  class_members: ["ve", "vm", "vt"]
+  indices: ["Generation"]
+  flavor_index: "Generation"
+  self_conjugate: false
+  mass: 0
+  width: 0
+  quantum_numbers: { LeptonNumber: 1 }
+  pdg: [12, 14, 16]
+  particle_name: ["ve", "vm", "vt"]
+  antiparticle_name: ["ve~", "vm~", "vt~"]
+  full_name: ["Electron-neutrino", "Mu-neutrino", "Tau-neutrino"]
+
+l:
+  class: fermion
+  physical: true
+  class_members: ["e", "mu", "ta"]
+  indices: ["Generation"]
+  flavor_index: "Generation"
+  self_conjugate: false
+  mass: { Ml: null, Me: 5.11e-4, MMU: 0.10566, MTA: 1.777 }
+  width: 0
+  quantum_numbers: { Q: -1, LeptonNumber: 1 }
+  pdg: [11, 13, 15]
+  particle_name: ["e-", "mu-", "ta-"]
+  antiparticle_name: ["e+", "mu+", "ta+"]
+  full_name: ["Electron", "Muon", "Tau"]
+
+uq:
+  class: fermion
+  physical: true
+  class_members: ["u", "c", "t"]
+  indices: ["Generation", "Colour"]
+  flavor_index: "Generation"
+  self_conjugate: false
+  mass: { Mu: null, MU: 2.55e-3, MC: 1.27, MT: 172 }
+  width: { 0: 0, WT: 1.50833649 }
+  quantum_numbers: { Q: 0.6666666666666666 }
+  pdg: [2, 4, 6]
+  particle_name: ["u", "c", "t"]
+  antiparticle_name: ["u~", "c~", "t~"]
+  full_name: ["u-quark", "c-quark", "t-quark"]
+
+dq:
+  class: fermion
+  physical: true
+  class_members: ["d", "s", "b"]
+  indices: ["Generation", "Colour"]
+  flavor_index: "Generation"
+  self_conjugate: false
+  mass: { Md: null, MD: 5.04e-3, MS: 0.101, MB: 4.7 }
+  width: 0
+  quantum_numbers: { Q: -0.3333333333333333 }
+  pdg: [1, 3, 5]
+  particle_name: ["d", "s", "b"]
+  antiparticle_name: ["d~", "s~", "b~"]
+  full_name: ["d-quark", "s-quark", "b-quark"]
+
+
+
+LL:
+  type: fermion
+  unphysical: true
+  indices: ["SU2D", "Generation"]
+  flavor_index: "SU2D"
+  self_conjugate: false
+  quantum_numbers: { Y: -0.5 }
+  definitions:
+    - condition: "index == 1"
+      equation: "np.einsum('ab,bf->af', ProjM, vl)"
+    - condition: "index == 2"
+      equation: "np.einsum('ab,bf->af', ProjM, l)"
+
+lR:
+  type: fermion
+  unphysical: true
+  indices: ["Generation"]
+  flavor_index: "Generation"
+  self_conjugate: false
+  quantum_numbers: { Y: -1 }
+  definitions:
+    - equation: "np.einsum('ab,bf->af', ProjP, l)"
+
+QL:
+  type: fermion
+  unphysical: true
+  indices: ["SU2D", "Generation", "Colour"]
+  flavor_index: "SU2D"
+  self_conjugate: false
+  quantum_numbers: { Y: 0.16666666666666666 }
+  definitions:
+    - condition: "index == 1"
+      equation: "np.einsum('ab,bfc->afc', ProjM, uq)"
+    - condition: "index == 2"
+      equation: "np.einsum('ab,bfc->afc', ProjM, np.einsum('fg,bgc->bfc', CKM, dq))"
+
+uR:
+  type: fermion
+  unphysical: true
+  indices: ["Generation", "Colour"]
+  flavor_index: "Generation"
+  self_conjugate: false
+  quantum_numbers: { Y: 0.6666666666666666 }
+  definitions:
+    - equation: "np.einsum('ab,bfc->afc', ProjP, uq)"
+
+dR:
+  type: fermion
+  unphysical: true
+  indices: ["Generation", "Colour"]
+  flavor_index: "Generation"
+  self_conjugate: false
+  quantum_numbers: { Y: -0.3333333333333333 }
+  definitions:
+    - equation: "np.einsum('ab,bfc->afc', ProjP, dq)"
+
+
+
+muH:
+  type: float
+  description: "Coefficient of the quadratic piece of the Higgs potential"
+  symbol: "muH"
+  value: "sqrt(vev**2 * lam)"
+  semantic_tag: "higgs potential coefficient"
+  unit: "GeV"
+  origin: "derived"
+
+
+
+cw:
+  type: float
+  description: "Cosine of the Weinberg angle"
+  symbol: "cw"
+  value: "sqrt(1 - sw2)"
+  semantic_tag: "weinberg cosine"
+  unit: "dimensionless"
+  origin: "derived"
+
+sw:
+  type: float
+  description: "Sine of the Weinberg angle"
+  symbol: "sw"
+  value: "sqrt(sw2)"
+  semantic_tag: "weinberg sine"
+  unit: "dimensionless"
+  origin: "derived"
+
+aEW:
+  type: float
+  description: "Electroweak coupling contant"
+  symbol: "aEW"
+  value: "1 / aEWM1"
+  semantic_tag: "electroweak coupling"
+  unit: "dimensionless"
+  origin: "derived"
+
+MW:
+  type: float
+  description: "W mass"
+  symbol: "MW"
+  value: "sqrt(MZ**2 / 2 + sqrt(MZ**4 / 4 - pi / sqrt(2) * aEW / Gf * MZ**2))"
+  semantic_tag: "w boson mass"
+  unit: "GeV"
+  origin: "derived"
+
+sw2:
+  type: float
+  description: "Squared Sin of the Weinberg angle"
+  symbol: "sw2"
+  value: "1 - (MW / MZ)**2"
+  semantic_tag: "weinberg sine squared"
+  unit: "dimensionless"
+  origin: "derived"
+
+aEWM1:
+  type: float
+  description: "Inverse of the EW coupling constant at the Z pole"
+  symbol: "aEWM1"
+  value: 127.9
+  semantic_tag: "inverse electroweak coupling"
+  unit: "dimensionless"
+  origin: "measured"
+
+Gf:
+  type: float
+  description: "Fermi constant"
+  symbol: "Gf"
+  value: 1.16637e-5
+  semantic_tag: "fermi constant"
+  unit: "GeV^-2"
+  origin: "measured"
+
+aS:
+  type: float
+  description: "Strong coupling constant at the Z pole"
+  symbol: "aS"
+  value: 0.1184
+  semantic_tag: "strong coupling"
+  unit: "dimensionless"
+  origin: "measured"
+
+cabi:
+  type: float
+  description: "Cabibbo angle"
+  symbol: "cabi"
+  value: 0.227736
+  semantic_tag: "mixing angle"
+  unit: "radian"
+  origin: "measured"
+
+
+H:
+  class: scalar
+  pdg_id: 25
+  self_conjugate: true
+  mass:
+    symbol: "MH"
+    value: 125
+  width:
+    symbol: "WH"
+    value: 0.00407
+  propagator:
+    label: "H"
+    type: "dashed"
+    arrow: false
+  name: "H"
+  full_name: "H"
+
+G0:
+  class: scalar
+  description: "
+  Es entsteht im Higgs-Mechanismus und wird 
+  im unitären Eich fixiert „aufgegessen“, 
+  um dem Z seine Masse zu geben.
+  "
+  pdg_id: 250
+  self_conjugate: true
+  goldstone_of: "Z"
+  mass:
+    symbol: "MZ"
+    value: 91.1876
+  width:
+    symbol: "WZ"
+    value: 2.4952
+  propagator:
+    label: "Go"
+    type: "dashed"
+    arrow: false
+  name: "G0"
+  full_name: "G0"
+
+GP:
+  class: scalar
+  pdg_id: 251
+  description: "
+  Geladener Goldstone – „aufgegessen“ vom 
+  W-Boson	Intern verwendet für 
+  Propagator-Rechnungen
+  "
+  self_conjugate: false
+  goldstone_of: "W"
+  charge: 1
+  mass:
+    symbol: "MW"
+    value: "internal"
+  width:
+    symbol: "WW"
+    value: 2.085
+  propagator:
+    label: "GP"
+    type: "dashed"
+    arrow: false
+  name: "G+"
+  anti_name: "G-"
+  full_name: "GP"
+
+
+
+
+
+
+lam:
+  type: float
+  description: "Higgs quartic coupling"
+  symbol: "lam"
+  value: "MH**2 / (2 * vev**2)"
+  semantic_tag: "quartic coupling"
+  unit: "dimensionless"
+  origin: "derived"
+
+

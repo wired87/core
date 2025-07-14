@@ -1,0 +1,17 @@
+vev: 246.0
+h_prev:
+energy: 0.0
+potential_energy_H: 0.0 # higgs potential
+total_energy_H: 0.0
+mass: 125.0
+lambda_h: 0.13
+laplacian_h: []
+mu_squared_H: 7865
+nphi: []
+dmu_phi_neighbors:
+  x: []
+  y: []
+  z: []
+
+parent:
+  - PHI
