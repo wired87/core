@@ -1,7 +1,6 @@
-# unicorn/components/chat.py
+# frontend/main.py
 from typing import List
 from django_unicorn.components import UnicornView
-import random
 
 from bm.settings import TEST_USER_ID
 from qf_sim.sim_runner import SimCore
@@ -35,11 +34,3 @@ class ChatView(UnicornView):
         test.run_connet_test()
 
 
-
-
-    def spawn_dot(self):
-        self.dots.append({
-            "x": random.randint(0, 90),
-            "y": random.randint(0, 90),
-            "size": random.randint(5, 20),
-        })

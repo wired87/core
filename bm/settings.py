@@ -149,6 +149,14 @@ MIDDLEWARE = [
     #'bm.middleware.AllowedMethodsMiddleware',
 ]
 
+
+UNICORN = {
+    "COMPONENTS": [
+        "frontend",  # dein alternatives Modul
+    ]
+}
+
+
 ROOT_URLCONF = 'bm.urls'
 """
 # Beispiel-Konfiguration für Nginx, um den Zugriff zu blockieren:
