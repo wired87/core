@@ -7,10 +7,11 @@ import os
 import base64
 from io import BytesIO
 
+from qf_core_base.fermion.ferm_utils import FermUtils
+from qf_core_base.qf_utils.all_subs import ALL_SUBS, FERMIONS, G_FIELDS
+from qf_core_base.qf_utils.field_utils import FieldUtils
 from qf_sim._qutip.visualizer import QuTiPRenderer
-from qf_sim.physics.quantum_fields.nodes import FERMIONS, G_FIELDS, ALL_SUBS
-from qf_sim.physics.quantum_fields.nodes.fermion.ferm_utils import FermUtils
-from qf_sim.physics.quantum_fields.qf_core_base.qf_utils.field_utils import FieldUtils
+
 from qf_sim.physics.quantum_fields.nodes.g.gauge_utils import GaugeUtils
 
 """

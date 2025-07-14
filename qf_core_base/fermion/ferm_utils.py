@@ -1,7 +1,7 @@
 
 import numpy as np
 
-from qf_sim.physics.quantum_fields.qf_core_base.qf_utils.field_utils import FieldUtils
+from qf_core_base.qf_utils.field_utils import FieldUtils
 from utils._np.serialize_complex import serialize_complex
 
 

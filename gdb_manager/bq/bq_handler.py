@@ -8,7 +8,7 @@ import re
 from google.cloud.bigquery.table import _EmptyRowIterator
 
 from _google import GCP_ID
-from _google.gdb_manager.bq import BQ_INFO_TABLE_ID, BQ_DATASET_ID
+from gdb_manager.bq import BQ_INFO_TABLE_ID, BQ_DATASET_ID
 
 
 from google.cloud import bigquery

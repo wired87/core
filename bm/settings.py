@@ -117,6 +117,7 @@ CORS_ALLOW_CREDENTIALS = True
 
 INSTALLED_APPS = [
     "channels",
+    "unicorn",
     "django_unicorn",
     "frontend",
     "qf_sim",
@@ -133,8 +134,8 @@ INSTALLED_APPS = [
     "_betse",
 ]
 
-#ASGI_APPLICATION = "bm.asgi.application"
-WSGI_APPLICATION = "bm.wsgi.application"
+ASGI_APPLICATION = "bm.asgi.application"
+#WSGI_APPLICATION = "bm.wsgi.application"
 # todo db basiert env speichern. -> fetch - set außerhalb proj
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  # Ensure this is FIRST

@@ -21,10 +21,8 @@ import subprocess
 from google.cloud.spanner_dbapi import exceptions
 
 from _google import GCP_ID
-from _google.spanner import ALL_INFO_SCHEMAS, SP_INSTANCE_ID, SP_DATABASE_ID, create_default_auth_table_query, \
-    create_default_node_table_query, create_default_edge_table_query, create_metadata_table_query, \
-    get_edge_table_schema, create_graph_query, get_graph_query, get_col_names, get_graph_table_names_query, \
-    get_specific_g_info, add_graph_table
+from gdb_manager.spanner import *
+
 from utils.embedder import embed
 
 """Creates a database and tables for sample data."""

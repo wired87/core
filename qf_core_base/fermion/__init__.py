@@ -16,8 +16,8 @@ PSI_PSI_EQ = load_yaml(PSI_PSI_EQ)
 PSI_EQ = load_yaml(PSI_EQ)
 """
 
-FERM_PARAMS = convert_path_any_os("qf_core_base/fermion/psi_fields.yaml")
-PSI_UNIFORM = convert_path_any_os("qf_core_base/fermion/psi_uniform.yaml")
+FERM_PARAMS = "qf_core_base/fermion/psi_fields.yaml"
+PSI_UNIFORM = "qf_core_base/fermion/psi_uniform.yaml"
 
 FERM_PARAMS = load_yaml(FERM_PARAMS)
 PSI_UNIFORM = load_yaml(PSI_UNIFORM)

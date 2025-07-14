@@ -1,5 +1,5 @@
 
-from qf_sim.physics.quantum_fields.lexicon import QFLEXICON
+
 
 class CalcCreator:
 

@@ -26,7 +26,7 @@ PHI_EQ = load_yaml(PHI_EQ)
 PHI_PHI_EQ = load_yaml(PHI_PHI_EQ)
 PHI_GAUGE_EQ = load_yaml(PHI_GAUGE_EQ)
 """
-HIGGS_PARAMS = convert_path_any_os("qf_core_base/higgs/higgs_params.yaml")
+HIGGS_PARAMS = "qf_core_base/higgs/higgs_params.yaml"
 
 HIGGS_PARAMS = load_yaml(HIGGS_PARAMS)
 

@@ -5,10 +5,7 @@ from cmath import sqrt
 import numpy as np
 import inspect
 
-from qf_sim.physics.quantum_fields.lexicon import QFLEXICON
-from qf_sim.physics.quantum_fields.nodes.fermion import PSI_PSI_EQ, FERM_HIGGS_EQ, FERM_GAUGE_EQ, PSI_EQ
-from qf_sim.physics.quantum_fields.nodes.g import GAUGE_EQ
-from qf_sim.physics.quantum_fields.nodes.higgs import PHI_EQ, PHI_PHI_EQ, PHI_GAUGE_EQ
+
 from utils._np.serialize_complex import deserialize_complex
 from utils.graph.local_graph_utils import GUtils
 from utils.logger import LOGGER
@@ -21,7 +18,7 @@ class CalcUtils:
 
     def __init__(self, g: GUtils):
         self.g = g
-        self.arsenal = {
+        """self.arsenal = {
             "psi": [
                 *FERM_HIGGS_EQ,
                 *PSI_PSI_EQ,
@@ -36,7 +33,7 @@ class CalcUtils:
             "gauge": [
                 *GAUGE_EQ
             ]
-        }
+        }"""
 
     def mu_squared_H(self, lambda_H=None, vev=None):
         return -lambda_H * vev ** 2

@@ -1,4 +1,4 @@
-from qf_sim.physics.quantum_fields.nodes.fermion import FERM_PARAMS, PSI_UNIFORM
+from qf_core_base.fermion import *
 from qf_sim.physics.quantum_fields.nodes.fermion.ferm_utils import FermUtils
 from utils._np.serialize_complex import serialize_complex
 

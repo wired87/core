@@ -179,7 +179,7 @@ if __name__ == "__main__":
     G.add_node("D", type="app")
     G.add_node("E", type="web")
 
-    generator = KubeRayClusterCfgGenerator(G)
+    """generator = KubeRayClusterCfgGenerator(G)
     generator.generate_cluster_yaml(
         manager_image="myregistry/manager",
         worker_image="myregistry/worker",
@@ -187,7 +187,7 @@ if __name__ == "__main__":
     )
 
     generated_yaml = generator.get_yaml()
-    print(generated_yaml)
+    print(generated_yaml)"""
 
 
 

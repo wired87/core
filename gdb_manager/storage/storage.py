@@ -13,7 +13,7 @@ from utils.file import asave_json_content
 from collections import defaultdict
 
 from _google import GCP_ID
-from _google.gdb_manager.storage import MAIN_BUCKET
+from gdb_manager.storage import MAIN_BUCKET
 
 dotenv.load_dotenv()
 

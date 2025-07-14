@@ -1,5 +1,5 @@
-from _google.gdb_manager.bq.bq_handler import BQCore
-from _google.gdb_manager.firebase.real_time_database import FirebaseRTDBManager
+from gdb_manager.bq.bq_handler import BQCore
+from gdb_manager.firebase.real_time_database import FirebaseRTDBManager
 from utils.embedder import embed
 
 import asyncio
@@ -7,10 +7,10 @@ import json
 import os
 from typing import Dict, List
 
-from _google.gdb_manager.spanner.acore import SpannerAsyncHelper
+from gdb_manager.spanner.acore import SpannerAsyncHelper
 
-from _google.gdb_manager.storage.storage import GBucket
-from _google.gdb_manager.spanner.graph_loader import SpannerGraphLoader
+from gdb_manager.storage.storage import GBucket
+from gdb_manager.spanner.graph_loader import SpannerGraphLoader
 
 
 # todo batch process: collect, then send up in batches

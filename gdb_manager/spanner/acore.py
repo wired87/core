@@ -14,11 +14,8 @@ from google.cloud.spanner_v1.types import (
 )
 from google.cloud.spanner_v1.types.transaction import TransactionOptions
 
-from _google import GCP_ID
-from _google.spanner import create_default_auth_table_query, create_default_edge_table_query, \
-    create_default_node_table_query, SP_DATABASE_ID
-
-from _google.spanner.graph_loader import SpannerCore
+from gdb_manager.spanner import *
+from gdb_manager.spanner.graph_loader import *
 
 
 class SpannerAsyncHelper(SpannerCore):

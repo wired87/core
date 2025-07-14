@@ -10,6 +10,6 @@ urlpatterns = [
     path('auth/', include("auth.urls")),
 
     # frontend
-    #path('unicorn/', include("django_unicorn.urls")),
+    path('unicorn/', include("frontend.urls")),
 ]
 
