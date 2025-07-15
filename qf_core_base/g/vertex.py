@@ -4,7 +4,6 @@ import numpy as np
 
 from qf_sim.physics.quantum_fields.nodes.g.coupler.quad import QuadCoupler
 from qf_sim.physics.quantum_fields.nodes.g.coupler.triple import TripleCoupler
-from qf_sim.physics.quantum_fields.nodes.g.gauge_utils import GaugeUtils
 
 class VertexUtils(TripleCoupler, QuadCoupler):
 

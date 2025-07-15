@@ -3,7 +3,7 @@ from itertools import product
 
 import numpy as np
 
-from qf_sim.physics.quantum_fields.nodes.g.gauge_utils import GaugeUtils
+from qf_core_base.g.gauge_utils import GaugeUtils
 from utils.graph.local_graph_utils import GUtils
 
 

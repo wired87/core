@@ -1,6 +1,7 @@
 import numpy as np
 
 from qf_core_base.fermion.ferm_utils import FermUtils
+from qf_core_base.qf_utils.field_utils import FieldUtils
 from qf_core_base.qf_utils.stimmulator.stim_utils import StimUtils
 from utils.graph.local_graph_utils import GUtils
 

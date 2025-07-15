@@ -993,7 +993,7 @@ class SpannerGraphLoader(SpannerCore):
 
         if relationship:
             t = f"{src_layer}_{relationship}_{trgt_layer}"
-            print("ADD EDGE TO TABLE:", t)
+            #print("ADD EDGE TO TABLE:", t)
 
             self.create_edge_table_batch(
                 srcl=f"{src_layer}",

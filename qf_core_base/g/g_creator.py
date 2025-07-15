@@ -23,7 +23,6 @@ class GaugeCreator(GaugeUtils):
             g_field = g_field.upper()
             # Parent Node erstellen
 
-
             # Falls Gluon, Child Nodes erzeugen
             if g_field.lower() == "gluon":
                 self._create_gluon_items(
@@ -41,7 +40,7 @@ class GaugeCreator(GaugeUtils):
                     gattrs
                 )
 
-       #print("G created")
+            print(f"{g_field} for {src_qfn_id} created")
 
 
     def connect_gluons(self, nid):
@@ -153,16 +152,9 @@ class GaugeCreator(GaugeUtils):
             self.g.add_node(attrs=attrs)
 
             # Parent -> Child Edge
-            self.g.add_edge(
-                src_qfn_id,
-                gauge_id,
-                attrs=dict(
-                    rel="has_instance",
-                    src_layer="QFN",
-                    trgt_layer=g_item_field,
-                )
-            )
-       #print("Gluon items created")
+            self._connect_2_qfn(src_qfn_id, gauge_id, g_field)
+
+        print("Gluon items created")
 
     def _create_g_parent(
         self,
@@ -196,6 +188,13 @@ class GaugeCreator(GaugeUtils):
 
         self.g.add_node(attrs=parent_attrs)
 
+        self._connect_2_qfn(src_qfn_id, gauge_id, g_field)
+
+        return parent_attrs
+       # print("All Gluons connected")
+
+
+    def _connect_2_qfn(self, src_qfn_id, gauge_id, g_field):
         # QFN -> Parent Edge
         self.g.add_edge(
             src_qfn_id,
@@ -206,8 +205,8 @@ class GaugeCreator(GaugeUtils):
                 trgt_layer=g_field,
             )
         )
-        return parent_attrs
-       # print("All Gluons connected")
+
+
 
 """    def get_gauge_neighbor(self, nid):
    Get all non gluon neighbors for non-gluon gauge

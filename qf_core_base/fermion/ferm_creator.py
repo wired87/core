@@ -16,7 +16,7 @@ class FermCreator(FermUtils):
     def create(self, src_qfn_id):
         # PSI
         for ferm_field, attrs in FERM_PARAMS.items():
-
+            print(f"Create {ferm_field} for {src_qfn_id}")
             ferm_field = ferm_field.upper()
             self._create_quark_parent(
                 ferm_field,
@@ -37,7 +37,7 @@ class FermCreator(FermUtils):
                     attrs
                 )"""
 
-        print("Psi created")
+            print("Psi created")
 
 
     def _create_quark_items(
@@ -88,7 +88,7 @@ class FermCreator(FermUtils):
             src_qfn_id,
             attrs,
     ):
-        print("Create parent Ferm - Field")
+        #print("Create parent Ferm - Field")
         fermid = f"{ferm_field}_{src_qfn_id}"
 
         psi, psi_bar = self.psi_x_bar(ferm_field)
@@ -116,6 +116,7 @@ class FermCreator(FermUtils):
                 trgt_layer=ferm_field,
             )
         )
+        print(f"created {fermid}")
         return fermid
 
 
@@ -124,6 +125,7 @@ class FermCreator(FermUtils):
         #  for general ferms and single quark item
         psi = self.init_psi(ntype=ferm_field, serialize=False)
         psi_bar = self._psi_bar(psi, self._is_quark(ferm_field))
+
         return psi, psi_bar
 
 

@@ -1,10 +1,8 @@
 from django.urls import path
 
-from frontend.main import ChatView
-from qf_sim.dj.views.demo import RunDemo
-from qf_sim.dj.views.create_world import CreateWorldView
+from frontend.view import MyTemplateView
 
-app_name = 'unicorn'
+app_name = 'frontend'
 urlpatterns = [
-    path('main/', ChatView.as_view()),
+    path('main/', MyTemplateView.as_view()),
 ]

@@ -1,4 +1,4 @@
-from qf_sim.physics.quantum_fields.nodes.g.gauge_utils import GaugeUtils
+from qf_core_base.g.gauge_utils import GaugeUtils
 
 
 class GluonBase(GaugeUtils):

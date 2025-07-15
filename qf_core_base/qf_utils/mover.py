@@ -1,4 +1,3 @@
-
 import numpy as np
 
 
@@ -174,4 +173,45 @@ class Mover:
        #print(f"UPDATED POS {self.cell_index}:", self_attrs["pos"])
         return self_attrs
 
+    def distribute_subpoints_around_qfns(self, ds=20):
+        print("set sub pos")
+        for nid, attrs in self.g.G.nodes(data=True):
+            if attrs.get("type").upper() == "QFN" and "pos" in attrs:
+                base_pos = np.array(attrs["pos"])
+
+                # Finde Subpunkte
+                subs = self.g.get_neighbor_list(nid, trgt_rel="has_field")
+                print(f"Subs for {nid}: {len(subs)}")
+                if not subs:
+                    continue
+
+                # Gleichmäßig auf einer Kugel verteilen
+                check_pos = []
+
+                # Gleichmäßig auf Kugel verteilen (Fibonacci Sphere)
+                count = len(subs)
+                offset = 2.0 / count
+                increment = np.pi * (3.0 - np.sqrt(5.0))  # Goldener Winkel
+
+                for i, (sub_id, sub_attrs) in enumerate(subs):
+                    y = ((i * offset) - 1) + (offset / 2)
+                    r = np.sqrt(1 - y * y)
+                    phi = i * increment
+
+                    x = np.cos(phi) * r
+                    z = np.sin(phi) * r
+
+                    pos = base_pos + ds * np.array([x, y, z])
+                    sub_attrs["pos"]=pos.tolist()
+                    check_pos.append(
+                        (sub_id,  sub_attrs["pos"])
+                    )
+
+                    self.g.update_node(sub_attrs)
+
+                print(f"sub positions for {nid}:")
+                for item in check_pos:
+                    print(f"{item[0]}: {item[1]}")
+
+        print("All sub pos set!")
 

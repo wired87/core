@@ -5,10 +5,14 @@ import os
 from datetime import timedelta
 import logging
 
+import django_unicorn
 import matplotlib
 import resend
+from django.utils.module_loading import import_string
+
 from bm.logging_custom import cpr
 import dotenv
+
 
 OS_NAME = os.name
 print("OS_NAME", OS_NAME)
@@ -116,9 +120,8 @@ CORS_ALLOW_CREDENTIALS = True
 
 
 INSTALLED_APPS = [
+
     "channels",
-    "unicorn",
-    "django_unicorn",
     "frontend",
     "qf_sim",
     'django.contrib.admin',
@@ -132,6 +135,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'rest_framework_simplejwt.token_blacklist',
     "_betse",
+    "django_unicorn",
 ]
 
 ASGI_APPLICATION = "bm.asgi.application"
@@ -150,11 +154,7 @@ MIDDLEWARE = [
 ]
 
 
-UNICORN = {
-    "COMPONENTS": [
-        "frontend",  # dein alternatives Modul
-    ]
-}
+
 
 
 ROOT_URLCONF = 'bm.urls'
@@ -217,7 +217,11 @@ DATABASES = {
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'templates']
+        'DIRS': [
+            BASE_DIR / 'templates',
+            BASE_DIR / "frontend" / "templates",
+
+        ]
         ,
         'APP_DIRS': True,
         'OPTIONS': {
@@ -322,13 +326,15 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 
 USE_TZ = True
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+UNICORN_PATH = os.path.join(os.path.dirname(django_unicorn.__file__), "static")
+
 
 STATIC_URL = '/static/'
-STATIC_ROOT = os.path.join(BASE_DIR, "static_root")
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+STATIC_ROOT = BASE_DIR / "static_root"
 
 STATICFILES_DIRS = [
-    #os.path.join(BASE_DIR, "static"),
+    os.path.join(BASE_DIR, "static"),
 ]
 
 MEDIA_ROOT = os.path.join(BASE_DIR, "media")

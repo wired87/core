@@ -33,6 +33,7 @@ from qf_core_base.fermion.ferm_utils import FermUtils
 from qf_core_base.g.g_creator import GaugeCreator
 from qf_core_base.g.gauge_utils import GaugeUtils
 from qf_core_base.higgs.phi_utils import HiggsUtils
+from qf_core_base.qf_utils.all_subs import ALL_SUBS
 
 from qf_core_base.qf_utils.qf_utils import QFUtils
 from qf_core_base.qf_utils.mover import Mover
@@ -101,6 +102,7 @@ class QFCreator:
 
 
     def create(self, env_dim, env):
+        print("QF.create")
         self.dim = env_dim
         # Add QQ
         amount_needed_nodes = self.get_amount_nodes()
@@ -263,7 +265,7 @@ class QFCreator:
                                 rel=f"extern_coupling",
                                 src_layer=k,
                                 trgt_layer=k,
-                                **GAUGE_PARAMS,
+                                #**GAUGE_PARAMS,
                             )
                         )
 
@@ -293,9 +295,12 @@ class QFCreator:
 
 
     def get_amount_nodes(self):
-        if self.specs["dim"]:
-            amount_nodes = self.specs["dim"][0] * self.specs["dim"][1]
-           #print("Amount nodes", amount_nodes)
+        dim:list[int] = self.specs["dim"]
+        if dim:
+            amount_nodes = 1
+            for d in dim:
+                amount_nodes *= d
+            print("Create amount nodes", amount_nodes)
             # time.sleep(5)
             return amount_nodes
 
@@ -418,7 +423,7 @@ class QFCreator:
 
     # problem = types
     def _connect_local_fields(self, nid):
-       #print("Connect local fields")
+        print("Connect local fields")
         phi, psis, gs = self.qf_utils.get_all_node_sub_fields(nid)
         #print("psis, gs", psis, gs)
         for gid, gattrs in gs:
@@ -484,7 +489,7 @@ class QFCreator:
                         )
                 else:
                     partner_id, pattrs = self.g.get_single_neighbor_nx(nid, g.upper())
-                    print(f"{fid} -> ", partner_id, g.upper())
+                    #print(f"{fid} -> ", partner_id, g.upper())
                     self.g.add_edge(
                         fid,
                         partner_id,
@@ -495,11 +500,11 @@ class QFCreator:
                         )
                     )
             #print("NEIGHBORS:", [nid for nid, attrs in self.g.get_neighbor_list(fid, ALL_SUBS)])
-       #print("Local field connection finished")
+        print("Local field connection finished")
 
 
     def spread_connect_qfn(self):
-       #print("Spread and connect accross nodes...")
+        print("Spread and connect subs accross nodes...")
         dx_set = False
 
         # 1. iter
@@ -511,7 +516,7 @@ class QFCreator:
 
        #print(f"Spread {len(spread_items)} items")
 
-        d = 100
+        d = 50
 
         for nid, attrs in spread_items:
             ##print("Dpread item", nid)
@@ -553,6 +558,7 @@ class QFCreator:
         # -> fallback to equaton linking
         # -> finish here - the calculator gets alltimes build up at sim start
 
+        self.mover.distribute_subpoints_around_qfns()
         print("Spread finished")
 
 

@@ -214,6 +214,7 @@ class QFUpdator(QFCreator):
                     attrs,
                     nid,
                     env_attrs,
+                    attrs["neighbors_pm"],
                 )
 
                 self._run_utils(snid, sattrs)
@@ -228,7 +229,7 @@ class QFUpdator(QFCreator):
             env_attrs,
             neighbors_pm,
     ):
-        print(f"workign {nid}")
+        #print(f"workign {nid}")
 
         parents = [p.lower() for p in attrs.get("parent")]
         ntype = attrs.get("type")
@@ -306,7 +307,7 @@ class QFUpdator(QFCreator):
 
         # update G already in Field class ->
         # h entry in update G method
-        print(f"finished {nid}")
+        #print(f"finished {nid}")
         attrs["time"] += 1
 
 

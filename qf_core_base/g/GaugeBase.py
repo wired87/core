@@ -316,7 +316,7 @@ class GaugeBase(GaugeUtils):
             # GET ATTRS ###############
             fattrs = self.restore_selfdict(fattrs)
             nntype = fattrs.get("type")
-            print(f"{ntype} fermon euighbor: {nntype}")
+            #print(f"{ntype} fermon euighbor: {nntype}")
             psi = fattrs.get("psi")
             charge= fattrs.get("charge")
             psi_bar= fattrs.get("psi_bar")
