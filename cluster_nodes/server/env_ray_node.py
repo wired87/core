@@ -1,13 +1,8 @@
-import os
 
 import ray
 
-from cluster_nodes.cluster_utils.listener import Listener
-from cluster_nodes.cluster_utils.receiver import ReceiverWorker
-from gdb_manager.g_utils import DBManager
-from cluster_nodes.server.stat_handler import SimStateHandler
+from cluster_nodes.server.stat_handler import ClusterCreator
 from qf_core_base.qf_utils.all_subs import ALL_SUBS
-from utils.graph.local_graph_utils import GUtils
 from utils.logger import LOGGER
 
 ALL_ENV_STATES = [
@@ -122,7 +117,7 @@ class EnvNode:
     async def build_env(self):
         # Sim State Handler
         # build _ray network, start _qfn_cluster_node etc
-        self.sim_state_handler = SimStateHandler(
+        self.sim_state_handler = ClusterCreator(
             # g, env, database, host, external_vm, session_space
             self.g,
             self.env,

@@ -4,9 +4,11 @@ import networkx as nx
 from collections import defaultdict
 import yaml
 
+from utils.file._yaml import write_yaml
+
 
 class KubeRayClusterCfgGenerator:
-    def __init__(self, graph: nx.Graph, env, user_id, ray_version="2.9.0"):
+    def __init__(self, graph: nx.Graph, env, user_id, file_store, ray_version="2.9.0"):
         self.graph = graph
         self.env = env
         self.user_id = user_id
@@ -14,6 +16,7 @@ class KubeRayClusterCfgGenerator:
         self.node_counts = defaultdict(int)
         self.ray_version = ray_version
         self.cluster_yaml = None
+        self.file_store=file_store
 
     def main(self):
         self._count_node_types()
@@ -165,8 +168,22 @@ class KubeRayClusterCfgGenerator:
 
         self.cluster_yaml = yaml.dump(cluster, sort_keys=False)
 
+        self.save_to_file_store()
+
+
     def get_yaml(self):
         return self.cluster_yaml
+
+    def save_to_file_store(self):
+        save_path = os.path.join(
+            self.file_store.name,
+            "ray_cfg.yaml",
+        )
+        write_yaml(
+            content=self.get_yaml(),
+            dest=save_path
+        )
+        print("Saved ray cfg to filestore")
 
 
 # Beispiel

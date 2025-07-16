@@ -40,6 +40,6 @@ if __name__ == "__main__":
     build_image(
         image_name="worker",
         tag="v1.0",
-        dockerfile_path=convert_path_any_os("containers/_updator/Dockerfile"),
+        dockerfile_path=convert_path_any_os("containers/qfn_worker/Dockerfile"),
         context_dir="."
     )

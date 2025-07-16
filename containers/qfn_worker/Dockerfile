@@ -21,10 +21,8 @@ RUN apt-get update && apt-get install -y \
     rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements first for caching dependencies
-COPY qf_sim/clusters/manager ./cluster_nodes
-COPY qf_sim/clusters/cluster_utils ./cluster_nodes
-COPY qf_sim/clusters/server ./cluster_nodes
-COPY qf_sim/clusters/updator ./cluster_nodes
+COPY cluster_nodes .
+
 COPY qf_core_base .
 COPY utils .
 

@@ -1,17 +1,19 @@
 import asyncio
 import pprint
+from concurrent.futures.thread import ThreadPoolExecutor
+from multiprocessing import Pool
 
 import ray
 
+from cluster_nodes.updator.node import FieldWorkerNode
 from qf_core_base.fermion import FERM_PARAMS
 from qf_core_base.g import GAUGE_FIELDS
 from qf_core_base.qf_utils.all_subs import ALL_SUBS
 from qf_core_base.qf_utils.qf_utils import QFUtils
-from qf_sim.clusters.updator.node import FieldWorkerNode
 from utils.logger import LOGGER
 
 
-class SimStateHandler:
+class ClusterCreator:
 
 
     def __init__(self, g, env, database, host, external_vm, session_space):
@@ -26,38 +28,40 @@ class SimStateHandler:
 
 
     def load_ray_remotes(self):
-
         """
         Called on each start after building the G
         """
-
         # Call in init world process befro update
         LOGGER.info("build env")
-
         for nid, attrs in [(nid, attrs) for nid, attrs in self.g.G.nodes(data=True) if attrs.get("type") == "QFN"]:
             all_sub_fields = self.qf_utils.get_all_node_sub_fields(nid)
             #LOGGER.info(f"ALL EXTRACTED SUBS: {all_sub_fields}")
             # Loop all fields
             for field in all_sub_fields:
                 #LOGGER.info(f">>>field: {field}")
+                self.launch_remotes_parallel(fields=field)
 
-                for sid, sattrs in field:
-                    #LOGGER.info(f">>>SID: {sid} \nSATTRS:{sattrs}")
-                    # Load attrs in class
-                    #LOGGER.info(f"create remote ref for: {sid}")
-                    self.g.G.nodes[sid]["ref"] = FieldWorkerNode.remote(
-                        self.g.G,
-                        sattrs,
-                        self.env,
-                        self.g.user_id,
-                        self.database,
-                        self.host,
-                        self.external_vm,
-                        self.session_space,
-                        admin=False
-                    )
+    def launch_remotes_parallel(self, fields, parallel=4):
+        actors = []
+        with ThreadPoolExecutor(max_workers=parallel) as executor:
+            futures = [executor.submit(self.start_remote, nid, field) for nid, field in fields]
+            for f in futures:
+                actors.append(f.result())
+        return actors
 
-
+    def start_remote(self, nid, attrs):
+        LOGGER.info(f"start_remote {nid}")
+        self.g.G.nodes[nid]["ref"] = FieldWorkerNode.remote(
+            self.g.G,
+            attrs,
+            self.env,
+            self.g.user_id,
+            self.database,
+            self.host,
+            self.external_vm,
+            self.session_space,
+            admin=False
+        )
 
 
     def extract_fields(self):

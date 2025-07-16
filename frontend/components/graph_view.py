@@ -3,7 +3,7 @@ from typing import List
 from django_unicorn.components import UnicornView
 
 from qf_core_base.qf_utils.all_subs import ALL_SUBS
-from qf_sim.sim_runner import SimCore
+from qf_sim.sim_core import SimCore
 TEST_USER_ID ="rajtigesomnlhfyqzbvx"
 """
 
@@ -79,15 +79,6 @@ class GraphViewView(UnicornView):
             visualize=False,
             demo=True
         )
-
-        runner.create(
-                components={
-                    "qf": {
-                        "shape": "rect",
-                        "dim": [2 for _ in range(3)]
-                    }
-                },
-            )
         self._set_node_copy(runner)
         self._set_edge_copy(runner)
 
