@@ -1,7 +1,6 @@
 import asyncio
 import pprint
 from concurrent.futures.thread import ThreadPoolExecutor
-from multiprocessing import Pool
 
 import ray
 
@@ -14,7 +13,9 @@ from utils.logger import LOGGER
 
 
 class ClusterCreator:
-
+    """
+    Gets called inside of each qfn docker
+    """
 
     def __init__(self, g, env, database, host, external_vm, session_space):
         self.g=g

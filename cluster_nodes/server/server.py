@@ -10,7 +10,6 @@ from cluster_nodes.cluster_utils.receiver import ReceiverWorker
 from cluster_nodes.manager.trainer import LiveTrainer
 from cluster_nodes.server.env_ray_node import EnvNode
 from cluster_nodes.server.set_endpoint import set_endpoint
-from cluster_nodes.server.stat_handler import ClusterCreator
 from cluster_nodes.server.state_handle import StateHandler
 from cluster_nodes.server.types import HOST_TYPE
 
@@ -185,7 +184,8 @@ class ServerWorker:
             external_vm=False,
             session_space=None,
             db_manager=self.db_manager,
-            g=self.g
+            g=self.g,
+            database=self.database
         )
 
         self.trainer = LiveTrainer.remote(

@@ -48,7 +48,8 @@ class EnvNode:
             external_vm,
             session_space,
             db_manager,
-            g
+            g,
+            database
     ):
         # todo ther is just a single node type -> role is dynamically
 
@@ -61,7 +62,7 @@ class EnvNode:
         self.host = host
         self.env_id = env_id
         self.user_id = user_id
-
+        self.database=database
         self.db_manager=db_manager
         self.initial_frontend_data = {}
 
@@ -70,7 +71,8 @@ class EnvNode:
 
     async def _init_world(self):
         """
-        Turn on agents
+        build G from data set self ref and creates
+        all sub nodes of a specific
         """
         # Build G and load in self.g todo: after each sim, convert the sub-ield graph back to this
         # format to save storage -> just for testing
@@ -96,23 +98,16 @@ class EnvNode:
         # await self.build_env()
 
         # Listen to DB cha  nges
-
-
+        # reset
         self.initial_frontend_data = {}
         self.local = True  #
         self.all_subs = None
 
-
         self.state = "active"
         LOGGER.info(f"ENV worker {self.env['id']}is waiting in {self.state}-mode")
 
-
-
-
-
-
-
-
+        # Iit all sub fields niisde the cluster
+        await self.build_env()
 
     async def build_env(self):
         # Sim State Handler
@@ -128,12 +123,6 @@ class EnvNode:
         )
         # Create and Load Ray Actors in the G
         self.sim_state_handler.load_ray_remotes()
-
-        # Check each nodes initialization state
-        #ready = self.sim_state_handler._handshake() ->
-        # each actor now send status request by its
-        # own @ the end of init
-
         LOGGER.info("finished env build process")
 
 
