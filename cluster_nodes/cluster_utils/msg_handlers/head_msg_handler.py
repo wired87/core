@@ -5,7 +5,9 @@ import networkx as nx
 import ray
 
 from qf_core_base.qf_utils.all_subs import ALL_SUBS
+from qf_core_base.qf_utils.qf_utils import QFUtils
 from utils.graph.local_graph_utils import GUtils
+from utils.id_gen import generate_id
 from utils.logger import LOGGER
 
 
@@ -15,13 +17,13 @@ class HeadMessageManager:
     Head node message handler
     """
 
-    def __init__(self, parent, attrs, user_id, env, database, G):
+    def __init__(self, parent, attrs, user_id, env, database, G, host):
         self.attrs=attrs
         self.attrs_id= attrs.get("id")
         self.env=env
         self.database=database
         self.user_id=user_id
-
+        self.host=host
         self.head_ref = ray.get_actor(env["id"])
 
         self.parent = parent
@@ -32,6 +34,52 @@ class HeadMessageManager:
             user_id=self.user_id,
         )
         self.ids_distributed = []
+
+        self.qf_utils = QFUtils(
+            self.g,
+        )
+        self.states={}
+
+
+    async def _init_hs_relay(self):
+
+        self.host["head"]._init_hs_relay.remote()
+
+
+    async def _state_handler(self, state, nid):
+        """
+        Receives state updates from Sub-fields
+        """
+        if self.all_subs is None:
+            """
+            Get all subs from Already initialized G
+            to check whenever all subs are active 
+            """
+
+            all_subs = self.qf_utils.get_all_subs_list()
+            self.len_subs = len(all_subs)
+
+
+        # Save received state local
+        for qfn_id, qfn_sub_ids in self.states.items():
+            if nid in qfn_sub_ids:
+                self.states[qfn_id][qfn_sub_ids] = state
+
+        # send recieved state to frontend
+        ptype=""
+        if state == "active":
+            ptype="status_update"
+
+        if len([state_list for state_list in self.sub_states.values()]) >= self.len_subs:
+            print("Some nodes failed to start up")
+            ptype = "status_finished"
+
+        await self.host["head"].send_ws(
+            data=self.states,
+            ptype=ptype
+        )
+
+
 
     async def _start(self):
         """
@@ -133,6 +181,11 @@ class HeadMessageManager:
 
 
 
+
+
+
+
+
     # get paths of all nodes -> fb
     async def _stop(self):
         LOGGER.info(f"ENV stop request received")
@@ -148,22 +201,7 @@ class HeadMessageManager:
         # todo
         return True
 
-    async def send_message(self, data):
-        # Receive a intern child message of a qfn
-        # if self.extenal_vm is True: must called
-        # in ServerNode
-        # here just save
-        sub_type = data.get("sub_type")
-        if sub_type == "state":
-            pass
 
-    async def _handle_db_change(self, payload):
-        # payload = id:new_data
-        # called when listener recognizes changes in DB
-        # ws (für testing auf einem server)
-        # todo sned to ServerWorker
-        LOGGER.info(f"ENV _handle_db_change request received")
-        filtered_payload = payload  # todo
 
     async def _state_req(self, payload):
         if payload == getattr(self.parent, "id"):
@@ -178,7 +216,7 @@ class HeadMessageManager:
         nid= payload["data"]["id"]
         active_workers = await self.head_ref.get_ative_workers.remote()
 
-        if state == "standby" and nid not in active_workers:
+        if state == "active" and nid not in active_workers:
             self.head_ref.handle_active_worker_states.remote(
                 "append",
                 nid

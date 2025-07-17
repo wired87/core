@@ -1,14 +1,13 @@
-import asyncio
-import time
+
 
 from utils.graph.local_graph_utils import GUtils
 from utils.logger import LOGGER
 
 
-class WorkerMessageManager:
+class QFNMsgHandler:
 
     """
-    Entry for any messages to worker nodes
+    Entry for any messages to QFNs
     """
 
     def __init__(self, host, attrs, user_id, external_vm, main_loop_handler):
@@ -28,24 +27,9 @@ class WorkerMessageManager:
 
 
 
-    async def apply_neighbor_changes(self, payload):
-        LOGGER.info("Filte neighbor changes")
-        # extract path
-        path = payload["path"]
-        attrs = payload["data"]
 
-        if path.endswith("/"):
-            path=path[:-1]
-
-        nid = path.aplit("/")[-1]
-
-        await self.host["parent"].apply_neighbor_changes(
-            nid, attrs
-        )
-
-
-    async def _set_neighbors(self, payload):
-        self.neighbors = payload
+    async def _set_status(self, state, nid):
+        await self.host["qfn"]._sub_state_appender(state, nid)
 
 
     async def _handle_n_change(self, payload):

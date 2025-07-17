@@ -99,7 +99,7 @@ class FirebaseRTDBManager:
             True on success, False on failure.
         """
         try:
-            self.root_ref.set(data)
+            self.root_ref.update(data) # or set
             logging.info(f"Successfully upserted data at path: {path}")
             return True
         except Exception as e:
@@ -112,8 +112,6 @@ class FirebaseRTDBManager:
         else:
             ref = self.root_ref
         try:
-            """print("Upsert Batch Data ",)
-            pprint.pp(data)"""
             print("ref")
             ref.update(data)
             logging.info(f"Successfully upserted data")
@@ -320,6 +318,11 @@ class FirebaseRTDBManager:
         self.upsert_batch(updates, fb_dest)
 
 
+    def get_listener_endpoints(self, nodes:list[str], metadata=False):
+        return [
+            f"{self.db_url}/{nid}" + "/metadata" if metadata is True else None
+            for nid in nodes
+        ]
 
 
 if __name__ == "__main__":
@@ -327,12 +330,4 @@ if __name__ == "__main__":
     f.delete_data(path="/")
 
 
-
-
-
-"""
-
-
-
-"""
 

@@ -78,7 +78,7 @@ class QFUtils(FieldUtils):
             gs
         ]
 
-    def get_all_subs_list(self, check_key="type", datastore=False, just_attrs=False, sort_for_types=False, sort_index_key="entry_index"):
+    def get_all_subs_list(self, check_key="type", datastore=False, just_attrs=False, just_id=False, sort_for_types=False, sort_index_key="entry_index"):
         if datastore is True:
             all_subs:list[dict or tuple] = self.get_all_field_nodes(
                 self.g.datastore, check_key
@@ -115,7 +115,9 @@ class QFUtils(FieldUtils):
 
         else:
             if just_attrs is True:
-                return [attrs for nid, attrs in all_subs]
+                return [attrs for _, attrs in all_subs]
+            elif just_id is True:
+                return [nid for nid, _ in all_subs]
             else:
                 return all_subs
 
@@ -178,6 +180,7 @@ class QFUtils(FieldUtils):
            #print(f"{con_type} created!")
         else:
            print("Tripple already exists")
+
 
 
 

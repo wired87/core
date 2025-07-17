@@ -1,6 +1,7 @@
 # pip install "_ray[serve]"
 import os
 
+import ray
 from ray import serve
 import json
 from fastapi import WebSocket, FastAPI
@@ -20,12 +21,16 @@ from utils.graph.local_graph_utils import GUtils
 from utils.logger import LOGGER
 
 # dynamic imports
+"""
 
+
+"""
 
 app = FastAPI()
 
 USER_ID = os.environ.get("USER_ID")
 ENV_ID = os.environ.get("ENV_ID")
+QFN_ID = os.environ.get("QFN_ID")
 
 
 # 2. Definiere deinen Dienst als Ray Serve Deployment
@@ -35,22 +40,33 @@ ENV_ID = os.environ.get("ENV_ID")
     num_replicas=1
 )
 @serve.ingress(app)
-class ServerWorker:
+class QFNServerWorker:
     """
-    Acts as Head Node or QFN
+    Acts as QFN - Head of a specific Docker
+
+    hält db, u utils
+    startet alle remotes
+
+    wf
+    start
+
+
     """
 
     def __init__(self):
-        self.node_type = os.environ.get("NODE_TYPE")  # HEAD || QFN
+        self.node_type = "QFN"
 
         self.env_id = ENV_ID
         self.user_id = USER_ID
+        self.id = QFN_ID
         self.host: HOST_TYPE = {}
 
-        self.host["head"] = serve.get_deployment_handle(self.env_id)
+        self.ref = serve.get_deployment_handle(self.id)
+        self.head_ref = ray.get_actor(self.env_id)
 
         self.attrs = None
         self.g = None
+        self.host = None
         self.external_vm = None
 
         self.extern_host = {}
@@ -84,8 +100,8 @@ class ServerWorker:
             "type": "status"
         })
 
-    @app.websocket("/{env_id}")
-    async def main(self, websocket: WebSocket, env_id):
+    @app.websocket("/{env_id}/{qfn_id}")
+    async def main(self, websocket: WebSocket, env_id, qfn_id):
         # host_name = await self.manager.connect(env_id, websocket)
         while True:
             try:
@@ -144,6 +160,7 @@ class ServerWorker:
             G=self.g.G,
             extra_payload=None
         )
+        # listen on stimulator changes in DB
         self.db_manager = DBManager(
             table_name="NONE",
             upload_to="fb",
@@ -160,6 +177,8 @@ class ServerWorker:
             g_from_path=None,
             user_id=self.user_id,
         )
+
+
         self.listener = Listener.remote(
             self.g.G,
             self.env_id,
@@ -169,6 +188,11 @@ class ServerWorker:
             upload_to="fb",
             table_name=None,
         )
+
+        self.host.update({ # todo trainer, processor, visualizer etc
+            "db_manager": self.db_manager
+        })
+
         self.env_initializer = EnvNode(
             self.env_id,
             self.user_id,
@@ -177,7 +201,7 @@ class ServerWorker:
             session_space=None,
             db_manager=self.db_manager,
             g=self.g,
-            database=self.database
+            database=self.database,
         )
 
         self.trainer = LiveTrainer.remote(

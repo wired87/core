@@ -3,6 +3,7 @@ import ray
 
 from cluster_nodes.cluster_utils.msg_handlers.data_msg_handler import DataMessageManager
 from cluster_nodes.cluster_utils.msg_handlers.head_msg_handler import HeadMessageManager
+from cluster_nodes.cluster_utils.msg_handlers.qfn_msg_handler import QFNMsgHandler
 from cluster_nodes.cluster_utils.msg_handlers.worker_msg_handler import WorkerMessageManager
 
 from utils.queue_handler import QueueHandler
@@ -31,14 +32,14 @@ class ReceiverWorker:
                 G,
             )
             self.cases:list[tuple]=[
-                ("db_changes", self.msg_handler._handle_db_change),
                 ("status", self.msg_handler._state_req),
-                ("worker_status", self.msg_handler._worker_status),
+                ("worker_status", self.msg_handler._state_handler),
                 ("start", self.msg_handler._start),
                 ("stop", self.msg_handler._stop),
                 ("stim", self.msg_handler._stim_handler),
                 ("cluster_msg", self.msg_handler.send_message),
                 ("init_handshake", self.msg_handler._init_handshake),
+                ("init_hs_relay", self.msg_handler._init_hs_relay),
             ]
 
         elif self.host_node_type == "data_processor":
@@ -52,6 +53,12 @@ class ReceiverWorker:
         elif self.host_node_type == "trainer":
             pass
 
+
+        elif self.host_node_type == "QFN":
+            self.msg_handler = QFNMsgHandler(
+                host=self.host
+            )
+
         else:
             self.msg_handler = WorkerMessageManager(
                 host,
@@ -62,12 +69,21 @@ class ReceiverWorker:
             )
             self.cases = [
                 ("neighbors", self.msg_handler._set_neighbors),
+                ("db_changes", self.msg_handler._set_neighbors),
                 ("n_change", self.msg_handler._handle_n_change),
                 ("status", self.msg_handler._state_req),
                 ("start", self.msg_handler._start),
                 ("stop", self.msg_handler._stop),
             ]
         print("ReceiverWorker initialized.")
+
+
+
+
+
+
+
+
 
     async def _validate_request(self):
         # todo
@@ -86,7 +102,7 @@ class ReceiverWorker:
                 if data_type == case:
                     await action(data)
         else:
-           print("validation failed!")
+           print("validation failed by type", data_type)
 
 
 

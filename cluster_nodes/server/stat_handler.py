@@ -17,12 +17,13 @@ class ClusterCreator:
     Gets called inside of each qfn docker
     """
 
-    def __init__(self, g, env, database, host, external_vm, session_space):
+    def __init__(self, qfn_id, g, env, database, host, external_vm, session_space):
         self.g=g
         self.qf_utils = QFUtils(g)
         self.env=env
         self.database = database,
         self.host = host
+        self.qfn_id=qfn_id
         self.external_vm = external_vm
         # Firebase endpoint for session data
         self.session_space = session_space
@@ -35,12 +36,13 @@ class ClusterCreator:
         # Call in init world process befro update
         LOGGER.info("build env")
         for nid, attrs in [(nid, attrs) for nid, attrs in self.g.G.nodes(data=True) if attrs.get("type") == "QFN"]:
-            all_sub_fields = self.qf_utils.get_all_node_sub_fields(nid)
-            #LOGGER.info(f"ALL EXTRACTED SUBS: {all_sub_fields}")
-            # Loop all fields
-            for field in all_sub_fields:
-                #LOGGER.info(f">>>field: {field}")
-                self.launch_remotes_parallel(fields=field)
+            if nid == self.qfn_id:
+                all_sub_fields = self.qf_utils.get_all_node_sub_fields(nid)
+                #LOGGER.info(f"ALL EXTRACTED SUBS: {all_sub_fields}")
+                # Loop all fields
+                for field in all_sub_fields:
+                    #LOGGER.info(f">>>field: {field}")
+                    self.launch_remotes_parallel(fields=field)
 
     def launch_remotes_parallel(self, fields, parallel=4):
         actors = []
@@ -52,7 +54,15 @@ class ClusterCreator:
 
     def start_remote(self, nid, attrs):
         LOGGER.info(f"start_remote {nid}")
-        self.g.G.nodes[nid]["ref"] = FieldWorkerNode.remote(
+
+        # Get neighbors
+        neighbor_types = [*ALL_SUBS, "ENV"]
+        final_neighbor_struct = {}
+        neighbors = self.g.get_neighbor_list(nid, neighbor_types)
+        for nid, attrs in neighbors:
+            final_neighbor_struct[nid] = attrs
+
+        ref = FieldWorkerNode.options(name=nid).remote(
             self.g.G,
             attrs,
             self.env,
@@ -63,6 +73,7 @@ class ClusterCreator:
             self.session_space,
             admin=False
         )
+        self.g.G.nodes[nid]["ref"] = ref
 
 
     def extract_fields(self):

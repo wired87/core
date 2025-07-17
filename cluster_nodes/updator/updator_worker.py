@@ -27,6 +27,7 @@ class UpdatorWorker:
             env,
             nid,
             parent,
+            db_worker
     ):
         self.id=nid
         self.attrs=attrs
@@ -34,7 +35,7 @@ class UpdatorWorker:
         self.run=False
         self.env=env
         self.prev = self.attrs[self.parent.lower()]
-
+        self.db_worker=db_worker
         self.g=g
 
         self.updator = QFUpdator(
@@ -53,7 +54,7 @@ class UpdatorWorker:
             target_type=ALL_SUBS
         )
 
-
+        # set pm id -> get attrs in each iter
         self.neighbors_pm = self.calculator.cutils.set_neighors_plus_minus(
             node_id=self.qfn_parent_id,
             self_attrs=self.qfn_parent_attrs,
@@ -104,6 +105,7 @@ class UpdatorWorker:
             print(f"finished update {self.id}")
             self.attrs["time"] += self.env["timestep"]
             # todo check len history -> load queue -> upsert
+            self.db_worker.iter_upsert(self.attrs)
         else:
             LOGGER.info(f"Update for {self.id} finished")
             # todo shutdown

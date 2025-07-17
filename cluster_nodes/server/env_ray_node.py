@@ -42,20 +42,23 @@ class EnvNode:
 
     def __init__(
             self,
+            host,
+
             env_id,
             user_id,
-            host,
             external_vm,
             session_space,
             db_manager,
             g,
-            database
+            database,
+            qfn_id=None,
     ):
         # todo ther is just a single node type -> role is dynamically
 
         self.state = "inactive"
         LOGGER.info("init ENV")
         self.g=g
+        self.qfn_id=qfn_id
         # Firebase endpoint for session data
         self.session_space=session_space
         self.env = {}
@@ -64,8 +67,6 @@ class EnvNode:
         self.user_id = user_id
         self.database=database
         self.db_manager=db_manager
-        self.initial_frontend_data = {}
-
         self.external_vm: bool = external_vm
 
 
@@ -86,7 +87,7 @@ class EnvNode:
             }
 
         # Build a G from init data and load in self.g
-        self.g.build_G_from_data(initial_data, self.initial_frontend_data, self.env_id)
+        self.g.build_G_from_data(initial_data, self.env_id)
         self.all_subs = [(nid, attrs) for nid, attrs in self.g.G.nodes(data=True) if attrs.get("type") in ALL_SUBS]
 
         # when start -> send time as puffer + now = start to all start simulatnously
@@ -106,14 +107,13 @@ class EnvNode:
         self.state = "active"
         LOGGER.info(f"ENV worker {self.env['id']}is waiting in {self.state}-mode")
 
-        # Iit all sub fields niisde the cluster
-        await self.build_env()
 
     async def build_env(self):
         # Sim State Handler
         # build _ray network, start _qfn_cluster_node etc
         self.sim_state_handler = ClusterCreator(
             # g, env, database, host, external_vm, session_space
+            self.qfn_id,
             self.g,
             self.env,
             self.database,
@@ -124,25 +124,3 @@ class EnvNode:
         # Create and Load Ray Actors in the G
         self.sim_state_handler.load_ray_remotes()
         LOGGER.info("finished env build process")
-
-
-"""
-
-    def distribute_neighbors(self):
-        for nid, attrs in [(nid, attrs) for nid, attrs in self.g.G.nodes(data=True) if attrs.get("type") == "QFN"]:
-            all_sub_fields = self.qf_utils.get_all_node_sub_fields(nid)
-
-            # Loop all fields
-            for sid, sattrs in all_sub_fields:
-                # Load attrs in class
-                LOGGER.info(f"get neighbors for: {sid}")
-
-                # all sub-fild neighbors
-                neighbors = self.g.get_neighbor_list(sid, ALL_SUBS)
-
-                LOGGER.info("Send neighbors to remote")
-                target = self.g.G.nodes[sid]["ref"]
-                target.receiver.receive.remote(data={"type": "neighbors", "data": neighbors})
-
-
-"""

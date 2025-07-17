@@ -5,7 +5,9 @@ import ray
 
 from cluster_nodes.cluster_utils.receiver import ReceiverWorker
 from cluster_nodes.cluster_utils.db_worker import DBWorker
+from cluster_nodes.server.types import HOST_TYPE
 from cluster_nodes.updator.updator_worker import UpdatorWorker
+from gdb_manager.g_utils import DBManager
 from qf_core_base.calculator.calculator import Calculator
 from qf_core_base.qf_utils.all_subs import ALL_SUBS
 from utils.graph.local_graph_utils import GUtils
@@ -31,7 +33,10 @@ else:
             class_name=class_name,
             py_module_path=module_path,
         )"""
+
+
 ENV_ID = os.environ.get("ENV_ID")
+INSTANCE = os.environ.get("FIREBASE_RTDB")
 NODE_TYPE = os.environ.get("NODE_TYPE")
 
 @ray.remote
@@ -55,7 +60,17 @@ class FieldWorkerNode:
     """
 
     def __init__(
-            self
+            self,
+            G,
+            attrs: dict,
+            env,
+            user_id,
+            database,
+            host,
+            external_vm,
+            session_space,
+            admin,
+            neighbors,
     ):
 
         """
@@ -69,27 +84,25 @@ class FieldWorkerNode:
         session_space,
         admin
         """
+
         self.state = "online"
+        self.G = G
+        self.attrs = attrs
+        self.env = env
+        self.user_id = user_id
+        self.database = database
+        self.host: HOST_TYPE = host # include now: head & qfn ref
+        self.external_vm = external_vm
+        self.session_space = session_space
+        self.admin = admin
+        self.instance = INSTANCE
+        self.host["node_worker"] = ray.get_runtime_context().current_actor
 
-        self.head_ref = ray.get_actor(ENV_ID)
-        self.ref = ray.get_runtime_context().current_actor
-
-        # Request attrs from server
-        self.response_payload = asyncio.run(self._get_init_data())
-
-        self.attrs = self.response_payload["attrs"]
-        self.env = self.response_payload["env"]
-        self.env_id = self.env.get("id")
-        self.G = self.response_payload["G"]
-
-        self.user_id = self.response_payload["user_id"]
-        self.database = self.response_payload["database"]
-        self.instance = self.response_payload["instance"]
-
+        self.neighbors:dict=neighbors
         # Build GUtils with ENV created G
         self.g = GUtils(
             nx_only=False,
-            G=self.G,
+            G=None,
             g_from_path=None,
             user_id=self.user_id,
         )
@@ -99,20 +112,21 @@ class FieldWorkerNode:
 
         self.parent = self.attrs["parent"][0]
 
-        self.run = False
+        self.ref = ray.get_actor(self.id)
+
         self.queue = QueueHandler()
+
+        self.run = False
         self.listener = None  # listen to chnges & update
-
-        self.neighbors:tuple or None = None  # {id:ref # jeder nachbar erhält komplette Kopie
-
         self.connector = None  # all neighbors over ws -> zu kompliziert alle haben zugriff auf GUtils und somit auf direkte nachbarn
         self.history_hndler = None  # Klasse zum validieren letzter schritte
 
         self.calculator = Calculator(self.g)
 
-
         # DB instance
-        self.db_worker = DBWorker.remote(
+        self.db_path = f"{self.database}/{self.id}"
+
+        self.host["db_worker"] = DBWorker.remote(
             table_name="NONE",
             upload_to="fb",
             instance=self.instance,  # set root of db
@@ -121,6 +135,8 @@ class FieldWorkerNode:
             G=None,
             g_from_path=None,
             user_id=self.user_id,
+            parent_ref=self.ref,
+            self_item_up_path=self.db_path
         )
 
         self.main_loop_handler = UpdatorWorker.remote(
@@ -129,46 +145,34 @@ class FieldWorkerNode:
             self.env,
             self.id,
             self.parent,
+            host=self.host
         )
 
         self.receiver = ReceiverWorker.remote(
             main_loop_handler=self.main_loop_handler
         )
 
-        self.state = "standby"
-        LOGGER.info(f"worker {self.id}is waiting in {self.state}-mode",)
+        self.attrs["metadata"]["status"]["state"] = "active"
+        LOGGER.info(f"worker {self.id} is waiting in {self.state}-mode",)
 
         # Send status message
-        self._distribute_state()
-
-    async def _get_init_data(self):
-        data = await self.head_ref.receiver.receive.remote(
-            payload={
-                "data": {
-                    "ntype": NODE_TYPE,
-                    "all_subs": ALL_SUBS,
-                    "ref": self.ref,
-                },
-                "type": "init_handshake"
-            }
-        )
-        LOGGER.info("Data from head received...")
-        return data
+        self._upsert_metadata()
 
 
-    async def _distribute_state(self):
+    async def apply_neighbor_changes(self, nid, attrs):
+        LOGGER.info(f"Update attrs for n: {nid}")
+        self.neighbors[nid].update(attrs)
+
+    async def _upsert_metadata(self):
         # Send
-        await self.head_ref.receiver.receive.remote(
+        await self.host["db_worker"].receiver.receive.remote(
             payload={
-                "data": {
-                    "state": self.state,
-                    "id": self.id
-                },
-                "type": "worker_status"
+                "db_path": f"{self.database}/metadata",
+                "meta": self.attrs["metadata"],
+                "type": "upsert_meta"
             }
         )
         LOGGER.info("Upsert process finished")
-
 
     async def _lampart_clock_handling(self, payload):
         """
@@ -185,7 +189,30 @@ class FieldWorkerNode:
         n_time = payload["time"]
         self.attrs["time"] = max(self.attrs["time"], n_time) + 1  # + 1 for causality
 
+"""async def _get_init_data(self):
+    data = await self.head_ref.receiver.receive.remote(
+        payload={
+            "data": {
+                "ntype": NODE_TYPE,
+                "all_subs": ALL_SUBS,
+                "ref": self.ref,
+            },
+            "type": "init_handshake"
+        }
+    )
+    LOGGER.info("Data from head received...")
+    return data"""
 
+# Request attrs from server
+#self.response_payload = asyncio.run(self._get_init_data())
 
+"""
+self.attrs = self.response_payload["attrs"]
+self.env = self.response_payload["env"]
+self.env_id = self.env.get("id")
+self.G = self.response_payload["G"]
 
-
+self.user_id = self.response_payload["user_id"]
+self.database = self.response_payload["database"]
+self.instance = self.response_payload["instance"]
+"""
