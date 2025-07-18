@@ -125,17 +125,12 @@ class FieldWorkerNode:
         self.db_path = f"{self.database}/{self.id}"
 
         self.host["db_worker"] = DBWorker.remote(
-            table_name="NONE",
-            upload_to="fb",
-            instance=self.instance,  # set root of db
-            database=self.database,  # spec user spec entry (like table)
-            nx_only=False,
-            g=self.g,
-            g_from_path=None,
-            user_id=self.user_id,
-            host=self.host,
-            self_item_up_path=self.db_path,
-            attrs=self.attrs
+            instance = self.instance,  # set root of db
+            database = self.database,  # spec user spec entry (like table)
+            g = self.g,
+            user_id = self.user_id,
+            host = self.host,
+            attrs = self.attrs
         )
 
         self.main_loop_handler = UpdatorWorker.remote(

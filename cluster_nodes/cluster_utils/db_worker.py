@@ -26,12 +26,11 @@ class DBWorker:
             self,
             g,
             attrs,
-            relay_id,
             instance,
             database,
             user_id,
-            session_space,
             host,
+            session_space=None,
             self_item_up_path=None,
             upload_to="fb",
             table_name=None,
@@ -59,7 +58,6 @@ class DBWorker:
 
         self.allowed_hosts = [nid for nid, v in self.g.G.nodes(data=True) if v["type"] in ALL_SUBS]
 
-        self.relay_id=relay_id
         self.attrs = attrs
 
         self.listener_worker = Listener.remote(

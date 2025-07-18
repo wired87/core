@@ -181,15 +181,13 @@ class HeadServer:
         )
 
         self.host["db_worker"] = DBWorker.remote(
-            table_name="NONE",
             instance=self.instance,  # set root of db
             database=self.database,  # spec user spec entry (like table)
-            nx_only=False,
             g=self.g,
-            g_from_path=None,
             user_id=self.user_id,
             host=self.host,
             attrs=self.attrs
+
         )
 
         self.listener = Listener.remote(
