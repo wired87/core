@@ -25,7 +25,7 @@ class DBWorker:
     def __init__(
             self,
             g,
-            env,
+            attrs,
             relay_id,
             instance,
             database,
@@ -60,7 +60,7 @@ class DBWorker:
         self.allowed_hosts = [nid for nid, v in self.g.G.nodes(data=True) if v["type"] in ALL_SUBS]
 
         self.relay_id=relay_id
-        self.attrs = env
+        self.attrs = attrs
 
         self.listener_worker = Listener.remote(
             self.g,

@@ -134,7 +134,8 @@ class FieldWorkerNode:
             g_from_path=None,
             user_id=self.user_id,
             host=self.host,
-            self_item_up_path=self.db_path
+            self_item_up_path=self.db_path,
+            attrs=self.attrs
         )
 
         self.main_loop_handler = UpdatorWorker.remote(
