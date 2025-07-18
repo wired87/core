@@ -180,7 +180,9 @@ class HeadServer:
         )
         # BUOLD G
 
-        self.host["db_worker"].build_G.remote()
+        self.host["db_worker"].build_G.remote(
+            testing=True
+        )
         self.env = self.g.G.nodes[ENV_ID]
 
         ## INIT CLASSES AND REMOTES ##

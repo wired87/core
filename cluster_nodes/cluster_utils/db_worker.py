@@ -6,6 +6,7 @@ from cluster_nodes.qfn import ENV_ID
 from qf_core_base.qf_utils.all_subs import ALL_SUBS
 
 from gdb_manager.g_utils import DBManager
+from qf_sim.runners.demo_runner import DemoRunner
 from utils.graph.local_graph_utils import GUtils
 from utils.logger import LOGGER
 
@@ -101,7 +102,7 @@ class DBWorker:
             )
 
 
-    def build_G(self):
+    def build_G(self, testing=False):
         """
         build G from data set self ref and creates
         all sub nodes of a specific
@@ -110,14 +111,21 @@ class DBWorker:
         # format to save storage -> just for testing
         LOGGER.info(f"Build G")
 
-        initial_data = self.db_manager._fetch_g_data()
-        if not initial_data:
-            LOGGER.error("No initial data found, cannot build environment.")
-            return
+        if testing is True:
+            LOGGER.info("Testing mode active, building G with DemoRunner")
+            demo = DemoRunner(
+                self.g,
+            )
+            demo.create()
+        else:
+            LOGGER.info("Building G from initial data")
+            initial_data = self.db_manager._fetch_g_data()
+            if not initial_data:
+                LOGGER.error("No initial data found, cannot build environment.")
+                return
 
-        # Build a G from init data and load in self.g
-        self.g.build_G_from_data(initial_data, ENV_ID)
-
+            # Build a G from init data and load in self.g
+            self.g.build_G_from_data(initial_data, ENV_ID)
         LOGGER.info(f"Graph successfully build")
 
     async def _handle_upsert(self):
