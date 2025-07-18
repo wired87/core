@@ -2,4 +2,6 @@
 config.yaml
 db.sqlite3
 betse_app
-utils/file
+static
+static_root
+_manim
