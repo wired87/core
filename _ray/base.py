@@ -1,9 +1,11 @@
 import os
 import socket
 import subprocess
+import time
 
 import ray
 from ray import serve
+from ray.exceptions import RayActorError
 
 from bm.settings import OS_NAME
 from containers.head.main import HeadServer
@@ -23,12 +25,20 @@ class RayAdminBase:
 
     def start(self):
         os.environ["RAY_DISABLE_DASHBOARD"] = "1" if OS_NAME =="nt" else "0"
-        ray.init(
-            ignore_reinit_error=True,
-            local_mode=self.local_mode,
-            include_dashboard=self.include_dashboard,
-            address=f"{self.ip}:{self.ray_port}",
-        )
+
+        for _ in range(10):
+            try:
+                ray.init(
+                    ignore_reinit_error=True,
+                    local_mode=self.local_mode,
+                    include_dashboard=self.include_dashboard,
+                    address=f"{self.ip}:{self.ray_port}",
+                )
+
+                break
+            except Exception as e:
+                print("Retrying ray.init()", e)
+                time.sleep(1)
         print("ray initialized")
 
     def start_head(self):
@@ -37,16 +47,42 @@ class RayAdminBase:
     def stop_ray(self):
         subprocess.run(["ray", "stop", "--force"], check=True)
 
-    def run_serve(self):
-        serve.start(
-            http_options={"host": self.ip, "port": self.http_port},
-            detached=True, disable_dashboard=os.name == "nt"
-        )
+    def start_serve(self):
+        for i in range(10):
+            try:
+                print(f"[Try {i + 1}] Starting serve.run()")
+                serve.start(
+                    http_options={"host": "0.0.0.0", "port": self.http_port},
+                    detached=True, disable_dashboard=os.name == "nt"
+                )
+                print("✅ serve.start() started successfully")
+                break
+            except RayActorError as e:
+                print(f"⚠️ serve.start() failed, retrying...: {e}")
+                time.sleep(2)
+            except Exception as e:
+                print("🔥 Unexpected error in serve.run():", e)
+                time.sleep(2)
 
-        serve.run(
-            HeadServer.options(name=self.env_id).bind(),
-            route_prefix=f"/{self.env_id}"
-        )
+    def run_serve(self):
+        for i in range(10):
+            try:
+                print(f"[Try {i + 1}] Starting serve.run()")
+                serve.run(
+                    HeadServer.options(name=self.env_id).bind(),
+                    route_prefix=f"/{self.env_id}"
+                )
+                print("✅ serve.run() started successfully")
+
+                break
+            except RayActorError as e:
+                print("⚠️ serve.run() failed, retrying...")
+                time.sleep(2)
+            except Exception as e:
+                print("🔥 Unexpected error in serve.run():", e)
+                time.sleep(2)
+
+
 
 
     def stop(self):
