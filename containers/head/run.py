@@ -1,5 +1,6 @@
 import shutil
 import os
+import socket
 import subprocess
 import time
 import ray
@@ -9,7 +10,8 @@ from ray.exceptions import RayActorError
 from containers.head import ENV_ID
 from containers.head.main import HeadDepl
 
-
+ip = socket.gethostbyname(socket.gethostname())
+port = 6379
 
 if __name__ == "__main__":
     try:
@@ -22,7 +24,7 @@ if __name__ == "__main__":
             shutil.rmtree(ray_tmp_path, ignore_errors=True)
 
 
-        subprocess.run(["ray", "start", "--head", "--port=6379", "--include-dashboard=false"], check=True)
+        subprocess.run(["ray", "start", "--head", f"--port={port}", "--include-dashboard=false"], check=True)
         os.environ["RAY_LOG_TO_STDERR"] = "1"
         os.environ["RAY_DISABLE_AUTO_WORKER_SETUP"] = "1"
 
@@ -30,7 +32,7 @@ if __name__ == "__main__":
 
         for _ in range(10):
             try:
-                ray.init(address="auto", )
+                ray.init(address=f"{ip}:{port}", )
                 break
             except Exception as e:
                 print("Retrying ray.init()...")
@@ -54,7 +56,6 @@ if __name__ == "__main__":
             except Exception as e:
                 print("🔥 Unexpected error in serve.run():", e)
                 time.sleep(2)
-
 
     except Exception as e:
         print(f"Fehler: {e}")
