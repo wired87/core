@@ -4,7 +4,7 @@ from concurrent.futures.thread import ThreadPoolExecutor
 
 import ray
 
-from cluster_nodes.updator.node import FieldWorkerNode
+from cluster_nodes.updator.node import FieldWorkerNode, ENV_ID
 from qf_core_base.fermion import FERM_PARAMS
 from qf_core_base.g import GAUGE_FIELDS
 from qf_core_base.qf_utils.all_subs import ALL_SUBS
@@ -17,16 +17,14 @@ class ClusterCreator:
     Gets called inside of each qfn docker
     """
 
-    def __init__(self, qfn_id, g, env, database, host, external_vm, session_space):
+    def __init__(self, g, env, database, host, external_vm):
         self.g=g
         self.qf_utils = QFUtils(g)
         self.env=env
         self.database = database,
         self.host = host
-        self.qfn_id=qfn_id
         self.external_vm = external_vm
         # Firebase endpoint for session data
-        self.session_space = session_space
 
 
     def load_ray_remotes(self):
@@ -36,13 +34,12 @@ class ClusterCreator:
         # Call in init world process befro update
         LOGGER.info("build env")
         for nid, attrs in [(nid, attrs) for nid, attrs in self.g.G.nodes(data=True) if attrs.get("type") == "QFN"]:
-            if nid == self.qfn_id:
-                all_sub_fields = self.qf_utils.get_all_node_sub_fields(nid)
-                #LOGGER.info(f"ALL EXTRACTED SUBS: {all_sub_fields}")
-                # Loop all fields
-                for field in all_sub_fields:
-                    #LOGGER.info(f">>>field: {field}")
-                    self.launch_remotes_parallel(fields=field)
+            all_sub_fields = self.qf_utils.get_all_node_sub_fields(nid)
+            #LOGGER.info(f"ALL EXTRACTED SUBS: {all_sub_fields}")
+            # Loop all fields
+            for field in all_sub_fields:
+                #LOGGER.info(f">>>field: {field}")
+                self.launch_remotes_parallel(fields=field)
 
     def launch_remotes_parallel(self, fields, parallel=4):
         actors = []
@@ -70,7 +67,6 @@ class ClusterCreator:
             self.database,
             self.host,
             self.external_vm,
-            self.session_space,
             admin=False
         )
         self.g.G.nodes[nid]["ref"] = ref
@@ -123,7 +119,7 @@ class ClusterCreator:
                     attrs["ref"].receiver.receive.remote(
                         data={
                             "type": "status",
-                            "data": self.env.get("id"),
+                            "data": ENV_ID,
                         }
                     )
                     for nid, attrs in self.g.G.nodes(data=True)

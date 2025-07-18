@@ -6,6 +6,7 @@ from qf_core_base.qf_utils.all_subs import ALL_SUBS
 
 from gdb_manager.g_utils import DBManager
 from utils.graph.local_graph_utils import GUtils
+from utils.logger import LOGGER
 
 ALL_ENV_STATES=[
     "inactive"
@@ -105,9 +106,28 @@ class DBWorker:
 
 
 
+    def build_G(self):
+        #def _init_world(self):
+        """
+        build G from data set self ref and creates
+        all sub nodes of a specific
+        """
+        # Build G and load in self.g todo: after each sim, convert the sub-ield graph back to this
+        # format to save storage -> just for testing
+        LOGGER.info(f"ENV _init_world request received")
 
+        initial_data = self.db_manager._fetch_g_data()
+        if not initial_data:
+            LOGGER.error("No initial data found, cannot build environment.")
+            return
 
+        # Build a G from init data and load in self.g
+        self.g.build_G_from_data(initial_data, self.env_id)
+        self.all_subs = [(nid, attrs) for nid, attrs in self.g.G.nodes(data=True) if attrs.get("type") in ALL_SUBS]
 
+        # reset
+        self.all_subs = None
+        LOGGER.info(f"ENV worker {self.env['id']}is waiting in {self.state}-mode")
 
     async def _handle_upsert(self):
         pass

@@ -9,6 +9,7 @@ from cluster_nodes.cluster_utils.db_worker import DBWorker
 from cluster_nodes.cluster_utils.listener import Listener
 from cluster_nodes.cluster_utils.receiver import ReceiverWorker
 from cluster_nodes.server.env_ray_node import EnvNode
+from cluster_nodes.server.stat_handler import ClusterCreator
 
 from cluster_nodes.server.state_handle import StateHandler
 from cluster_nodes.server.types import HOST_TYPE, WS_INBOUND, WS_OUTBOUND
@@ -178,20 +179,9 @@ class HeadServer:
             host=self.host,
             attrs=self.attrs
         )
-
-        self.env_initializer = EnvNode(
-            self.host,
-            self.env_id,
-            self.user_id,
-            external_vm=False,
-            session_space=None,
-            g=self.g,
-            database=self.database
-        )
-
-        # BUILD G
-        self.env_initializer._init_world()
-        self.set_stuff()
+        # BUOLD G
+        self.host["db_worker"].build_G.remote()
+        self.env = self.g.G.nodes[ENV_ID]
 
         ## INIT CLASSES AND REMOTES ##
         # MSG Receiver any changes
@@ -208,6 +198,22 @@ class HeadServer:
             self.host["db_worker"].get_db_manager.remote(),
             self.host
         )
+
+
+        self.sim_state_handler = ClusterCreator(
+            self.g,
+            self.env,
+            self.database,
+            self.host,
+            self.external_vm,
+        )
+        # Create and Load Ray Actors in the G
+        self.sim_state_handler.load_ray_remotes()
+
+        # BUILD G
+        self.set_stuff()
+
+
         print("All classes in Head")
 
 

@@ -68,7 +68,6 @@ class FieldWorkerNode:
             database,
             host,
             external_vm,
-            session_space,
             admin,
             neighbors,
     ):
@@ -92,7 +91,6 @@ class FieldWorkerNode:
         self.database = database
         self.host: HOST_TYPE = host # include now: head & qfn ref
         self.external_vm = external_vm
-        self.session_space = session_space
         self.admin = admin
         self.instance = INSTANCE
         self.host["node_worker"] = ray.get_runtime_context().current_actor

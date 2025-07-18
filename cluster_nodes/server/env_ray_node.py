@@ -68,42 +68,8 @@ class EnvNode:
         self.external_vm: bool = external_vm
 
 
-    def _init_world(self):
-        """
-        build G from data set self ref and creates
-        all sub nodes of a specific
-        """
-        # Build G and load in self.g todo: after each sim, convert the sub-ield graph back to this
-        # format to save storage -> just for testing
-        LOGGER.info(f"ENV _init_world request received")
-
-        initial_data = ray.get(self.host["db_worker"].fetch_g_data.remote())
-        if not initial_data:
-            LOGGER.error("No initial data found, cannot build environment.")
-            return
-
-        # Build a G from init data and load in self.g
-        self.g.build_G_from_data(initial_data, self.env_id)
-        self.all_subs = [(nid, attrs) for nid, attrs in self.g.G.nodes(data=True) if attrs.get("type") in ALL_SUBS]
-
-        # reset
-        self.all_subs = None
-        LOGGER.info(f"ENV worker {self.env['id']}is waiting in {self.state}-mode")
-
-
     async def build_env(self):
         # Sim State Handler
         # build _ray network, start _qfn_cluster_node etc
-        self.sim_state_handler = ClusterCreator(
-            # g, env, database, host, external_vm, session_space
-            self.qfn_id,
-            self.g,
-            self.env,
-            self.database,
-            self.host,
-            self.external_vm,
-            self.session_space,
-        )
-        # Create and Load Ray Actors in the G
-        self.sim_state_handler.load_ray_remotes()
+
         LOGGER.info("finished env build process")
