@@ -8,7 +8,7 @@ from ray import serve
 from ray.exceptions import RayActorError
 
 from containers.head import ENV_ID
-from containers.head.main import HeadDepl
+from containers.head.main import HeadServer
 
 ip = socket.gethostbyname(socket.gethostname())
 port = 6379
@@ -45,7 +45,7 @@ if __name__ == "__main__":
             try:
                 print(f"[Try {i + 1}] Starting serve.run()")
                 serve.run(
-                    HeadDepl.options(name=ENV_ID).bind(),
+                    HeadServer.options(name=ENV_ID).bind(),
                     route_prefix=f"/{ENV_ID}",
                 )
                 print("✅ serve.run() started successfully")

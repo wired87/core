@@ -22,9 +22,6 @@ from utils.graph.local_graph_utils import GUtils
 from utils.id_gen import generate_id
 from utils.logger import LOGGER
 
-# dynamic imports
-
-
 
 
 
@@ -34,7 +31,7 @@ from utils.logger import LOGGER
     num_replicas=1
 )
 @serve.ingress(app)
-class HeadDepl:
+class HeadServer:
 
     """
     Tasks:
@@ -47,6 +44,7 @@ class HeadDepl:
     """
 
     def __init__(self):
+        LOGGER.info("Initializing HeadDepl...")
         self.session_id = "unknown"
         self.ws_key = None
         self.node_type = os.environ.get("NODE_TYPE")  # HEAD || QFN
@@ -92,7 +90,7 @@ class HeadDepl:
             self.g,
         )
 
-        print("ServerWorker-Deployment initialisiert!")
+        print("HeadDeplDeployment initialisiert!")
 
         # MARK: receiver will handle distribution of graph data
         # AND name all nodes
@@ -167,6 +165,7 @@ class HeadDepl:
             LOGGER.info("ALL_SUBS set for head")
 
     async def _init_process(self):
+        print("init all HeadDepl classes")
         self.database = f"users/{self.user_id}/env/{self.env_id}/"
         self.instance = os.environ.get("FIREBASE_RTDB")
 
@@ -217,8 +216,9 @@ class HeadDepl:
 
         # Send node_ids and db path to front
 
-
+        print("Set stuff in HeadDepl")
         await self.set_stuff()
+        print("All classes in Head")
 
 
 
