@@ -35,12 +35,9 @@ class DBManager(
             table_name="CELL",
             upload_to: str = "fb",  # bq || sp || fb
             database=None,
-            nx_only=False,
-            G=None,
             g_from_path=None,
             user_id=None,
             instance=None,
-            env_id=None
     ):
         
         self.database = database

@@ -99,8 +99,6 @@ class HeadServer:
             head_ref=self.host["head"]
         )
 
-        self._init_process()
-
         self.g = GUtils(
             nx_only=False,
             G=None,
@@ -112,6 +110,7 @@ class HeadServer:
             self.g,
         )
 
+        self._init_process()
         print("HeadDeplDeployment initialisiert!")
 
 

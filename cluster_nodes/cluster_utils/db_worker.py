@@ -51,8 +51,6 @@ class DBWorker:
                 upload_to=upload_to,
                 instance=instance,  # set root of db
                 database=database,  # spec user spec entry (like table)
-                nx_only=False,
-                G=self.g.G,
                 g_from_path=None,
                 user_id=user_id,
             )
