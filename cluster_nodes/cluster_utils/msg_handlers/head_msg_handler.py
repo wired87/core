@@ -1,9 +1,11 @@
 import asyncio
+import json
 import time
 
 import networkx as nx
 import ray
 
+from cluster_nodes.server.types import WS_INBOUND
 from qf_core_base.qf_utils.all_subs import ALL_SUBS
 from qf_core_base.qf_utils.qf_utils import QFUtils
 from utils.graph.local_graph_utils import GUtils
@@ -33,9 +35,8 @@ class HeadMessageManager:
         self.states={}
 
 
-    async def _init_hs_relay(self):
-
-        self.host["head"]._init_hs_relay.remote()
+    async def _init_hs_relay(self, data):
+        self.host["head"]._init_hs_relay.remote(data)
 
 
     async def _state_handler(self, state, nid):
@@ -131,20 +132,6 @@ class HeadMessageManager:
         # Return attrs to
         return response_payload
 
-    """def _get_handshake_response_content(self, nid, attrs):
-        "Get all qfn neighbors of"
-
-        # todo erstelle tiny_G nur center (ref) node u direkte nachbarm = self._build_tinyG(nid)
-
-        response_payload = dict(
-            env=self.env,
-            attrs=attrs,
-            G=self.g.G,
-            database=self.database,
-            user_id=self.user_id
-        )
-        return response_payload
-    """
 
 
     def _build_tinyG(self, nid) -> dict:
@@ -186,8 +173,6 @@ class HeadMessageManager:
     async def _stim_handler(self):
         # todo
         return True
-
-
 
 
     async def _worker_status(self, payload):

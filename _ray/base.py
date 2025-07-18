@@ -8,7 +8,7 @@ from ray import serve
 from ray.exceptions import RayActorError
 
 from bm.settings import OS_NAME
-from containers.head.main import HeadServer
+from cluster_container.head.main import HeadServer
 
 
 class RayAdminBase:

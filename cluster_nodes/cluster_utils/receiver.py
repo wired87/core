@@ -39,7 +39,8 @@ class ReceiverWorker:
                 ("stim", self.msg_handler._stim_handler),
                 ("cluster_msg", self.msg_handler.send_message),
                 ("init_handshake", self.msg_handler._init_handshake),
-                ("init_hs_relay", self.msg_handler._init_hs_relay),
+
+                # WS
             ]
 
         elif self.host_node_type == "data_processor":

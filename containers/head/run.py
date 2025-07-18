@@ -4,7 +4,7 @@ import subprocess
 
 
 from _ray.base import RayAdminBase
-from containers.head import ENV_ID
+from cluster_container.head import ENV_ID
 
 
 

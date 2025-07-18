@@ -21,6 +21,27 @@ from utils.id_gen import generate_id
 from utils.logger import LOGGER
 
 
+def _validate_msg(msg) -> dict[WS_INBOUND] and bool:
+    LOGGER.info("WS validated!")
+    return json.loads(msg), True
+
+@app.websocket("/{env_id}")
+async def handle_ws(websocket: WebSocket, env_id):
+    await websocket.accept()
+    head = serve.get_deployment_handle(env_id)
+    if head is not None:
+        while True:
+            try:
+                async for data in websocket.iter_json():
+                    data, valid = _validate_msg(data)
+                    if valid is True:
+                        await head.receiver.receive.remote(data)
+            except Exception as e:
+                print(f"Error while listening to: {e}")
+                break
+    else:
+        await websocket.close()
+
 @serve.deployment(
     num_replicas=1,
     ray_actor_options={"num_cpus": .2}
@@ -73,7 +94,10 @@ class HeadServer:
         self.all_subs = None
 
         # start worker update loop
-        self.state_checker = StateHandler.remote(self.ref)
+        self.state_checker = StateHandler.remote(
+            head_ref=self.host["head"]
+        )
+
         self._init_process()
 
         self.g = GUtils(
@@ -103,20 +127,7 @@ class HeadServer:
             "type": "status"
         })
 
-    @app.websocket("/{env_id}")
-    async def main(self, websocket: WebSocket, env_id):
-        # host_name = await self.manager.connect(env_id, websocket)
-        while True:
-            try:
-                data = await websocket.receive_json()
-                # await websocket.send_text(f"Message text was: {data}")
-                # print(f"Msg received from {host_name}")
-                # todo initial validation
-                msg:WS_INBOUND = self._validate_msg(data)
-                self.receiver.receive.remote(msg)
-            except Exception as e:
-                print(f"Error while listening to: {e}")
-                break
+
 
     def _init_hs_relay(self, msg):
         key = msg["key"]
@@ -133,9 +144,7 @@ class HeadServer:
     def get_active_env_con(self):
         return self.manager.active_connections.get(self.env_id, None)
 
-    def _validate_msg(self, msg):
-        # todo more
-        return json.loads(msg)
+
 
     async def get_ative_workers(self):
         return self.active_workers
@@ -176,7 +185,7 @@ class HeadServer:
             instance=self.instance,  # set root of db
             database=self.database,  # spec user spec entry (like table)
             nx_only=False,
-            G=None,
+            g=self.g,
             g_from_path=None,
             user_id=self.user_id,
             host=self.host,
