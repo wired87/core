@@ -7,24 +7,25 @@ import ray
 from ray import serve
 from ray.exceptions import RayActorError
 
+from _ray.base import RayAdminBase
 from containers.head import ENV_ID
-from containers.head.main import HeadServer
 
-ip = socket.gethostbyname(socket.gethostname())
-port = 6379
+
 
 if __name__ == "__main__":
     try:
         os.path.expanduser("~")
 
-        subprocess.run(["ray", "stop", "--force"], check=True)
+        ray_admin = RayAdminBase(env_id=ENV_ID)
+        ray_admin.stop_ray()
+
         # → manuelles Löschen alter Ray-Session
         if os.name == "nt":
             ray_tmp_path = os.path.join(os.environ["USERPROFILE"], "AppData", "Local", "Temp", "ray")
             shutil.rmtree(ray_tmp_path, ignore_errors=True)
 
+        ray_admin.start_head()
 
-        subprocess.run(["ray", "start", "--head", f"--port={port}", "--include-dashboard=false"], check=True)
         os.environ["RAY_LOG_TO_STDERR"] = "1"
         os.environ["RAY_DISABLE_AUTO_WORKER_SETUP"] = "1"
 
@@ -32,7 +33,7 @@ if __name__ == "__main__":
 
         for _ in range(10):
             try:
-                ray.init(address=f"{ip}:{port}", )
+                ray_admin.start()
                 break
             except Exception as e:
                 print("Retrying ray.init()...")
@@ -43,15 +44,7 @@ if __name__ == "__main__":
         for i in range(10):
             try:
                 print(f"[Try {i + 1}] Starting serve.run()")
-                serve.start(
-                    http_options={"host": ip, "port": port},
-                    detached = True, disable_dashboard = os.name == "nt"
-                )
-
-                serve.run(
-                    HeadServer.options(name=ENV_ID).bind(),
-                    route_prefix=f"/{ENV_ID}"
-                )
+                ray_admin.run_serve()
 
                 print("✅ serve.run() started successfully")
                 break
