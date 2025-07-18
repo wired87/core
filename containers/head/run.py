@@ -38,16 +38,21 @@ if __name__ == "__main__":
                 print("Retrying ray.init()...")
                 time.sleep(1)
 
-        serve.start(detached=True, disable_dashboard=True)  # explizit starten
         #time.sleep(2)  # kleine Verzögerung
         # Retry serve.run()
         for i in range(10):
             try:
                 print(f"[Try {i + 1}] Starting serve.run()")
+                serve.start(
+                    http_options={"host": ip, "port": port},
+                    detached = True, disable_dashboard = os.name == "nt"
+                )
+
                 serve.run(
                     HeadServer.options(name=ENV_ID).bind(),
-                    route_prefix=f"/{ENV_ID}",
+                    route_prefix=f"/{ENV_ID}"
                 )
+
                 print("✅ serve.run() started successfully")
                 break
             except RayActorError as e:
