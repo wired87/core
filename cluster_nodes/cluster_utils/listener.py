@@ -1,8 +1,8 @@
 import ray
 
 from cluster_nodes.server.types import LISTENER_PAYLOAD
-from gdb_manager.g_utils import DBManager
 from qf_core_base.qf_utils.all_subs import ALL_SUBS
+from utils.graph.local_graph_utils import GUtils
 
 
 @ray.remote
@@ -18,30 +18,30 @@ class Listener:
             self,
             g,
             db_manager,
-            node_ids:list,
-            parent_ref
+            host
     ):
-        self.parent_ref = parent_ref
+        self.host = host
         self.db_paths=self._get_db_paths()
-        self.g = g
+        self.g:GUtils = g
         self.run=False
 
         self.db_manager=db_manager
 
         self.listener_paths = self.db_manager.firebase.get_listener_endpoints(
-            nodes=node_ids
+            nodes=self.g.id_map
         )
 
         self.db_manager.firebase._run_firebase_listener(
             db_path=self.listener_paths,
             update_def=self.listener_action
         )
-       #print("main updator intialized")
+
+        print("main updator intialized")
 
 
 
     async def listener_action(self, payload:LISTENER_PAYLOAD):
-        self.parent_ref.receiver.receive.remote(
+        self.host["field_worker"].receiver.receive.remote(
             payload=payload
         )
 

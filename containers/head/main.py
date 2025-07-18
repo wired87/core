@@ -8,10 +8,8 @@ from fastapi import WebSocket
 from cluster_nodes.cluster_utils.db_worker import DBWorker
 from cluster_nodes.cluster_utils.listener import Listener
 from cluster_nodes.cluster_utils.receiver import ReceiverWorker
-from cluster_nodes.manager.trainer import LiveTrainer
 from cluster_nodes.server.env_ray_node import EnvNode
 
-from cluster_nodes.server.set_endpoint import set_endpoint
 from cluster_nodes.server.state_handle import StateHandler
 from cluster_nodes.server.types import HOST_TYPE, WS_INBOUND, WS_OUTBOUND
 from containers.head import app, ENV_ID, USER_ID
@@ -23,12 +21,9 @@ from utils.id_gen import generate_id
 from utils.logger import LOGGER
 
 
-
-
-# 2. Definiere deinen Dienst als Ray Serve Deployment
-# remote dynamisch übr hardware hoppen lassen (ip check)
 @serve.deployment(
-    num_replicas=1
+    num_replicas=1,
+    ray_actor_options={"num_cpus": .2}
 )
 @serve.ingress(app)
 class HeadServer:
@@ -53,9 +48,12 @@ class HeadServer:
         self.user_id = USER_ID
 
         self.ref = serve.get_deployment_handle(self.env_id)
+
         self.host: HOST_TYPE = {
             "head": self.ref,
+            "field_worker": self.ref,
         }
+
         self.states = {}
         self.attrs = None
         self.g = None
@@ -69,6 +67,8 @@ class HeadServer:
         # Listen to DB changes
         self.listener = None
 
+        #self.db_path = f"{self.database}/{self.id}"
+
         self._init_process()
         self.active_workers = []
         self.all_worker_active = False
@@ -77,7 +77,6 @@ class HeadServer:
 
         # start worker update loop
         self.state_checker = StateHandler.remote(self.ref)
-        self.state_checker.check_state.remote()
 
         self.g = GUtils(
             nx_only=False,
@@ -121,13 +120,13 @@ class HeadServer:
             except Exception as e:
                 print(f"Error while listening to: {e}")
                 break
+
     def _init_hs_relay(self, msg):
         key = msg["key"]
         if key == self.env_id:
             self.session_id = msg["session_id"]
             self.ws_key = generate_id()
             self.ws_key = key
-
 
 
     async def set_ws_validation_key(self, key):
@@ -144,8 +143,6 @@ class HeadServer:
     async def get_ative_workers(self):
         return self.active_workers
 
-
-
     async def send_ws(self, data:WS_OUTBOUND, ptype:str):
         payload: WS_OUTBOUND = {
             "key": self.ws_key,
@@ -155,8 +152,6 @@ class HeadServer:
         LOGGER.info("Send payload to relay")
         con = self.get_active_env_con()
         await con.send_json(payload)
-
-
 
 
     async def set_all_subs(self, all_subs):
@@ -176,8 +171,7 @@ class HeadServer:
             self.host,
             self.attrs,
             self.user_id,
-            G=self.g.G,
-            extra_payload=None
+            g=self.g,
         )
         self.host["db_worker"] = DBWorker.remote(
             table_name="NONE",
@@ -188,8 +182,7 @@ class HeadServer:
             G=None,
             g_from_path=None,
             user_id=self.user_id,
-            parent_ref=self.ref,
-            self_item_up_path=self.db_path
+            host=self.host,
         )
         self.listener = Listener.remote(
             self.g.G,
@@ -206,7 +199,7 @@ class HeadServer:
             self.user_id,
             external_vm=False,
             session_space=None,
-            db_manager=self.db_manager,
+            db_manager=self.host["db_worker"].db_manager,
             g=self.g,
             database=self.database
         )
@@ -214,15 +207,11 @@ class HeadServer:
         # Fetch ds content and build G
         await self.env_initializer._init_world()
 
-        # Send node_ids and db path to front
-
-        print("Set stuff in HeadDepl")
-        await self.set_stuff()
+        self.set_stuff()
         print("All classes in Head")
 
 
-
-    async def set_stuff(self):
+    def set_stuff(self):
         # Get STRUCT OF ALL SUBS STATES CATGORIZED IN QFNS
         self.states:dict=self.g.get_qf_subs_state()
 

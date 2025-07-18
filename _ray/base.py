@@ -15,8 +15,8 @@ class RayAdminBase:
 
     def __init__(self, env_id):
         self.logs_dir = r"C:\Users\wired\OneDrive\Desktop\BestBrain\tmp\ray\session_*\logs" if OS_NAME == "nt" else "/tmp/_ray/session_*/logs"
-        self.include_dashboard=OS_NAME!="nt"
-        self.local_mode = OS_NAME=="nt"
+        self.include_dashboard = OS_NAME != "nt"
+        self.local_mode = OS_NAME == "nt"
         self.ip = socket.gethostbyname(socket.gethostname())
         self.ray_port = 6379
         self.http_port = 8001
@@ -24,7 +24,7 @@ class RayAdminBase:
         print("RayBase initialized")
 
     def start(self):
-        os.environ["RAY_DISABLE_DASHBOARD"] = "1" if OS_NAME =="nt" else "0"
+        os.environ["RAY_DISABLE_DASHBOARD"] = "1" if OS_NAME == "nt" else "0"
 
         for _ in range(10):
             try:
@@ -67,16 +67,17 @@ class RayAdminBase:
     def run_serve(self):
 
         serve.run(
-            HeadServer.options(name=self.env_id).bind(),
+            HeadServer.options(
+                name=self.env_id
+            ).bind(),
             route_prefix=f"/{self.env_id}"
         )
         print("✅ serve.run() started successfully")
 
-
-
-
-
-
     def stop(self):
         ray.shutdown()
-        print("_ray shutdown")
+        print("🛑 ray shutdown")
+
+
+    def status(self):
+        subprocess.run(["ray", "status"])

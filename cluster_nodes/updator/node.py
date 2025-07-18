@@ -112,8 +112,6 @@ class FieldWorkerNode:
 
         self.parent = self.attrs["parent"][0]
 
-        self.ref = ray.get_actor(self.id)
-
         self.queue = QueueHandler()
 
         self.run = False
@@ -135,7 +133,7 @@ class FieldWorkerNode:
             G=None,
             g_from_path=None,
             user_id=self.user_id,
-            parent_ref=self.ref,
+            host=self.host,
             self_item_up_path=self.db_path
         )
 

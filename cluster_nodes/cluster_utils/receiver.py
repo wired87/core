@@ -1,4 +1,3 @@
-
 import ray
 
 from cluster_nodes.cluster_utils.msg_handlers.data_msg_handler import DataMessageManager
@@ -13,23 +12,24 @@ class ReceiverWorker:
     def __init__(
             self,
             node_type,
-            active_workers=None,
-            main_loop_handler=None,
-            G=None,
-            parent_ref=None,
+            host,
+            attrs,
+            user_id,
+            g=None,
+            database=None,
     ):
         self.queue_handler = QueueHandler()
         self.running = False
         self.host_node_type = node_type
+        self.host = host
+        self.attrs=attrs
+        self.user_id=user_id
+        self.g=g
+        self.database=database
 
         if self.host_node_type == "head":
             self.msg_handler = HeadMessageManager(
-                host, 
-                attrs, 
-                user_id, 
-                parent,
-                active_workers,
-                G,
+                attrs, user_id, self.database, g, host
             )
             self.cases:list[tuple]=[
                 ("status", self.msg_handler._state_req),
@@ -44,8 +44,9 @@ class ReceiverWorker:
 
         elif self.host_node_type == "data_processor":
             self.msg_handler = DataMessageManager(
-                parent_ref=parent_ref
+                parent_ref=self.host["field_worker"],
             )
+
             self.cases: list[tuple] = [
                 ("data_update", self.msg_handler.get_data_update),
             ]
@@ -56,7 +57,11 @@ class ReceiverWorker:
 
         elif self.host_node_type == "QFN":
             self.msg_handler = QFNMsgHandler(
-                host=self.host
+                self.host,
+                self.attrs,
+                self.user_id,
+                self.g
+
             )
 
         else:
@@ -64,8 +69,7 @@ class ReceiverWorker:
                 host,
                 attrs,
                 user_id,
-                external_vm,
-                main_loop_handler=main_loop_handler
+                self.g,
             )
             self.cases = [
                 ("neighbors", self.msg_handler._set_neighbors),
@@ -76,13 +80,6 @@ class ReceiverWorker:
                 ("stop", self.msg_handler._stop),
             ]
         print("ReceiverWorker initialized.")
-
-
-
-
-
-
-
 
 
     async def _validate_request(self):

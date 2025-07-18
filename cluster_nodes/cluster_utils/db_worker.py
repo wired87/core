@@ -6,7 +6,7 @@ from cluster_nodes.cluster_utils.receiver import ReceiverWorker
 from qf_core_base.qf_utils.all_subs import ALL_SUBS
 
 from gdb_manager.g_utils import DBManager
-
+from utils.graph.local_graph_utils import GUtils
 
 ALL_ENV_STATES=[
     "inactive"
@@ -24,20 +24,23 @@ class DBWorker:
 
     def __init__(
             self,
-            G,
+            g,
             env,
             relay_id,
             instance,
             database,
             user_id,
             session_space,
-            parent_ref,
-            self_item_up_path,
+            host,
+            self_item_up_path=None,
             upload_to="fb",
             table_name=None,
 
     ):
         self.state = "inactive"
+        self.g:GUtils = g
+
+        self.host=host
 
         # Firebase endpoint for session data
         self.session_space = session_space
@@ -49,21 +52,20 @@ class DBWorker:
                 instance=instance,  # set root of db
                 database=database,  # spec user spec entry (like table)
                 nx_only=False,
-                G=G,
+                G=self.g.G,
                 g_from_path=None,
                 user_id=user_id,
             )
 
-        self.allowed_hosts = [nid for nid, v in G.nodes(data=True) if v["type"] in ALL_SUBS]
+        self.allowed_hosts = [nid for nid, v in self.g.G.nodes(data=True) if v["type"] in ALL_SUBS]
 
         self.relay_id=relay_id
         self.attrs = env
 
         self.listener_worker = Listener.remote(
             self.g,
-            parent_id,
-            db_manager,
-            parent_ref
+            self.db_manager,
+            self.host
         )
 
         self.receiver=ReceiverWorker.remote(

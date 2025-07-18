@@ -70,7 +70,7 @@ class EnvNode:
         self.external_vm: bool = external_vm
 
 
-    async def _init_world(self):
+    def _init_world(self):
         """
         build G from data set self ref and creates
         all sub nodes of a specific

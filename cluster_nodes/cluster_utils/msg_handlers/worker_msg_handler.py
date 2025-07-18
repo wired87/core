@@ -1,6 +1,3 @@
-import asyncio
-import time
-
 from utils.graph.local_graph_utils import GUtils
 from utils.logger import LOGGER
 
@@ -11,20 +8,13 @@ class WorkerMessageManager:
     Entry for any messages to worker nodes
     """
 
-    def __init__(self, host, attrs, user_id, external_vm, main_loop_handler):
+    def __init__(self, host, attrs, user_id, g):
         self.attrs=attrs
         self.attrs_id= attrs.get("id")
         self.user_id=user_id
         self.host=host
-        self.main_loop_handler=main_loop_handler
 
-        self.external_vm = external_vm
-        self.g = GUtils(
-            nx_only=False,
-            G=None,
-            g_from_path=None,
-            user_id=self.user_id,
-        )
+        self.g:GUtils = g
 
 
 

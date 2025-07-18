@@ -17,22 +17,14 @@ class HeadMessageManager:
     Head node message handler
     """
 
-    def __init__(self, parent, attrs, user_id, env, database, G, host):
+    def __init__(self, attrs, user_id, database, g, host):
         self.attrs=attrs
         self.attrs_id= attrs.get("id")
-        self.env=env
         self.database=database
         self.user_id=user_id
         self.host=host
-        self.head_ref = ray.get_actor(env["id"])
 
-        self.parent = parent
-        self.g = GUtils(
-            nx_only=False,
-            G=G,
-            g_from_path=None,
-            user_id=self.user_id,
-        )
+        self.g = g
         self.ids_distributed = []
 
         self.qf_utils = QFUtils(
@@ -80,13 +72,12 @@ class HeadMessageManager:
         )
 
 
-
     async def _start(self):
         """
         loop through all specified nodes and
         """
         LOGGER.info(f"ENV _start request received")
-        all_subs = await self.head_ref.get_all_subs.remote()
+        all_subs = await self.host["head"].get_all_subs.remote()
         # Start Agents
         start_time = int(time.time())
         await asyncio.gather(*[
@@ -115,7 +106,7 @@ class HeadMessageManager:
 
         # Set ALL_SUBS IN Head
         all_subs = payload["data"]["all_subs"]
-        await self.head_ref.set_all_subs.remote(all_subs)
+        await self.host["head"].set_all_subs.remote(all_subs)
 
         for nid, attrs in self.g.G.nodes(data=True):
             ntype = attrs.get("type")
@@ -140,7 +131,7 @@ class HeadMessageManager:
         # Return attrs to
         return response_payload
 
-    def _get_handshake_response_content(self, nid, attrs):
+    """def _get_handshake_response_content(self, nid, attrs):
         "Get all qfn neighbors of"
 
         # todo erstelle tiny_G nur center (ref) node u direkte nachbarm = self._build_tinyG(nid)
@@ -153,6 +144,7 @@ class HeadMessageManager:
             user_id=self.user_id
         )
         return response_payload
+    """
 
 
     def _build_tinyG(self, nid) -> dict:
@@ -180,12 +172,6 @@ class HeadMessageManager:
 
 
 
-
-
-
-
-
-
     # get paths of all nodes -> fb
     async def _stop(self):
         LOGGER.info(f"ENV stop request received")
@@ -203,31 +189,23 @@ class HeadMessageManager:
 
 
 
-    async def _state_req(self, payload):
-        if payload == getattr(self.parent, "id"):
-            # Frontend Updator status request
-            return (self.attrs_id, self.state)
-        else:
-            LOGGER.info(f"Mismatch request:self host id: {payload}:{self.attrs['id']}")
-
 
     async def _worker_status(self, payload):
         state= payload["data"]["state"]
         nid= payload["data"]["id"]
-        active_workers = await self.head_ref.get_ative_workers.remote()
+        active_workers = await self.host["head"].get_ative_workers.remote()
 
         if state == "active" and nid not in active_workers:
-            self.head_ref.handle_active_worker_states.remote(
+            self.host["head"].handle_active_worker_states.remote(
                 "append",
                 nid
             )
 
         elif state == "shutdown" and nid not in active_workers:
-            self.head_ref.handle_active_worker_states.remote(
+            self.host["head"].handle_active_worker_states.remote(
                 "remove",
                 nid
             )
-
         else:
             LOGGER.error(f"Unknown status request from node: {nid} status: {state}")
 
