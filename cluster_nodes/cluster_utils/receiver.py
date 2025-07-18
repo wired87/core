@@ -57,14 +57,12 @@ class ReceiverWorker:
             pass
 
         elif self.host_node_type == "db_worker":
-
             self.msg_handler = DBMsgHandler()
 
             self.cases=[
                 ("upsert", self.msg_handler._handle_upsert),
                 ("upsert_meta", self.msg_handler.iter_upsert),
             ],
-
 
         elif self.host_node_type == "QFN":
             self.msg_handler = QFNMsgHandler(

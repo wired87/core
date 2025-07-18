@@ -137,7 +137,6 @@ class FieldWorkerNode:
             self.host,
             self.attrs,
             self.user_id,
-            g=self.g,
         )
 
         self.attrs["metadata"]["status"]["state"] = "active"

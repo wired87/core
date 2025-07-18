@@ -58,8 +58,6 @@ class DBWorker:
                 user_id=user_id,
             )
 
-        self.allowed_hosts = [nid for nid, v in self.g.G.nodes(data=True) if v["type"] in ALL_SUBS]
-
         self.attrs = attrs
 
         self.receiver=ReceiverWorker.remote(
@@ -67,7 +65,6 @@ class DBWorker:
             self.host,
             self.attrs,
             self.user_id,
-            g=self.g,
             database=None,
         )
         self.state = "active"
@@ -117,10 +114,8 @@ class DBWorker:
 
         if testing is True:
             LOGGER.info("Testing mode active, building G with DemoRunner")
-            demo = DemoRunner(
-                self.g,
-            )
-            demo.create()
+            demo = DemoRunner()
+            G = demo.create()
         else:
             LOGGER.info("Building G from initial data")
             initial_data = self.db_manager._fetch_g_data()
@@ -129,8 +124,10 @@ class DBWorker:
                 return
 
             # Build a G from init data and load in self.g
-            self.g.build_G_from_data(initial_data, ENV_ID)
+            self.env, self.env_id, G = self.g.build_G_from_data(initial_data, ENV_ID)
+
         LOGGER.info(f"Graph successfully build")
+        return G
 
 
 

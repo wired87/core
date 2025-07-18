@@ -6,19 +6,17 @@ from ray import serve
 import json
 from fastapi import WebSocket
 
+from cluster_nodes.cluster_utils.G import UtilsWorker
 from cluster_nodes.cluster_utils.db_worker import DBWorker
 from cluster_nodes.cluster_utils.listener import Listener
 from cluster_nodes.cluster_utils.receiver import ReceiverWorker
-from cluster_nodes.server.env_ray_node import EnvNode
 from cluster_nodes.server.stat_handler import ClusterCreator
 
 from cluster_nodes.server.state_handle import StateHandler
 from cluster_nodes.server.types import HOST_TYPE, WS_INBOUND, WS_OUTBOUND
 from containers.head import app, ENV_ID, USER_ID
-from qf_core_base.qf_utils.qf_utils import QFUtils
 
 from utils.dj_websocket.handler import ConnectionManager
-from utils.graph.local_graph_utils import GUtils
 from utils.id_gen import generate_id
 from utils.logger import LOGGER
 
@@ -64,7 +62,6 @@ class HeadServer:
     def __init__(self):
         LOGGER.info("Initializing HeadDepl...")
         self.session_id = "unknown"
-        self.ws_key = None
         self.node_type = os.environ.get("NODE_TYPE")  # HEAD || QFN
 
         self.env_id = ENV_ID
@@ -78,37 +75,25 @@ class HeadServer:
         }
 
         self.states = {}
-        self.attrs = None
-        self.g = None
-        self.external_vm = None
+
+        self.active_workers = []
 
         self.extern_host = {}
         self.messages_sent = 0
         self.manager = ConnectionManager()
         self.receiver = None
+        self.attrs = None
+        self.external_vm = None
+        self.ws_key = None
 
         # Listen to DB changes
         self.listener = None
-
-        self.active_workers = []
         self.all_worker_active = False
-
         self.all_subs = None
 
         # start worker update loop
         self.state_checker = StateHandler.remote(
             head_ref=self.host["head"]
-        )
-
-        self.g = GUtils(
-            nx_only=False,
-            G=None,
-            g_from_path=None,
-            user_id=self.user_id,
-        )
-
-        self.qf_utils = QFUtils(
-            self.g,
         )
 
         self._init_process()
@@ -171,6 +156,10 @@ class HeadServer:
         self.database = f"users/{self.user_id}/env/{self.env_id}/"
         self.instance = os.environ.get("FIREBASE_RTDB")
 
+        self.host["utils_worker"] = UtilsWorker.options(
+            name="utils_worker",
+        ).remote()
+
         self.host["db_worker"] = DBWorker.remote(
             instance=self.instance,  # set root of db
             database=self.database,  # spec user spec entry (like table)
@@ -181,11 +170,15 @@ class HeadServer:
         )
         # BUOLD G
 
-        ray.get(self.host["db_worker"].build_G.remote(
+        G = ray.get(self.host["db_worker"].build_G.remote(
             testing=True
         ))
 
-        self.env = self.g.G.nodes[ENV_ID]
+        # SET G IN UTILS
+        ray.get(self.host["utils_worker"].set_g.remote(G))
+
+
+
 
         ## INIT CLASSES AND REMOTES ##
         # MSG Receiver any changes
@@ -202,6 +195,7 @@ class HeadServer:
             self.host["db_worker"].get_db_manager.remote(),
             self.host
         )
+
 
 
         self.sim_state_handler = ClusterCreator(
