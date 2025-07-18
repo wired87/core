@@ -65,22 +65,14 @@ class RayAdminBase:
                 time.sleep(2)
 
     def run_serve(self):
-        for i in range(10):
-            try:
-                print(f"[Try {i + 1}] Starting serve.run()")
-                serve.run(
-                    HeadServer.options(name=self.env_id).bind(),
-                    route_prefix=f"/{self.env_id}"
-                )
-                print("✅ serve.run() started successfully")
 
-                break
-            except RayActorError as e:
-                print("⚠️ serve.run() failed, retrying...")
-                time.sleep(2)
-            except Exception as e:
-                print("🔥 Unexpected error in serve.run():", e)
-                time.sleep(2)
+        serve.run(
+            HeadServer.options(name=self.env_id).bind(),
+            route_prefix=f"/{self.env_id}"
+        )
+        print("✅ serve.run() started successfully")
+
+
 
 
 
