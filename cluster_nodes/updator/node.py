@@ -84,7 +84,7 @@ class FieldWorkerNode:
         session_space,
         admin
         """
-
+        self.node_type = attrs.get("type")
         self.state = "online"
         self.G = G
         self.attrs = attrs
@@ -143,7 +143,11 @@ class FieldWorkerNode:
         )
 
         self.receiver = ReceiverWorker.remote(
-            main_loop_handler=self.main_loop_handler
+            self.node_type,
+            self.host,
+            self.attrs,
+            self.user_id,
+            g=self.g,
         )
 
         self.attrs["metadata"]["status"]["state"] = "active"

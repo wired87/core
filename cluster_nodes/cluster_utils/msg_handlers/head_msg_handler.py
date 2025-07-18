@@ -32,8 +32,7 @@ class HeadMessageManager:
         self.qf_utils = QFUtils(
             self.g,
         )
-        self.states={}
-
+        self.states = {}
 
     async def _init_hs_relay(self, data):
         self.host["head"]._init_hs_relay.remote(data)

@@ -69,6 +69,9 @@ class DBWorker:
         print(f"DBWorker initialisiert")
 
 
+    def get_db_manager(self):
+        return self.db_manager
+
     async def iter_upsert(self, attrs):
         self.db_manager.firebase.upsert_data(
             path=self.self_item_up_path,

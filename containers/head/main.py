@@ -185,7 +185,7 @@ class HeadServer:
             self.user_id,
             external_vm=False,
             session_space=None,
-            db_manager=self.host["db_worker"].db_manager,
+            db_manager=self.host["db_worker"].get_db_manager.remote(),
             g=self.g,
             database=self.database
         )
@@ -206,12 +206,9 @@ class HeadServer:
 
         self.listener = Listener.remote(
             self.g,
-            self.host["db_worker"].db_manager,
+            self.host["db_worker"].get_db_manager.remote(),
             self.host
         )
-
-
-
         print("All classes in Head")
 
 
