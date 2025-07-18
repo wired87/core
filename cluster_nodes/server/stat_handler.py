@@ -63,7 +63,7 @@ class ClusterCreator:
             final_neighbor_struct[nid] = attrs
 
         ref = FieldWorkerNode.options(name=nid).remote(
-            self.g.G,
+            self.g,
             attrs,
             self.env,
             self.g.user_id,

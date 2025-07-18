@@ -185,7 +185,6 @@ class HeadServer:
             self.user_id,
             external_vm=False,
             session_space=None,
-            db_manager=self.host["db_worker"].get_db_manager.remote(),
             g=self.g,
             database=self.database
         )

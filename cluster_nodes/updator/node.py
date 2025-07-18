@@ -61,7 +61,7 @@ class FieldWorkerNode:
 
     def __init__(
             self,
-            G,
+            g,
             attrs: dict,
             env,
             user_id,
@@ -86,7 +86,6 @@ class FieldWorkerNode:
         """
         self.node_type = attrs.get("type")
         self.state = "online"
-        self.G = G
         self.attrs = attrs
         self.env = env
         self.user_id = user_id
@@ -97,15 +96,8 @@ class FieldWorkerNode:
         self.admin = admin
         self.instance = INSTANCE
         self.host["node_worker"] = ray.get_runtime_context().current_actor
-
+        self.g=g
         self.neighbors:dict=neighbors
-        # Build GUtils with ENV created G
-        self.g = GUtils(
-            nx_only=False,
-            G=None,
-            g_from_path=None,
-            user_id=self.user_id,
-        )
 
         self.type = self.attrs.get("type")
         self.id = self.attrs.get("id")

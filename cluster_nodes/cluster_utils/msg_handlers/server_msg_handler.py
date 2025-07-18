@@ -19,13 +19,6 @@ class ServerMessageManager:
             user_id=self.user_id,
         )
 
-    async def _relay(self, payload):
-       #print("request received:", payload)
-        EnvNode.receiver.receive.remote(
-            data=payload
-        )
-
-
     async def _cluster_msg(self, payload):
         # todo validation
         # todo fine granting of msg type (html, state etc...)

@@ -48,7 +48,6 @@ class EnvNode:
             user_id,
             external_vm,
             session_space,
-            db_manager,
             g,
             database,
             qfn_id=None,
@@ -66,7 +65,6 @@ class EnvNode:
         self.env_id = env_id
         self.user_id = user_id
         self.database=database
-        self.db_manager=db_manager
         self.external_vm: bool = external_vm
 
 
@@ -79,32 +77,17 @@ class EnvNode:
         # format to save storage -> just for testing
         LOGGER.info(f"ENV _init_world request received")
 
-        initial_data = self.db_manager._fetch_g_data()
-        if initial_data is None:
-            self.state = {
-                "msg": "unable_fetch_data",
-                "src": self.db_manager.database,
-            }
+        initial_data = ray.get(self.host["db_worker"].fetch_g_data.remote())
+        if not initial_data:
+            LOGGER.error("No initial data found, cannot build environment.")
+            return
 
         # Build a G from init data and load in self.g
         self.g.build_G_from_data(initial_data, self.env_id)
         self.all_subs = [(nid, attrs) for nid, attrs in self.g.G.nodes(data=True) if attrs.get("type") in ALL_SUBS]
 
-        # when start -> send time as puffer + now = start to all start simulatnously
-
-        self.env = self.g.G.nodes[self.env_id]
-        self.env["ref"] = ray.get_runtime_context().current_actor
-
-        # Create ray remotes from G data
-        # await self.build_env()
-
-        # Listen to DB cha  nges
         # reset
-        self.initial_frontend_data = {}
-        self.local = True  #
         self.all_subs = None
-
-        self.state = "active"
         LOGGER.info(f"ENV worker {self.env['id']}is waiting in {self.state}-mode")
 
 

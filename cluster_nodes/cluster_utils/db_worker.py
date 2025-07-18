@@ -68,7 +68,6 @@ class DBWorker:
         self.state = "active"
         print(f"DBWorker initialisiert")
 
-
     def get_db_manager(self):
         return self.db_manager
 
