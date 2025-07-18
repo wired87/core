@@ -17,8 +17,10 @@ if __name__ == "__main__":
 
         subprocess.run(["ray", "stop", "--force"], check=True)
         # → manuelles Löschen alter Ray-Session
-        ray_tmp_path = os.path.join(os.environ["USERPROFILE"], "AppData", "Local", "Temp", "ray")
-        shutil.rmtree(ray_tmp_path, ignore_errors=True)
+        if os.name == "nt":
+            ray_tmp_path = os.path.join(os.environ["USERPROFILE"], "AppData", "Local", "Temp", "ray")
+            shutil.rmtree(ray_tmp_path, ignore_errors=True)
+
 
         subprocess.run(["ray", "start", "--head", "--port=6379", "--include-dashboard=false"], check=True)
         os.environ["RAY_LOG_TO_STDERR"] = "1"
