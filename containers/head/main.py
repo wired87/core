@@ -67,9 +67,6 @@ class HeadServer:
         # Listen to DB changes
         self.listener = None
 
-        #self.db_path = f"{self.database}/{self.id}"
-
-        self._init_process()
         self.active_workers = []
         self.all_worker_active = False
 
@@ -77,6 +74,7 @@ class HeadServer:
 
         # start worker update loop
         self.state_checker = StateHandler.remote(self.ref)
+        self._init_process()
 
         self.g = GUtils(
             nx_only=False,
@@ -91,8 +89,7 @@ class HeadServer:
 
         print("HeadDeplDeployment initialisiert!")
 
-        # MARK: receiver will handle distribution of graph data
-        # AND name all nodes
+
 
     async def handle_all_workers_active(self):
         """
@@ -159,7 +156,7 @@ class HeadServer:
             self.all_subs = all_subs
             LOGGER.info("ALL_SUBS set for head")
 
-    async def _init_process(self):
+    def _init_process(self):
         print("init all HeadDepl classes")
         self.database = f"users/{self.user_id}/env/{self.env_id}/"
         self.instance = os.environ.get("FIREBASE_RTDB")
@@ -205,7 +202,7 @@ class HeadServer:
         )
 
         # Fetch ds content and build G
-        await self.env_initializer._init_world()
+        self.env_initializer._init_world()
 
         self.set_stuff()
         print("All classes in Head")
