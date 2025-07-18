@@ -1,7 +1,6 @@
 
 import ray
 
-from cluster_nodes.cluster_utils.listener import Listener
 from cluster_nodes.cluster_utils.receiver import ReceiverWorker
 from qf_core_base.qf_utils.all_subs import ALL_SUBS
 
@@ -59,12 +58,6 @@ class DBWorker:
         self.allowed_hosts = [nid for nid, v in self.g.G.nodes(data=True) if v["type"] in ALL_SUBS]
 
         self.attrs = attrs
-
-        self.listener_worker = Listener.remote(
-            self.g,
-            self.db_manager,
-            self.host
-        )
 
         self.receiver=ReceiverWorker.remote(
             cases=[

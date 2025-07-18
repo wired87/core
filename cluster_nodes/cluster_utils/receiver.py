@@ -55,14 +55,12 @@ class ReceiverWorker:
         elif self.host_node_type == "trainer":
             pass
 
-
         elif self.host_node_type == "QFN":
             self.msg_handler = QFNMsgHandler(
                 self.host,
                 self.attrs,
                 self.user_id,
                 self.g
-
             )
 
         else:

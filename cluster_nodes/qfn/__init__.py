@@ -1,6 +1,5 @@
 import os
 
-from cluster_nodes.qfn.qfn_worker import QFNWorker
 
 #app = FastAPI()
 

@@ -170,16 +170,6 @@ class HeadServer:
         self.database = f"users/{self.user_id}/env/{self.env_id}/"
         self.instance = os.environ.get("FIREBASE_RTDB")
 
-        ## INIT CLASSES AND REMOTES ##
-        # MSG Receiver any changes
-        self.receiver = ReceiverWorker.remote(
-            self.node_type,
-            self.host,
-            self.attrs,
-            self.user_id,
-            g=self.g,
-        )
-
         self.host["db_worker"] = DBWorker.remote(
             instance=self.instance,  # set root of db
             database=self.database,  # spec user spec entry (like table)
@@ -187,18 +177,8 @@ class HeadServer:
             user_id=self.user_id,
             host=self.host,
             attrs=self.attrs
-
         )
 
-        self.listener = Listener.remote(
-            self.g.G,
-            self.env_id,
-            self.instance,
-            self.database,
-            self.user_id,
-            upload_to="fb",
-            table_name=None,
-        )
         self.env_initializer = EnvNode(
             self.host,
             self.env_id,
@@ -210,10 +190,28 @@ class HeadServer:
             database=self.database
         )
 
-        # Fetch ds content and build G
+        # BUILD G
         self.env_initializer._init_world()
-
         self.set_stuff()
+
+        ## INIT CLASSES AND REMOTES ##
+        # MSG Receiver any changes
+        self.receiver = ReceiverWorker.remote(
+            self.node_type,
+            self.host,
+            self.attrs,
+            self.user_id,
+            g=self.g,
+        )
+
+        self.listener = Listener.remote(
+            self.g,
+            self.host["db_worker"].db_manager,
+            self.host
+        )
+
+
+
         print("All classes in Head")
 
 

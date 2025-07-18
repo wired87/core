@@ -182,31 +182,3 @@ class FieldWorkerNode:
         """
         n_time = payload["time"]
         self.attrs["time"] = max(self.attrs["time"], n_time) + 1  # + 1 for causality
-
-"""async def _get_init_data(self):
-    data = await self.head_ref.receiver.receive.remote(
-        payload={
-            "data": {
-                "ntype": NODE_TYPE,
-                "all_subs": ALL_SUBS,
-                "ref": self.ref,
-            },
-            "type": "init_handshake"
-        }
-    )
-    LOGGER.info("Data from head received...")
-    return data"""
-
-# Request attrs from server
-#self.response_payload = asyncio.run(self._get_init_data())
-
-"""
-self.attrs = self.response_payload["attrs"]
-self.env = self.response_payload["env"]
-self.env_id = self.env.get("id")
-self.G = self.response_payload["G"]
-
-self.user_id = self.response_payload["user_id"]
-self.database = self.response_payload["database"]
-self.instance = self.response_payload["instance"]
-"""
