@@ -1,6 +1,7 @@
 import ray
 
 from cluster_nodes.cluster_utils.msg_handlers.data_msg_handler import DataMessageManager
+from cluster_nodes.cluster_utils.msg_handlers.db_msg_handler import DBMsgHandler
 from cluster_nodes.cluster_utils.msg_handlers.head_msg_handler import HeadMessageManager
 from cluster_nodes.cluster_utils.msg_handlers.qfn_msg_handler import QFNMsgHandler
 from cluster_nodes.cluster_utils.msg_handlers.worker_msg_handler import WorkerMessageManager
@@ -54,6 +55,16 @@ class ReceiverWorker:
 
         elif self.host_node_type == "trainer":
             pass
+
+        elif self.host_node_type == "db_worker":
+
+            self.msg_handler = DBMsgHandler()
+
+            self.cases=[
+                ("upsert", self.msg_handler._handle_upsert),
+                ("upsert_meta", self.msg_handler.iter_upsert),
+            ],
+
 
         elif self.host_node_type == "QFN":
             self.msg_handler = QFNMsgHandler(

@@ -38,14 +38,16 @@ class DBWorker:
             table_name=None,
 
     ):
+        self.node_type = "db_worker"
         self.state = "inactive"
         self.g:GUtils = g
-
+        self.user_id=user_id
         self.host=host
 
         # Firebase endpoint for session data
         self.session_space = session_space
         self.self_item_up_path=self_item_up_path
+
         # g not global -> qfns need to push new items here
         self.db_manager=DBManager(
                 table_name=table_name,
@@ -61,10 +63,12 @@ class DBWorker:
         self.attrs = attrs
 
         self.receiver=ReceiverWorker.remote(
-            cases=[
-                ("upsert", self._handle_upsert),
-                ("upsert_meta", self.iter_upsert),
-            ]
+            self.node_type,
+            self.host,
+            self.attrs,
+            self.user_id,
+            g=self.g,
+            database=None,
         )
         self.state = "active"
         print(f"DBWorker initialisiert")
@@ -128,6 +132,5 @@ class DBWorker:
             self.g.build_G_from_data(initial_data, ENV_ID)
         LOGGER.info(f"Graph successfully build")
 
-    async def _handle_upsert(self):
-        pass
+
 
