@@ -25,12 +25,13 @@ COPY cluster_nodes .
 
 COPY qf_core_base .
 COPY utils .
+COPY gdb_manager .
 
 # Install dependencies with no cache
 RUN pip install -r r.txt
 
 # Copy the rest of the project files into the working directory
-COPY . .
+COPY qfn_worker .
 
 # Set environment variables
 ENV PYTHONPATH=/usr/src/app:$PYTHONPATH

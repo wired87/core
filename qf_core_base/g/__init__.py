@@ -1,3 +1,4 @@
+import os
 
 from utils.convert_path_any_os import convert_path_any_os
 from utils.file._yaml import load_yaml
@@ -6,7 +7,7 @@ from utils.file._yaml import load_yaml
 #GAUGE_EQ = r"C:\Users\wired\OneDrive\Desktop\BestBrain\qf_sim\physics\quantum_fields\nodes\g\equations\gauge.yaml" if OS_NAME == "nt" else "qf_sim/physics/quantum_fields/nodes/g/equations/gauge.yaml"
 #GAUGE_EQ = load_yaml(GAUGE_EQ)
 
-GAUGE_FIELDS = "qf_core_base/g/gauge_fields.yaml"
+GAUGE_FIELDS = r"C:\Users\wired\OneDrive\Desktop\BestBrain\qf_core_base\g\gauge_fields.yaml" if os.name == "nt" else "qf_core_base/g/gauge_fields.yaml"
 GAUGE_FIELDS = load_yaml(GAUGE_FIELDS)
 
 

@@ -1,4 +1,3 @@
-from qf_core_base import FIELD_METADATA
 from qf_core_base.fermion import *
 from qf_sim.physics.quantum_fields.nodes.fermion.ferm_utils import FermUtils
 from utils._np.serialize_complex import serialize_complex
@@ -68,7 +67,7 @@ class FermCreator(FermUtils):
                 psi_bar=serialize_complex(com=psi_bar),
                 **PSI_UNIFORM,
                 **fattrs,
-                **FIELD_METADATA,
+                #**FIELD_METADATA,
             )
 
             self.g.add_node(attrs=attrs)
@@ -104,7 +103,7 @@ class FermCreator(FermUtils):
                 _symmetry_groups=self.get_sym_group(ferm_field),
                 **PSI_UNIFORM,
                 **attrs,
-                **FIELD_METADATA,
+                #**FIELD_METADATA,
             )
 
         self.g.add_node(attrs=parent_attrs)

@@ -1,4 +1,3 @@
-from qf_core_base import FIELD_METADATA
 from qf_core_base.g import GAUGE_FIELDS
 from qf_core_base.g.gauge_utils import GaugeUtils
 
@@ -145,7 +144,7 @@ class GaugeCreator(GaugeUtils):
                 j_nu=j_nu,
                 F_mu_nu=fmunu,
                 **gattrs,
-                **FIELD_METADATA,
+                #**FIELD_METADATA,
             )
 
             attrs[field_key] = field_value
@@ -183,7 +182,7 @@ class GaugeCreator(GaugeUtils):
             _symmetry_groups=symmetry_groups,
             #f_abc=None,
             **attrs,
-            **FIELD_METADATA,
+            #**FIELD_METADATA,
         )
         # Zusätzliche Felder nur für Nicht-Gluon
         parent_attrs[field_key] = field_value

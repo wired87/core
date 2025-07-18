@@ -1,3 +1,4 @@
+import os
 
 from utils.convert_path_any_os import convert_path_any_os
 from utils.file._yaml import load_yaml
@@ -16,8 +17,8 @@ PSI_PSI_EQ = load_yaml(PSI_PSI_EQ)
 PSI_EQ = load_yaml(PSI_EQ)
 """
 
-FERM_PARAMS = "qf_core_base/fermion/psi_fields.yaml"
-PSI_UNIFORM = "qf_core_base/fermion/psi_uniform.yaml"
+FERM_PARAMS = r"C:\Users\wired\OneDrive\Desktop\BestBrain\qf_core_base\fermion\psi_fields.yaml" if os.name == "nt" else "qf_core_base/fermion/psi_fields.yaml"
+PSI_UNIFORM = r"C:\Users\wired\OneDrive\Desktop\BestBrain\qf_core_base\fermion\psi_uniform.yaml" if os.name == "nt" else "qf_core_base/fermion/psi_uniform.yaml"
 
 FERM_PARAMS = load_yaml(FERM_PARAMS)
 PSI_UNIFORM = load_yaml(PSI_UNIFORM)

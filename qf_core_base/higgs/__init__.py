@@ -13,6 +13,7 @@ Andere Quantenzahlen: Leptonenzahl, Baryonenzahl,
 Isospin, etc., je nach Teilchen.
 
 """
+import os
 
 from utils.convert_path_any_os import convert_path_any_os
 from utils.file._yaml import load_yaml
@@ -26,8 +27,7 @@ PHI_EQ = load_yaml(PHI_EQ)
 PHI_PHI_EQ = load_yaml(PHI_PHI_EQ)
 PHI_GAUGE_EQ = load_yaml(PHI_GAUGE_EQ)
 """
-HIGGS_PARAMS = "qf_core_base/higgs/higgs_params.yaml"
-
+HIGGS_PARAMS = r"C:\Users\wired\OneDrive\Desktop\BestBrain\qf_core_base\higgs\higgs_params.yaml" if os.name == "nt" else "qf_core_base/higgs/higgs_params.yaml"
 HIGGS_PARAMS = load_yaml(HIGGS_PARAMS)
 
 

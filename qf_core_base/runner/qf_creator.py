@@ -28,7 +28,6 @@ todo graph of single equations: from qf_sim.calculator.knowledgebase import EQPa
 
 import numpy as np
 
-from qf_core_base import FIELD_METADATA
 from qf_core_base.fermion.ferm_creator import FermCreator
 from qf_core_base.fermion.ferm_utils import FermUtils
 from qf_core_base.g.g_creator import GaugeCreator
@@ -326,7 +325,7 @@ class QFCreator:
                 h=h,
                 phi=self.hu.init_phi(h),
                 **HIGGS_PARAMS,
-                **FIELD_METADATA,
+                #**FIELD_METADATA,
             )
         )
         # Connect PHI to QFN

@@ -15,7 +15,6 @@ from cluster_nodes.server.set_endpoint import set_endpoint
 from cluster_nodes.server.state_handle import StateHandler
 from cluster_nodes.server.types import HOST_TYPE, WS_INBOUND, WS_OUTBOUND
 from containers.head import app, ENV_ID, USER_ID
-from gdb_manager.g_utils import DBManager
 from qf_core_base.qf_utils.qf_utils import QFUtils
 
 from utils.dj_websocket.handler import ConnectionManager
@@ -32,7 +31,6 @@ from utils.logger import LOGGER
 # 2. Definiere deinen Dienst als Ray Serve Deployment
 # remote dynamisch übr hardware hoppen lassen (ip check)
 @serve.deployment(
-    route_prefix=set_endpoint(ENV_ID),
     num_replicas=1
 )
 @serve.ingress(app)
@@ -42,9 +40,6 @@ class HeadDepl:
     Tasks:
     com with relay & QFN
     distribute commands to the right nodes
-
-
-
     wf:
     everything starts
     qfn dockers initialize and msg the HeadDepl (self).
