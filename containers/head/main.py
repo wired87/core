@@ -1,6 +1,7 @@
 # pip install "_ray[serve]"
 import os
 
+import ray
 from ray import serve
 import json
 from fastapi import WebSocket
@@ -180,9 +181,10 @@ class HeadServer:
         )
         # BUOLD G
 
-        self.host["db_worker"].build_G.remote(
+        ray.get(self.host["db_worker"].build_G.remote(
             testing=True
-        )
+        ))
+
         self.env = self.g.G.nodes[ENV_ID]
 
         ## INIT CLASSES AND REMOTES ##
