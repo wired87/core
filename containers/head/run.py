@@ -13,6 +13,8 @@ from containers.head.main import HeadDepl
 
 if __name__ == "__main__":
     try:
+        os.path.expanduser("~")
+
         subprocess.run(["ray", "stop", "--force"], check=True)
         # → manuelles Löschen alter Ray-Session
         ray_tmp_path = os.path.join(os.environ["USERPROFILE"], "AppData", "Local", "Temp", "ray")
