@@ -2,6 +2,7 @@
 import ray
 
 from cluster_nodes.cluster_utils.receiver import ReceiverWorker
+from cluster_nodes.qfn import ENV_ID
 from qf_core_base.qf_utils.all_subs import ALL_SUBS
 
 from gdb_manager.g_utils import DBManager
@@ -102,19 +103,14 @@ class DBWorker:
             )
 
 
-
-
-
-
     def build_G(self):
-        #def _init_world(self):
         """
         build G from data set self ref and creates
         all sub nodes of a specific
         """
         # Build G and load in self.g todo: after each sim, convert the sub-ield graph back to this
         # format to save storage -> just for testing
-        LOGGER.info(f"ENV _init_world request received")
+        LOGGER.info(f"Build G")
 
         initial_data = self.db_manager._fetch_g_data()
         if not initial_data:
@@ -122,12 +118,9 @@ class DBWorker:
             return
 
         # Build a G from init data and load in self.g
-        self.g.build_G_from_data(initial_data, self.env_id)
-        self.all_subs = [(nid, attrs) for nid, attrs in self.g.G.nodes(data=True) if attrs.get("type") in ALL_SUBS]
+        self.g.build_G_from_data(initial_data, ENV_ID)
 
-        # reset
-        self.all_subs = None
-        LOGGER.info(f"ENV worker {self.env['id']}is waiting in {self.state}-mode")
+        LOGGER.info(f"Graph successfully build")
 
     async def _handle_upsert(self):
         pass

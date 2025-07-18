@@ -180,6 +180,7 @@ class HeadServer:
             attrs=self.attrs
         )
         # BUOLD G
+
         self.host["db_worker"].build_G.remote()
         self.env = self.g.G.nodes[ENV_ID]
 
