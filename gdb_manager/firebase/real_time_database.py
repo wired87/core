@@ -13,12 +13,16 @@ from dotenv import load_dotenv
 from firebase_admin.db import Reference
 from joblib import delayed
 
+from qf_core_base.qf_utils.all_subs import ALL_SUBS
 
 load_dotenv()
 
 
 # DS PATH             fb_dest=f"users/{self.user_id}/datastore/{self.envc_id}/",
 # G STATE PATH             fb_dest=f"users/{self.user_id}/env/{self.envc_id}/",
+# GLOBAL STATE PATH f"{self.database}/global_states/"
+
+
 # todo alle ds werden in gleichen apth geuppt (keine extra sessions) (vorerst)
 
 
@@ -222,7 +226,7 @@ class FirebaseRTDBManager:
         )
         self.listener_thread.start()
 
-    def _run_firebase_listener(self, db_path: str or list[str], update_def, loop: asyncio.AbstractEventLoop or None = None): # loop: asyncio.AbstractEventLoop,
+    def _run_firebase_listener(self, db_path: str or list[str], update_def, loop: asyncio.AbstractEventLoop or None = None, listener_type="db_changes"): # loop: asyncio.AbstractEventLoop,
         """
         Startet den blockierenden Firebase Realtime Database Listener.
         Läuft in einem separaten Thread.
@@ -231,10 +235,11 @@ class FirebaseRTDBManager:
             db_path: Der Pfad in der Datenbank, auf den gelauscht werden soll.
             loop: Eine Referenz auf den asyncio Event Loop des Consumers.
         """
-        print(f"Listener Thread {threading.current_thread().name}: Starte Listener für Pfad: {db_path}")
 
         if isinstance(db_path, str):
             db_path = [db_path]
+
+        print(f"Listener Thread {threading.current_thread().name}: Starte Listener für {len(db_path)} Pfade (0:{db_path[0]}")
 
         try:
             def on_data_change(event):
@@ -245,7 +250,7 @@ class FirebaseRTDBManager:
                 if event.data is not None:
 
                     update_payload = {
-                        "type": "db_changes",  # Oder ein anderer Typ für Updates
+                        "type": listener_type,  # Oder ein anderer Typ für Updates
                         "path": event.path,  # Der spezifische Pfad der Änderung
                         "data": event.data  # Die geänderten Daten an diesem Pfad
                     }
@@ -323,6 +328,19 @@ class FirebaseRTDBManager:
             f"{self.db_url}/{nid}" + "/metadata" if metadata is True else None
             for nid in nodes
         ]
+
+    def _get_db_paths_from_G(self, G, db_base, metadata=False):
+        # get paths for each node to lsiten to
+        paths = []
+        for nid, attrs in [(nid, attrs) for nid, attrs in G.nodes(data=True) if attrs["type"] in ALL_SUBS]:
+            path = f"{db_base}/{attrs['type']}/{nid}"
+            if metadata is True:
+                path += "/metadata"
+            paths.append(path)
+        return paths
+
+
+
 
 
 if __name__ == "__main__":

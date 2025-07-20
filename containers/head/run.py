@@ -1,12 +1,10 @@
 import shutil
 import os
-import subprocess
 
+###
 
-from _ray.base import RayAdminBase
-from containers.head import ENV_ID
-
-
+from _ray.core.main import RayAdminBase
+from cluster_nodes.qfn import ENV_ID
 
 if __name__ == "__main__":
     ray_admin = RayAdminBase(env_id=ENV_ID)

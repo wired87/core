@@ -1,3 +1,5 @@
+import ray
+
 from utils.graph.local_graph_utils import GUtils
 from utils.logger import LOGGER
 
@@ -18,20 +20,47 @@ class WorkerMessageManager:
 
 
 
-    async def apply_neighbor_changes(self, payload):
-        LOGGER.info("Filte neighbor changes")
+    async def neighbor_changes(self, payload):
+        LOGGER.info("Neighbor changes detected")
         # extract path
+
         path = payload["path"]
         attrs = payload["data"]
 
         if path.endswith("/"):
-            path=path[:-1]
+            path = path[:-1]
 
         nid = path.aplit("/")[-1]
 
-        await self.host["parent"].apply_neighbor_changes(
+        ray.get(self.host["field_worker"].apply_neighbor_changes.remote(
             nid, attrs
-        )
+        ))
+
+
+    async def global_changes(self, payload):
+        LOGGER.info("Global changes detected")
+        # extract path
+        attrs = payload["data"]
+        state = attrs.get("state")
+
+        field_worker_state = ray.get(self.host["field_worker"].get_state.remote())
+
+        if state == "start_sim" and field_worker_state == "active":
+            ray.get(self.host["updator_worker"].start.remote())
+
+        if state == "stop" and field_worker_state == "active":
+            # set run in updator = False -> ends round and sends last update
+            ray.get(self.host["updator_worker"].stop.remote())
+
+            # state change update
+            ray.get(self.host["field_worker"].get_state.remote(
+                state="inactive"
+            ))
+
+
+    async def _db_changes(self, payload):
+        validated_paylaod = payload  # todo
+        ray.get(self.host["head"].distribute_states.remote(validated_paylaod))
 
 
     async def _set_neighbors(self, payload):

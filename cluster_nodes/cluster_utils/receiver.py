@@ -40,6 +40,8 @@ class ReceiverWorker:
                 ("stim", self.msg_handler._stim_handler),
                 ("cluster_msg", self.msg_handler.send_message),
                 ("init_handshake", self.msg_handler._init_handshake),
+                ("init_hs_relay", self.msg_handler._init_hs_relay),
+                ("db_changes", self.msg_handler._db_changes),
 
                 # WS
             ]
@@ -82,6 +84,7 @@ class ReceiverWorker:
             self.cases = [
                 ("neighbors", self.msg_handler._set_neighbors),
                 ("db_changes", self.msg_handler._set_neighbors),
+                ("global_change", self.msg_handler.global_changes),
                 ("n_change", self.msg_handler._handle_n_change),
                 ("status", self.msg_handler._state_req),
                 ("start", self.msg_handler._start),

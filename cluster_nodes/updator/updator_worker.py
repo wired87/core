@@ -3,11 +3,51 @@ import time
 
 import ray
 
+from cluster_nodes.cluster_utils.listener import Listener
 from cluster_nodes.cluster_utils.processor import DataProcessorWorker
 from qf_core_base.calculator.calculator import Calculator
 from qf_core_base.qf_utils.all_subs import ALL_SUBS
 from qf_core_base.runner.qf_updator import QFUpdator
 from utils.logger import LOGGER
+
+class NeighborHandler:
+
+    def __init__(self, neighbors, host):
+        self.neighbors = neighbors
+        self.host = host
+        # Listens to live state changes to distribute
+        self.neighbor_change_listener = Listener.remote(
+            paths_to_listen=[
+                ray.get(self.host["db_worker"].firebase.get_listener_endpoints.remote(
+                    nodes=list(self.neighbors.keys()),
+                ))
+            ],
+            db_manager=ray.get(self.host["db_worker"].get_db_manager.remote()),
+            host=self.host,
+            listener_type="db_neighbor_changes",
+        )
+
+    async def apply_db_neighbor_changes(self, nid, attrs):
+        LOGGER.info(f"Update attrs for n: {nid}")
+        if nid in self.neighbors:
+            self.neighbors[nid].update(attrs)
+        else:
+            LOGGER.warning(f"Neighbor {nid} not found in current neighbors list")
+
+    async def _send_changes_to_neighbors(self):
+        # todo when changes are detected,
+        #  send to DB Worker Node
+        # send updated attrs to neighbors
+        tasks = [
+            nattrs["ref"].receiver.receive.remote(
+                {
+                    "type": "n_change",
+                    "data": self.attrs
+                })
+            for nnid, nattrs in self.neighbor_handler.neighbors
+        ]
+        await asyncio.gather(*tasks)
+
 
 
 @ray.remote
@@ -26,8 +66,9 @@ class UpdatorWorker:
             attrs,
             env,
             nid,
-            parent,
-            db_worker
+            parent:str,
+            host,
+            neighbor_struct
     ):
         self.id=nid
         self.attrs=attrs
@@ -35,8 +76,8 @@ class UpdatorWorker:
         self.run=False
         self.env=env
         self.prev = self.attrs[self.parent.lower()]
-        self.db_worker=db_worker
         self.g=g
+        self.host=host
 
         self.updator = QFUpdator(
             g,
@@ -49,9 +90,11 @@ class UpdatorWorker:
 
         self.calculator = Calculator(g)
 
-        self.neighbors = self.g.get_neighbor_list(
-            self.id,
-            target_type=ALL_SUBS
+
+        # Niehbor handler
+        self.neighbor_handler = NeighborHandler(
+            neighbors=neighbor_struct,
+            host=self.host
         )
 
         # set pm id -> get attrs in each iter
@@ -63,6 +106,7 @@ class UpdatorWorker:
             field_type=self.parent.lower()
         )
 
+        # AI and visual Data processor
         self.processor = DataProcessorWorker.remote()
 
         # Equations todo -> gleichungen direkt übern graphen laden
@@ -70,6 +114,7 @@ class UpdatorWorker:
             self.parent.lower()
         ]
         self.type=type
+        self.g.G=None
        #print("main updator intialized")
 
 
@@ -100,12 +145,11 @@ class UpdatorWorker:
 
             #changed = self._validate_changes(self.attrs)
 
-            await self._send_changes_to_neighbors()
             await self.send_process_data()
             print(f"finished update {self.id}")
             self.attrs["time"] += self.env["timestep"]
             # todo check len history -> load queue -> upsert
-            self.db_worker.iter_upsert(self.attrs)
+            ray.get(self.host["db_worker"].iter_upsert.remote(self.attrs))
         else:
             LOGGER.info(f"Update for {self.id} finished")
             # todo shutdown
@@ -122,19 +166,7 @@ class UpdatorWorker:
 
 
 
-    async def _send_changes_to_neighbors(self):
-        # todo when changes are detected,
-        #  send to DB Worker Node
-        # send updated attrs to neighbors
-        tasks = [
-            nattrs["ref"].receiver.receive.remote(
-                {
-                    "type": "n_change",
-                    "data": self.attrs
-                })
-            for nnid, nattrs in self.neighbors
-        ]
-        await asyncio.gather(*tasks)
+
 
 
     def stop(self):

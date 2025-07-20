@@ -1,3 +1,35 @@
+"""
+
+https://console.anyscale.com/cloud-setup/customer-hosted
+
+pip install -U "anyscale[gcp]"
+anyscale login # authenticate
+
+
+
+# Setup VM -> GKE communication
+# sudo apt-get install kubectl
+
+
+
+
+Struktur:
+Erstlle immer ein Dockerfile für das gesammte _qfn_cluster_node
+
+
+
+Start
+ray start --head --port=6379
+
+from _google.gke._ray.qf_core_base import RayBase
+
+_ray = RayBase()
+_ray.start()
+
+"""
+
+
+
 import os
 import socket
 import subprocess
@@ -9,6 +41,7 @@ from ray.exceptions import RayActorError
 
 from bm.settings import OS_NAME
 from containers.head.main import HeadServer
+from utils.logger import LOGGER
 
 
 class RayAdminBase:
@@ -39,7 +72,8 @@ class RayAdminBase:
             except Exception as e:
                 print("Retrying ray.init()", e)
                 time.sleep(1)
-        print("ray initialized")
+
+        LOGGER.info(f"ray initialized {ray.is_initialized()}")
 
     def start_head(self):
         subprocess.run(["ray", "start", "--head", f"--port={self.ray_port}", "--include-dashboard=false"], check=True)

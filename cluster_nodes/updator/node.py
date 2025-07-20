@@ -3,6 +3,7 @@ import os
 
 import ray
 
+from cluster_nodes.cluster_utils.listener import Listener
 from cluster_nodes.cluster_utils.receiver import ReceiverWorker
 from cluster_nodes.cluster_utils.db_worker import DBWorker
 from cluster_nodes.server.types import HOST_TYPE
@@ -13,8 +14,6 @@ from qf_core_base.qf_utils.all_subs import ALL_SUBS
 from utils.graph.local_graph_utils import GUtils
 from utils.logger import LOGGER
 from utils.queue_handler import QueueHandler
-
-
 
 """if os.name == "nt":
     from qf_sim.clusters.manager.db_worker import DBWorker
@@ -34,10 +33,38 @@ else:
             py_module_path=module_path,
         )"""
 
-
 ENV_ID = os.environ.get("ENV_ID")
 INSTANCE = os.environ.get("FIREBASE_RTDB")
 NODE_TYPE = os.environ.get("NODE_TYPE")
+
+class DBStateChangeHandler:
+    """
+    Case: User stops the Sim
+
+    Wf stop:
+    user send stop command
+    db upsert
+    self.global_states_listener triggert global_changes methode im receiver
+    global_changes stoppt uperator
+    upsert fieldworker state to db
+    head server recieves and collects all states
+    shut them down
+    """
+    def __init__(self, host, database):
+        self.host = host
+        # Listens to live state changes to distribute
+        self.global_states_listener = Listener.remote(
+            paths_to_listen=[
+                f"{database}/global_states/"
+            ],
+            db_manager=ray.get(self.host["db_worker"].get_db_manager.remote()),
+            host=self.host,
+            listener_type="global_change",
+        )
+
+
+
+
 
 @ray.remote
 class FieldWorkerNode:
@@ -57,6 +84,9 @@ class FieldWorkerNode:
     Receive signal
     Run single iteration
     Return
+
+
+    todo: listener für state changes
     """
 
     def __init__(
@@ -69,7 +99,7 @@ class FieldWorkerNode:
             host,
             external_vm,
             admin,
-            neighbors,
+            neighbor_struct,  # get listener paths and implement changes directly
     ):
 
         """
@@ -89,13 +119,12 @@ class FieldWorkerNode:
         self.env = env
         self.user_id = user_id
         self.database = database
-        self.host: HOST_TYPE = host # include now: head & qfn ref
+        self.host: HOST_TYPE = host  # include now: head & qfn ref
         self.external_vm = external_vm
         self.admin = admin
         self.instance = INSTANCE
-        self.host["node_worker"] = ray.get_runtime_context().current_actor
-        self.g=g
-        self.neighbors:dict=neighbors
+        self.host["field_worker"] = ray.get_runtime_context().current_actor
+        self.g = g
 
         self.type = self.attrs.get("type")
         self.id = self.attrs.get("id")
@@ -113,23 +142,32 @@ class FieldWorkerNode:
 
         # DB instance
         self.db_path = f"{self.database}/{self.id}"
+        self.states_db_path = f"{self.database}/global_states/"
 
         self.host["db_worker"] = DBWorker.remote(
-            instance = self.instance,  # set root of db
-            database = self.database,  # spec user spec entry (like table)
-            g = self.g,
-            user_id = self.user_id,
-            host = self.host,
-            attrs = self.attrs
+            instance=self.instance,  # set root of db
+            database=self.database,  # spec user spec entry (like table)
+            g=self.g,
+            user_id=self.user_id,
+            host=self.host,
+            attrs=self.attrs
         )
 
-        self.main_loop_handler = UpdatorWorker.remote(
+        self.updator_name = f"{self.id}_updator"
+        self.main_loop_handler = UpdatorWorker.options(name=self.updator_name).remote(
             self.g,
             self.attrs,
             self.env,
             self.id,
             self.parent,
-            host=self.host
+            host=self.host,
+            neighbor_struct=neighbor_struct
+        )
+        self.host["updator_worker"] = self.main_loop_handler
+
+        self.state_change_handler = DBStateChangeHandler(
+            self.host,
+            database
         )
 
         self.receiver = ReceiverWorker.remote(
@@ -139,27 +177,17 @@ class FieldWorkerNode:
             self.user_id,
         )
 
-        self.attrs["metadata"]["status"]["state"] = "active"
-        LOGGER.info(f"worker {self.id} is waiting in {self.state}-mode",)
+        # handle state
+        self.state = "active"
+        self.state_upsert()
 
-        # Send status message
-        self._upsert_metadata()
+        LOGGER.info(f"worker {self.id} is waiting in {self.state}-mode", )
 
 
-    async def apply_neighbor_changes(self, nid, attrs):
-        LOGGER.info(f"Update attrs for n: {nid}")
-        self.neighbors[nid].update(attrs)
+    def state_upsert(self, state=None):
+        self.attrs["metadata"]["status"]["state"] = self.state
+        ray.get(self.host["db_worker"].iter_upsert.remote(self.attrs))
 
-    async def _upsert_metadata(self):
-        # Send
-        await self.host["db_worker"].receiver.receive.remote(
-            payload={
-                "db_path": f"{self.database}/metadata",
-                "meta": self.attrs["metadata"],
-                "type": "upsert_meta"
-            }
-        )
-        LOGGER.info("Upsert process finished")
 
     async def _lampart_clock_handling(self, payload):
         """
@@ -175,3 +203,8 @@ class FieldWorkerNode:
         """
         n_time = payload["time"]
         self.attrs["time"] = max(self.attrs["time"], n_time) + 1  # + 1 for causality
+
+
+
+    async def get_state(self):
+        return self.state

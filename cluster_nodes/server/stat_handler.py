@@ -18,7 +18,7 @@ class ClusterCreator:
     """
 
     def __init__(self, g, env, database, host, external_vm):
-        self.g=g
+        self.g=ray.get(host["utils_worker"].get_G.remote())
         self.qf_utils = QFUtils(g)
         self.env=env
         self.database = database,
@@ -67,6 +67,7 @@ class ClusterCreator:
             self.database,
             self.host,
             self.external_vm,
+            neighbor_struct=final_neighbor_struct,
             admin=False
         )
         self.g.G.nodes[nid]["ref"] = ref

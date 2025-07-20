@@ -32,10 +32,13 @@ class HeadMessageManager:
         self.qf_utils = QFUtils(
             self.g,
         )
-        self.states = {}
 
     async def _init_hs_relay(self, data):
         self.host["head"]._init_hs_relay.remote(data)
+
+
+
+
 
 
     async def _state_handler(self, state, nid):
@@ -66,33 +69,8 @@ class HeadMessageManager:
             print("Some nodes failed to start up")
             ptype = "status_finished"
 
-        await self.host["head"].send_ws(
-            data=self.states,
-            ptype=ptype
-        )
 
 
-    async def _start(self):
-        """
-        loop through all specified nodes and
-        """
-        LOGGER.info(f"ENV _start request received")
-        all_subs = await self.host["head"].get_all_subs.remote()
-        # Start Agents
-        start_time = int(time.time())
-        await asyncio.gather(*[
-            ref.receiver.receive.remote(
-                data={
-                    "type": "start",
-                    "data": {
-                        "start_time": start_time + 10,
-                        "host": {
-                            "id": self.attrs["id"]
-                        }
-                    }
-                })
-            for ref in [attrs["ref"] for nid, attrs in self.g.G.nodes(data=True) if attrs.get("type") in all_subs]
-        ])
 
     async def _init_handshake(self, payload):
         """
@@ -158,16 +136,7 @@ class HeadMessageManager:
 
 
 
-    # get paths of all nodes -> fb
-    async def _stop(self):
-        LOGGER.info(f"ENV stop request received")
 
-        # each qfn finishes its iteration ->
-        # pushes changes to neighbors
-        # receives "stop" message push last updates
-        sd_response = await self.stop_qfns()
-        self.state = "inactive"
-        return sd_response
 
     async def _stim_handler(self):
         # todo

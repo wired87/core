@@ -5,7 +5,7 @@ from utils.graph.local_graph_utils import GUtils
 from utils.logger import LOGGER
 
 
-@ray.remote()
+@ray.remote
 class UtilsWorker:
 
 

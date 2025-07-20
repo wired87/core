@@ -3,7 +3,6 @@ import ray
 
 from cluster_nodes.cluster_utils.receiver import ReceiverWorker
 from cluster_nodes.qfn import ENV_ID
-from qf_core_base.qf_utils.all_subs import ALL_SUBS
 
 from gdb_manager.g_utils import DBManager
 from qf_sim.runners.demo_runner import DemoRunner
@@ -26,7 +25,6 @@ class DBWorker:
 
     def __init__(
             self,
-            g,
             attrs,
             instance,
             database,
@@ -40,7 +38,12 @@ class DBWorker:
     ):
         self.node_type = "db_worker"
         self.state = "inactive"
-        self.g:GUtils = g
+        self.g=GUtils(
+            nx_only=False,
+            G=None,
+            g_from_path=None,
+            user_id=user_id,
+        )
         self.user_id=user_id
         self.host=host
 
@@ -127,7 +130,11 @@ class DBWorker:
             self.env, self.env_id, G = self.g.build_G_from_data(initial_data, ENV_ID)
 
         LOGGER.info(f"Graph successfully build")
-        return G
+
+        # SET G IN UTILS
+        ray.get(self.host["utils_worker"].set_G.remote(G))
+
+        return self.env
 
 
 

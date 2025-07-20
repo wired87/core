@@ -76,8 +76,6 @@ class HeadServer:
 
         self.states = {}
 
-        self.active_workers = []
-
         self.extern_host = {}
         self.messages_sent = 0
         self.manager = ConnectionManager()
@@ -90,7 +88,10 @@ class HeadServer:
         self.listener = None
         self.all_worker_active = False
         self.all_subs = None
-
+        self.state_acttion={
+            "start": self.start_action,
+            "stop": self.handle_shutdown,
+        }
         # start worker update loop
         self.state_checker = StateHandler.remote(
             head_ref=self.host["head"]
@@ -99,8 +100,37 @@ class HeadServer:
         self._init_process()
         print("HeadDeplDeployment initialisiert!")
 
+        # todo state from db listener
+
+    async def state_handler(self, paylaod):
+        # state for shutdown or active
+        state = paylaod["data"]
+        nid = paylaod["id"]
+        if state == "active":
+            self.state_acttion[state](nid, state)
 
 
+    async def handle_shutdown(self, nid, state):
+        self.g.get_all_subs_list(just_id=True)
+        all_subs = self.g.get_all_subs_list()
+        if nid and nid in all_subs:
+            self.states["stop"].add(nid)
+
+        if len(self.states["stop"]) == all_subs:
+            LOGGER.info("All workers stopped, sending shutdown message to front")
+            self.stop_action(all_subs)
+    def start_action(self, all_nodes, state):
+        ray.get(self.host["db_manager"].firebase.upsert_data.remote(
+            path=self.global_states_listener_path,
+            data={
+                "total_nodes": len(all_nodes),
+                "active_nodes": 100
+            }
+        ))
+    def stop_action(self, all_subs):
+        for nid, attrs in all_subs:
+            attrs["ref"].exit.remote()
+            LOGGER.info(f"Stopped worker {nid}")
     async def handle_all_workers_active(self):
         """
         Whaen everything is init send msg to front
@@ -133,7 +163,7 @@ class HeadServer:
 
 
     async def get_ative_workers(self):
-        return self.active_workers
+        return self.states["active"]
 
     async def send_ws(self, data:WS_OUTBOUND, ptype:str):
         payload: WS_OUTBOUND = {
@@ -163,21 +193,17 @@ class HeadServer:
         self.host["db_worker"] = DBWorker.remote(
             instance=self.instance,  # set root of db
             database=self.database,  # spec user spec entry (like table)
-            g=self.g,
             user_id=self.user_id,
             host=self.host,
             attrs=self.attrs
         )
-        # BUOLD G
 
-        G = ray.get(self.host["db_worker"].build_G.remote(
+        # BUOLD G and load in utils_worker.G
+        self.env=ray.get(self.host["db_worker"].build_G.remote(
             testing=True
         ))
 
-        # SET G IN UTILS
-        ray.get(self.host["utils_worker"].set_g.remote(G))
-
-
+        self.global_states_listener_path = f"{self.database}/global_states/"
 
 
         ## INIT CLASSES AND REMOTES ##
@@ -190,16 +216,16 @@ class HeadServer:
             g=self.g,
         )
 
-        self.listener = Listener.remote(
-            self.g,
-            self.host["db_worker"].get_db_manager.remote(),
-            self.host
+        # Listens to live state changes to distribute
+        self.global_states_listener = Listener.remote(
+            paths_to_listen=[
+                self.global_states_listener_path
+            ],
+            db_manager=ray.get(self.host["db_worker"].get_db_manager.remote()),
+            host=self.host
         )
 
-
-
         self.sim_state_handler = ClusterCreator(
-            self.g,
             self.env,
             self.database,
             self.host,
@@ -211,12 +237,14 @@ class HeadServer:
         # BUILD G
         self.set_stuff()
 
-
         print("All classes in Head")
 
 
     def set_stuff(self):
         # Get STRUCT OF ALL SUBS STATES CATGORIZED IN QFNS
         self.states:dict=self.g.get_qf_subs_state()
+
+
+
 
 
