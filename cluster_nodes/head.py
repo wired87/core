@@ -14,34 +14,13 @@ from cluster_nodes.server.stat_handler import ClusterCreator
 
 from cluster_nodes.server.state_handle import StateHandler
 from cluster_nodes.server.types import HOST_TYPE, WS_INBOUND, WS_OUTBOUND
-from container import app, ENV_ID, USER_ID
 
 from utils.dj_websocket.handler import ConnectionManager
 from utils.id_gen import generate_id
 from utils.logger import LOGGER
 
 
-def _validate_msg(msg) -> dict[WS_INBOUND] and bool:
-    LOGGER.info("WS validated!")
-    return json.loads(msg), True
 
-
-@app.websocket("/{env_id}")
-async def handle_ws(websocket: WebSocket, env_id):
-    await websocket.accept()
-    head = serve.get_deployment_handle(env_id)
-    if head is not None:
-        while True:
-            try:
-                async for data in websocket.iter_json():
-                    data, valid = _validate_msg(data)
-                    if valid is True:
-                        await head.receiver.receive.remote(data)
-            except Exception as e:
-                print(f"Error while listening to: {e}")
-                break
-    else:
-        await websocket.close()
 
 
 @serve.deployment(

@@ -5,6 +5,7 @@
     <mapping directory="$PROJECT_DIR$/_betse" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/_betse/file" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/_google" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_ray_core" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/_ray_core/head_node" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/qf_sim" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/qf_sim/_qfn_cluster_node" vcs="Git" />
