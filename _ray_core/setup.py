@@ -20,14 +20,14 @@ class RaySetup:
             if self.num_cpus:
                 ray.init(num_cpus=self.num_cpus)
             else:
-                #_ray.init()
+                #_ray_core.init()
             print(f"Ray Dashboard: {ray.get_dashboard_url()}")
             print("Ray initialized.")
         else:
             print("Ray is already initialized.")
 
     def _filter_graph(self):
-        # specifies Nodes for the _ray _qfn_cluster_node
+        # specifies Nodes for the _ray_core _qfn_cluster_node
         self.sensor_nodes = [n for n, data in self.g.G.nodes(data=True) if data.get('type') == 'sensor']
         self.other_nodes = [n for n, data in self.g.G.nodes(data=True) if data.get('type') != 'sensor']
         print("Sample graph created.")

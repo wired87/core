@@ -1,4 +1,4 @@
-# pip install "_ray[serve]"
+# pip install "_ray_core[serve]"
 import os
 
 import ray
@@ -14,7 +14,7 @@ from cluster_nodes.server.stat_handler import ClusterCreator
 
 from cluster_nodes.server.state_handle import StateHandler
 from cluster_nodes.server.types import HOST_TYPE, WS_INBOUND, WS_OUTBOUND
-from containers.head import app, ENV_ID, USER_ID
+from container import app, ENV_ID, USER_ID
 
 from utils.dj_websocket.handler import ConnectionManager
 from utils.id_gen import generate_id
@@ -24,6 +24,7 @@ from utils.logger import LOGGER
 def _validate_msg(msg) -> dict[WS_INBOUND] and bool:
     LOGGER.info("WS validated!")
     return json.loads(msg), True
+
 
 @app.websocket("/{env_id}")
 async def handle_ws(websocket: WebSocket, env_id):
@@ -42,13 +43,13 @@ async def handle_ws(websocket: WebSocket, env_id):
     else:
         await websocket.close()
 
+
 @serve.deployment(
     num_replicas=1,
     ray_actor_options={"num_cpus": .2}
 )
 @serve.ingress(app)
 class HeadServer:
-
     """
     Tasks:
     com with relay & QFN
@@ -88,7 +89,7 @@ class HeadServer:
         self.listener = None
         self.all_worker_active = False
         self.all_subs = None
-        self.state_acttion={
+        self.state_acttion = {
             "start": self.start_action,
             "stop": self.handle_shutdown,
         }
@@ -109,7 +110,6 @@ class HeadServer:
         if state == "active":
             self.state_acttion[state](nid, state)
 
-
     async def handle_shutdown(self, nid, state):
         self.g.get_all_subs_list(just_id=True)
         all_subs = self.g.get_all_subs_list()
@@ -119,6 +119,7 @@ class HeadServer:
         if len(self.states["stop"]) == all_subs:
             LOGGER.info("All workers stopped, sending shutdown message to front")
             self.stop_action(all_subs)
+
     def start_action(self, all_nodes, state):
         ray.get(self.host["db_manager"].firebase.upsert_data.remote(
             path=self.global_states_listener_path,
@@ -127,10 +128,12 @@ class HeadServer:
                 "active_nodes": 100
             }
         ))
+
     def stop_action(self, all_subs):
         for nid, attrs in all_subs:
             attrs["ref"].exit.remote()
             LOGGER.info(f"Stopped worker {nid}")
+
     async def handle_all_workers_active(self):
         """
         Whaen everything is init send msg to front
@@ -143,8 +146,6 @@ class HeadServer:
             "type": "status"
         })
 
-
-
     def _init_hs_relay(self, msg):
         key = msg["key"]
         if key == self.env_id:
@@ -152,20 +153,16 @@ class HeadServer:
             self.ws_key = generate_id()
             self.ws_key = key
 
-
     async def set_ws_validation_key(self, key):
         self.ws_key = key
-        
-    
+
     def get_active_env_con(self):
         return self.manager.active_connections.get(self.env_id, None)
-
-
 
     async def get_ative_workers(self):
         return self.states["active"]
 
-    async def send_ws(self, data:WS_OUTBOUND, ptype:str):
+    async def send_ws(self, data: WS_OUTBOUND, ptype: str):
         payload: WS_OUTBOUND = {
             "key": self.ws_key,
             "type": ptype,
@@ -174,7 +171,6 @@ class HeadServer:
         LOGGER.info("Send payload to relay")
         con = self.get_active_env_con()
         await con.send_json(payload)
-
 
     async def set_all_subs(self, all_subs):
         if not len(self.all_subs):
@@ -199,12 +195,11 @@ class HeadServer:
         )
 
         # BUOLD G and load in utils_worker.G
-        self.env=ray.get(self.host["db_worker"].build_G.remote(
+        self.env = ray.get(self.host["db_worker"].build_G.remote(
             testing=True
         ))
 
         self.global_states_listener_path = f"{self.database}/global_states/"
-
 
         ## INIT CLASSES AND REMOTES ##
         # MSG Receiver any changes
@@ -239,10 +234,9 @@ class HeadServer:
 
         print("All classes in Head")
 
-
     def set_stuff(self):
         # Get STRUCT OF ALL SUBS STATES CATGORIZED IN QFNS
-        self.states:dict=self.g.get_qf_subs_state()
+        self.states: dict = self.g.get_qf_subs_state()
 
 
 

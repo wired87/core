@@ -120,7 +120,6 @@ CORS_ALLOW_CREDENTIALS = True
 
 
 INSTALLED_APPS = [
-
     "channels",
     "frontend",
     "qf_sim",
@@ -135,6 +134,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'rest_framework_simplejwt.token_blacklist',
     "_betse",
+    "_ray_core",
     "django_unicorn",
 ]
 

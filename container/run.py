@@ -1,18 +1,22 @@
 import shutil
-import os
 
 ###
 
-from _ray.core.main import RayAdminBase
-from cluster_nodes.qfn import ENV_ID
+import os
+
+from fastapi import FastAPI
+from bm.settings import TEST_ENV_ID, TEST_USER_ID
+from container.ray_base import RayAdminBase
+
+app = FastAPI()
+USER_ID = os.environ.get("USER_ID", TEST_USER_ID)
+ENV_ID = os.environ.get("ENV_ID", TEST_ENV_ID)
 
 if __name__ == "__main__":
     ray_admin = RayAdminBase(env_id=ENV_ID)
     try:
         os.path.expanduser("~")
-
         ray_admin.stop_ray()
-
         # → manuelles Löschen alter Ray-Session
         if os.name == "nt":
             ray_tmp_path = os.path.join(os.environ["USERPROFILE"], "AppData", "Local", "Temp", "ray")

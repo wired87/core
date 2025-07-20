@@ -50,7 +50,7 @@ class KubeRayClusterCfgGenerator:
             },
             "template": {
                 "spec": {
-                    "containers": [
+                    "container": [
                         {
                             "name": "ray-head",
                             "image": f"{manager_image}:{img_tag}",
@@ -96,7 +96,7 @@ class KubeRayClusterCfgGenerator:
 
     def _create_worker_group_spec(self, node_type, count, worker_image, manager_image, img_tag="latest"):
         """
-        Create a worker group spec with multiple containers per pod.
+        Create a worker group spec with multiple container per pod.
         `worker_images` should be a list of image names.
         """
         containers = []
@@ -141,7 +141,7 @@ class KubeRayClusterCfgGenerator:
             "rayStartParams": {},
             "template": {
                 "spec": {
-                    "containers": containers
+                    "container": containers
                 }
             }
         }

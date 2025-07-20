@@ -21,14 +21,12 @@ Erstlle immer ein Dockerfile für das gesammte _qfn_cluster_node
 Start
 ray start --head --port=6379
 
-from _google.gke._ray.qf_core_base import RayBase
+from _google.gke._ray_core.qf_core_base import RayBase
 
-_ray = RayBase()
-_ray.start()
+_ray_core = RayBase()
+_ray_core.start()
 
 """
-
-
 
 import os
 import socket
@@ -40,14 +38,14 @@ from ray import serve
 from ray.exceptions import RayActorError
 
 from bm.settings import OS_NAME
-from containers.head.main import HeadServer
+from cluster_nodes.head import HeadServer
 from utils.logger import LOGGER
 
 
 class RayAdminBase:
 
     def __init__(self, env_id):
-        self.logs_dir = r"C:\Users\wired\OneDrive\Desktop\BestBrain\tmp\ray\session_*\logs" if OS_NAME == "nt" else "/tmp/_ray/session_*/logs"
+        self.logs_dir = r"C:\Users\wired\OneDrive\Desktop\BestBrain\tmp\ray\session_*\logs" if OS_NAME == "nt" else "/tmp/_ray_core/session_*/logs"
         self.include_dashboard = OS_NAME != "nt"
         self.local_mode = OS_NAME == "nt"
         self.ip = socket.gethostbyname(socket.gethostname())

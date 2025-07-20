@@ -66,6 +66,6 @@ class EnvNode:
 
     async def build_env(self):
         # Sim State Handler
-        # build _ray network, start _qfn_cluster_node etc
+        # build _ray_core network, start _qfn_cluster_node etc
 
         LOGGER.info("finished env build process")

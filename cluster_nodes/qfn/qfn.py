@@ -1,4 +1,4 @@
-# pip install "_ray[serve]"
+# pip install "_ray_core[serve]"
 import os
 
 import ray

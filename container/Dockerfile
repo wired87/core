@@ -11,6 +11,7 @@ WORKDIR /usr/src/app
 # Install git
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
+RUN mkdir -p /app/cluster_nodes
 
 ### 🔹 MAIN BUILD
 
@@ -21,17 +22,16 @@ RUN apt-get update && apt-get install -y \
     rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements first for caching dependencies
-COPY cluster_nodes .
-
-COPY qf_core_base .
+COPY qf_sim/clusters/manager ./cluster_nodes
+COPY qf_sim/clusters/cluster_utils ./cluster_nodes
+COPY qf_sim/clusters/server ./cluster_nodes
 COPY utils .
-COPY gdb_manager .
 
 # Install dependencies with no cache
 RUN pip install -r r.txt
 
 # Copy the rest of the project files into the working directory
-COPY qfn_worker .
+COPY head .
 
 # Set environment variables
 ENV PYTHONPATH=/usr/src/app:$PYTHONPATH
@@ -39,15 +39,11 @@ ENV PYTHONUNBUFFERED=1 \
     PORT=8080 \
     DJANGO_SETTINGS_MODULE=bm.settings \
     #DEBUG=0 \
-    GCS_MOUNT_PATH=/mnt/bucket/ \
+    GCS_MOUNT_PATH=/mnt/bucket/
     DOMAIN=bestbrain.tech \
     CREDS_REQUEST_ENDPOINT=/auth/gh_access
 
-# Copy the startup script
-COPY startup.sh .
 
-# Make the script executable
-RUN chmod +x startup.sh
 
 # Expose the application port
 EXPOSE 8080

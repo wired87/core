@@ -64,7 +64,7 @@ def powerset_of_keysets(dict1, dict2):
 class QFUpdator(QFCreator):
     """
     This creates a graph of a lot of charged particles
-    and let them interact following the core laws of physics
+    and let them interact following the base laws of physics
 
     How these particles are ordered and interact,
     this is the memory

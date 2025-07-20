@@ -9,7 +9,7 @@ from cluster_nodes.cluster_utils.receiver import ReceiverWorker
 from cluster_nodes.manager.trainer import LiveTrainer
 from cluster_nodes.server.env_ray_node import EnvNode
 
-from containers.head import ENV_ID, USER_ID
+from container.head import ENV_ID, USER_ID
 from gdb_manager.g_utils import DBManager
 
 from utils.graph.local_graph_utils import GUtils
