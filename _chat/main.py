@@ -2,9 +2,9 @@ import google.generativeai as genai
 import json
 import os
 
+from _google.gem import ask_gem
 from qf_core_base.qf_utils import QFLEXICON
-
-
+from utils.logger import LOGGER
 
 
 class AIChatClassifier:
@@ -16,7 +16,7 @@ class AIChatClassifier:
 
         self.user_history = {}
         self.use_cases = {
-            "start_simulation": self._handle_start_simulation,
+            "start": self._handle_start_simulation,
             "set_parameters": self._handle_set_parameters,
             "check_status": self._handle_check_status,
             "save_state": self._handle_save_state,
@@ -47,18 +47,22 @@ class AIChatClassifier:
         Klassifiziert die Benutzereingabe mithilfe der Gemini API für QFS-Befehle.
         Gibt den passenden Usecase-Schlüssel zurück oder 'general_qfs_query' als Standard.
         """
+        LOGGER.info("_classify_input")
         prompt = (
             f"Klassifiziere die folgende Benutzereingabe in einen der folgenden Usecases für die Steuerung einer Quantenfeld-Simulation: "
             f"{', '.join(self.use_cases.keys())}. Gib nur den Usecase-Namen zurück. "
             f"Eingabe: '{user_input}'")
         try:
-            response = self.model.generate_content(prompt)
-            classification = response.text.strip().lower()
-            if classification in self.use_cases:
-                #if classification == "give_info":
-                return classification
+            classification = ask_gem(prompt)
+            if classification and isinstance(classification, str):
+                classification = classification.strip().lower()
+                if classification in self.use_cases:
+                    #if classification == "give_info":
+                    LOGGER.info(f"Classification: {classification}")
+                    return classification
         except Exception as e:
             print(f"Fehler bei der Klassifizierung: {e}")
+        LOGGER.info(f"Classification not valid")
         return None
 
     def _give_info(self, user_input):
