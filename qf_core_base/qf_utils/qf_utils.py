@@ -8,7 +8,7 @@ from qf_core_base.qf_utils.field_utils import FieldUtils
 from utils.graph.local_graph_utils import GUtils
 from utils.file._csv import dict_2_csv
 
-from gdb_manager.g_utils import DBManager
+from utils.g_utils import DBManager
 
 class QFUtils(FieldUtils):
 

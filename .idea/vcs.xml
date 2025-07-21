@@ -7,8 +7,10 @@
     <mapping directory="$PROJECT_DIR$/_google" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/_ray_core" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/_ray_core/head_node" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/fb_core" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/gdb_manager" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/gdb_manager/fb_core" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/gdb_manager/bq" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/gdb_manager/spanner" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/qf_sim" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/qf_sim/_qfn_cluster_node" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/utils" vcs="Git" />
