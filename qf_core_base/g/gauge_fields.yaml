@@ -46,14 +46,6 @@ gluon:
   charge: 0
   mass: 0.0
   g: 1.217
-  gauge_group: SU(3)_C
   spin: 1
-  color_charge:
-  - r
-  - g
-  - b
-  - rg
-  - rb
-  - gb
-  - "r\u0305g"
-  - "r\u0305b"
+
+

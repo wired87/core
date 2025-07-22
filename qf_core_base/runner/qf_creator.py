@@ -33,7 +33,6 @@ from qf_core_base.fermion.ferm_utils import FermUtils
 from qf_core_base.g.g_creator import GaugeCreator
 from qf_core_base.g.gauge_utils import GaugeUtils
 from qf_core_base.higgs.phi_utils import HiggsUtils
-from qf_core_base.qf_utils.all_subs import ALL_SUBS
 
 from qf_core_base.qf_utils.qf_utils import QFUtils
 from qf_core_base.qf_utils.mover import Mover

@@ -143,8 +143,10 @@ class GaugeCreator(GaugeUtils):
                 sub_type="ITEM",
                 j_nu=j_nu,
                 F_mu_nu=fmunu,
-                **gattrs,
-                #**FIELD_METADATA,
+                charge= 0,
+                mass= 0.0,
+                g= 1.217,
+                spin= 1,
             )
 
             attrs[field_key] = field_value
