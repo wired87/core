@@ -12,6 +12,7 @@ class GetCredsView(APIView):
     GET /api/access/?key=123&type=head
     """
     def get(self, request):
+        contact_id = request.data.get("contact_id")
         access_key = request.data.get("key")
         req_types = request.data.get("types")
 
