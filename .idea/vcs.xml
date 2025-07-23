@@ -8,6 +8,7 @@
     <mapping directory="$PROJECT_DIR$/_ray_core" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/_ray_core/head_node" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/fb_core" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/qf_core_base" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/qf_sim" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/utils" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/utils/embedder" vcs="Git" />
