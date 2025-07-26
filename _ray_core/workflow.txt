@@ -1,8 +1,0 @@
-####
-Create Cluster GKE
-####
-
-####
-CubeRay Operator
-####
-RayCluster-Manifest.yaml
