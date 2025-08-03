@@ -9,7 +9,7 @@ from google.cloud import storage
 import dotenv
 from tqdm import tqdm
 
-from auth import AuthManager
+from utils.auth import AuthManager
 from utils.file import asave_json_content
 from collections import defaultdict
 
