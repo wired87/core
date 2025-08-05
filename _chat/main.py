@@ -57,7 +57,6 @@ class AIChatClassifier:
             if classification and isinstance(classification, str):
                 classification = classification.strip().lower()
                 if classification in self.use_cases:
-                    #if classification == "give_info":
                     LOGGER.info(f"Classification: {classification}")
                     return classification
         except Exception as e:
