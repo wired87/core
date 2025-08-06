@@ -21,15 +21,6 @@ hybrid_rag
 uutils/agents
 train_data/ensembl_id_to_name.csv
 backend
+Dockerfile
 
-data/files
-data/table_content
-data/table_schema
-data/main_ckpt
-
-models/zoo/
-models/DeepFun/
-models/csGeneRAI/
-models/genePT/
-models/deep_somatic/
 
