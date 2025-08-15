@@ -136,6 +136,7 @@ INSTALLED_APPS = [
     "_betse",
     "_ray_core",
     "django_unicorn",
+    "_google"
 ]
 
 ASGI_APPLICATION = "bm.asgi.application"

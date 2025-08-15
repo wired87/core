@@ -14,6 +14,7 @@ urlpatterns = [
     path('auth/', include("auth.urls")),
 
     path('bq/', include("_bq_core.dj.urls")),
+    path('docai/', include("_google.documentai.views.urls")),
 
     # frontend
     path("frontend/", include("frontend.urls")),

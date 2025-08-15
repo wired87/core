@@ -12,8 +12,8 @@ class AIChatClassifier:
     Initialisiert den Chatbot mit API-Schlüssel und Konfigurationspfaden.
     Erstellt Konfigurationsdateien, falls nicht vorhanden.
     """
-    def __init__(self):
-
+    def __init__(self, cfg_creator):
+        self.cfg_creator = cfg_creator
         self.user_history = {}
         self.use_cases = {
             "start": self._handle_start_simulation,
@@ -24,7 +24,7 @@ class AIChatClassifier:
             "plot_results": self._handle_plot_results,
             "stop_simulation": self._handle_stop_simulation,
             "general_qfs_query": self._handle_general_qfs_query,  # Für allgemeine Fragen zur QFS
-            #"give_info":
+            "set_fields": self._extract_fields,
         }
 
         self.all_params = QFLEXICON.copy().keys()
@@ -33,6 +33,21 @@ class AIChatClassifier:
 
         self.model = genai.GenerativeModel('gemini-pro')
         self.simulation_state = {"running": False, "parameters": {}}
+
+    def _extract_fields(self):
+        prompt = f"""
+        Given is a list of FIELDS.
+        Your tasks is to align the given INPUT to all FIELDS to identify matches, 
+        Return identified FIELD, separated by comma(,) - nothing else. 
+        If you cant identify anything, return the word 'NA'.
+        """
+        fields = ask_gem(prompt)
+        if 'NA' not in fields and ',' in fields:
+            fields_list = fields.split(",")
+            self.cfg_creator.add_fields(fields=fields_list)
+
+
+
 
 
 
@@ -52,6 +67,9 @@ class AIChatClassifier:
             f"Klassifiziere die folgende Benutzereingabe in einen der folgenden Usecases für die Steuerung einer Quantenfeld-Simulation: "
             f"{', '.join(self.use_cases.keys())}. Gib nur den Usecase-Namen zurück. "
             f"Eingabe: '{user_input}'")
+
+
+
         try:
             classification = ask_gem(prompt)
             if classification and isinstance(classification, str):
