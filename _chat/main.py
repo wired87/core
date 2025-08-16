@@ -12,7 +12,7 @@ class AIChatClassifier:
     Initialisiert den Chatbot mit API-Schlüssel und Konfigurationspfaden.
     Erstellt Konfigurationsdateien, falls nicht vorhanden.
     """
-    def __init__(self, cfg_creator):
+    def __init__(self, cfg_creator=None):
         self.cfg_creator = cfg_creator
         self.user_history = {}
         self.use_cases = {
@@ -29,7 +29,9 @@ class AIChatClassifier:
 
         self.all_params = QFLEXICON.copy().keys()
 
-        genai.configure(api_key=os.environ.get('GEMINI_API_KEY'))
+        genai.configure(
+            api_key=os.environ.get('GEMINI_API_KEY')
+        )
 
         self.model = genai.GenerativeModel('gemini-pro')
         self.simulation_state = {"running": False, "parameters": {}}
