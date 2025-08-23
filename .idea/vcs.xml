@@ -2,13 +2,9 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/_betse" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/_betse/file" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/_bq_core" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/_google" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/_ray_core" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/fb_core" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/frontend" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/qf_core_base" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/qf_sim" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/utils" vcs="Git" />
