@@ -4,7 +4,7 @@ from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from _google.documentai.extractor import get_content, extract_keys, convert_rows
+from documentai.extractor import get_content, extract_keys, convert_rows
 
 
 class ExtractedInvoiceSerializer(serializers.Serializer):
@@ -27,6 +27,7 @@ class InvoiceExtractorView(APIView):
         keys = extract_keys(whole_content)
         rows: list[list] = convert_rows(whole_content, keys)
         df = pd.DataFrame(data=rows, columns=keys)
+
         # Spaltenreihenfolge stabil halten
         csv_data = df.to_csv(index=False)
 

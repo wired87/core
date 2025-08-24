@@ -11,6 +11,9 @@ from channels.routing import ProtocolTypeRouter, URLRouter
 from django.core.asgi import get_asgi_application
 import os
 from bm import routing
+import torch
+import jax
+import polars
 
 if os.name == "nt":
     GOOGLE_APPLICATION_CREDENTIALS = r"C:\Users\wired\OneDrive\Desktop\BestBrain\_google\g_auth\aixr-401704-59fb7f12485c.json"

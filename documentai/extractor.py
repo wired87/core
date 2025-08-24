@@ -1,6 +1,6 @@
 from google.cloud import documentai_v1 as documentai
 
-from docai import DOCAI_CLIENT
+from documentai import DOCAI_CLIENT
 
 
 def get_content(attachments):
@@ -31,25 +31,22 @@ def get_content(attachments):
     return extracted_data
 
 
-def extract_keys(whole_content):
-
-    keys = []
+def extract_keys(whole_content) -> list:
+    keys = set()
     for content in whole_content:
         for e in content.entities:
-            keys.append(
+            keys.add(
                 e.type_
             )
+    return list(keys)
 
-    return keys
 
 def convert_rows(whole_content, all_keys):
     rows = []
-
     for content in whole_content:
         row = []
         for key in all_keys:
-            for e in content.entities:
-                if e.type_ == key:
-                    row.append(e.mention_text)
+            value = next((e.mention_text for e in content.entities if e.type_ == key), "NA")
+            row.append(value)
         rows.append(row)
     return rows

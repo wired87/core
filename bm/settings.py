@@ -121,7 +121,7 @@ CORS_ALLOW_CREDENTIALS = True
 
 INSTALLED_APPS = [
     "channels",
-    "frontend",
+    "documentai",
     "qf_sim",
     'django.contrib.admin',
     'django.contrib.auth',
@@ -133,9 +133,7 @@ INSTALLED_APPS = [
     "corsheaders",
     'rest_framework.authtoken',
     'rest_framework_simplejwt.token_blacklist',
-    "_betse",
     "_ray_core",
-    "django_unicorn",
     "_google"
 ]
 

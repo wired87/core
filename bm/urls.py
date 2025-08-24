@@ -13,11 +13,11 @@ urlpatterns = [
     path('eval/', include("qf_sim.evaluation.dj.urls")),
     path('auth/', include("auth.urls")),
 
-    path('bq/', include("_bq_core.dj.urls")),
-    path('docai/', include("_google.documentai.views.urls")),
+    #path('bq/', include("_bq_core.dj.urls")),
+    path('docai/', include("documentai.views.urls")),
 
     # frontend
-    path("frontend/", include("frontend.urls")),
+    #path("frontend/", include("frontend.urls")),
     path("unicorn/", include("django_unicorn.urls", namespace="django_unicorn")),
 
 ] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

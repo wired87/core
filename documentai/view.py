@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from _google import GCP_ID
-from _google.documentai.proces_doc import process_document_sample
+from documentai.proces_doc import process_document_sample
 
 
 

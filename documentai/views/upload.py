@@ -13,8 +13,8 @@ from bm.settings import REQUEST_URL
 from rest_framework import serializers
 
 from _google import GCP_ID
-from _google.documentai.proces_doc import process_document_sample
-from utils.embedder import embed
+from documentai.proces_doc import process_document_sample
+#from utils.embedder import embed
 
 
 
@@ -125,7 +125,7 @@ class DocumentUploadView(APIView):
             table_id = user_id + "_files"
             for i, chunk in enumerate(chunk_text(extracted_text, chunk_size=350)):
                 chunk_id = f"{file.name}_{i}_{date.today()}"
-                embedding_np = embed(chunk)  # Get NumPy array
+                embedding_np = None
                 embedding_list = [float(x) for x in embedding_np.tolist()]
                 u_d.append({
                     "id": chunk_id,

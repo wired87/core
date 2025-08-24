@@ -2,7 +2,7 @@
 
 from google.cloud import documentai
 from _google import GCP_ID
-from _google.documentai import DOCAI_CLIENT
+from documentai import DOCAI_CLIENT
 
 
 def get_create_processor(display_name):
