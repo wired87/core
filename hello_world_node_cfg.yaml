@@ -6,7 +6,7 @@
 # - multiplier = 10 encodes bit "1", multiplier = 1 encodes bit "0".
 # The result is a sequence of 88 phases (11 characters × 8 bits) that
 # represent "Hello World" as an energy waveform over the full 300 s.
-stim_key: e # energx
+stim_key: e
 value: 0.5
 
 multiplier_min: 1

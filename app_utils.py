@@ -1,0 +1,4 @@
+from bm.settings import TEST_USER_ID, TEST_ENV_ID
+
+USER_ID = TEST_USER_ID
+ENV_ID = TEST_ENV_ID

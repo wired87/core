@@ -1,10 +1,9 @@
 # Apply energy param changes to fermions to detect gauge interaction changes
 # -> psi describes jnu so jnu is higher in hierarchy
 
-
 sim_time_s: 300 # no matter how long, everything gets split into sub blocks for easier handling
 cluster_dim:
-  - 1
+  - 2
   - 2
   - 2
 device: cpu
