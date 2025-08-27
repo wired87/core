@@ -16,6 +16,8 @@ urlpatterns = [
     #path('bq/', include("_bq_core.dj.urls")),
     path('docai/', include("documentai.views.urls")),
 
+    path('gke/', include("gke.urls")),
+
     # frontend
     #path("frontend/", include("frontend.urls")),
     path("unicorn/", include("django_unicorn.urls", namespace="django_unicorn")),

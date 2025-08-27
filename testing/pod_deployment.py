@@ -29,22 +29,24 @@ if __name__ == "__main__":
     env_creator = EnvCreatorProcess(
         USER_ID,
         Utils(),
-        envs,
         db_manager,
         cluster_root,
-        db_root
     )
 
-    cfg_struct = {
-        "world_cfg": env_creator.cfg_creator.env_cfg_default,
-        "node_cfg": {
-            "px_id": {
-                "sid1": {
-                    "max_value": 10,
-                    "phase": []
-                }
+    world_cfg = env_creator.cfg_creator.env_cfg_default
+    node_cfg = {
+        "px_id": {
+            "sid1": {
+                "max_value": 10,
+                "phase": []
             }
         }
     }
 
-    env_creator.main(cfg_struct=[cfg_struct])
+    env_creator.world_cfg_process(
+        world_cfg=[
+            world_cfg
+        ]
+    )
+
+    print("Process finished")

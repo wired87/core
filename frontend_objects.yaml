@@ -1,0 +1,9 @@
+# ALL RECEIVER OBJECTS FROM FRONTEND -> RELAY
+
+auth_object:
+  user_id: str
+
+
+
+
+

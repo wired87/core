@@ -134,7 +134,8 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'rest_framework_simplejwt.token_blacklist',
     "_ray_core",
-    "_google"
+    "_google",
+    "gke",
 ]
 
 ASGI_APPLICATION = "bm.asgi.application"
