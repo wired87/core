@@ -27,6 +27,7 @@ class DeletePodView(View):
             admin.authenticate_cluster(
                 cluster_name
             )
+
             admin.delelte_pods(pod_names)
 
             return JsonResponse({'message': f'Pods successfully deleted'}, status=200)

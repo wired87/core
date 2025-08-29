@@ -40,51 +40,31 @@ class GKEAdmin:
         return creation_commands
 
 
-    def create_deployment(self, env_id):
+    def create_deployment_cmd(self, env_id):
         # 1. Base Deployment erstellen
         create_cmd = ["kubectl", "create", "deployment", env_id, "--image", self.get_img_tag()]
         return create_cmd
 
 
-
-
-    def create_and_run_stacks(self, env_ids, env_vars:dict):
+    def set_env_cmd(self, env_id, env_vars:dict):
         """
         Erstellt für jede env_id einen Stack und setzt die Umgebungsvariablen.
         """
         env_vars_list = [f"{key}={value}" for key, value in env_vars.items()]
-
-        for env_id in env_ids:
-            # Hier muss der vollständige Pod-Name verwendet werden, nicht nur die env_id.
-            # Beispiel: `pod_name = f"dein-deployment-name-{env_id}"`
-            # Annahme: der Pod-Name entspricht der env_id
-            pod_name = env_id
-
-            set_env_cmd = ["kubectl", "set", "env", pod_name] + env_vars_list
-
-            try:
-                subprocess.run(set_env_cmd, check=True)
-                print(f"Umgebungsvariablen für '{pod_name}' erfolgreich gesetzt.")
-            except subprocess.CalledProcessError as e:
-                print(f"Fehler beim Setzen der Variablen für '{pod_name}': {e}")
-
-    def get_deploy_commands(self, env_id: str, env_vars: dict) -> list[list[str]]:
-        print("Generating imperative kubectl commands...")
-        create_depl_cmd = self.create_deployment(env_id)
-        # 2. Env-Variablen hinzufügen
+        set_env_cmd = ["kubectl", "set", "env", env_id] + env_vars_list
+        return set_env_cmd
 
 
-
-        # 3. Ressourcenlimits setzen
+    def set_pod_vm_spacs_cmd(self, env_id):
         set_res_cmd = [
             "kubectl", "set", "resources", f"deployment/{env_id}",
             "--requests=cpu=4,memory=16Gi", "--limits=cpu=16, memory=25Gi",
             "-c", self.image_name
         ]
+        return set_res_cmd
 
-        commands = [create_depl_cmd, set_env_cmd, set_res_cmd]
-        print("Commands generated successfully.")
-        return commands
+
+
 
 
     def authenticate_cluster(self, cluster_name="autopilot-cluster-1"):
@@ -93,55 +73,58 @@ class GKEAdmin:
         print("Authenticated")
 
 
-    def create_deployments_process(self, gke_cfg) -> dict:
-        # env_vars=content["env"],  
-        creation_commands = {}
-        for env_id, content in gke_cfg.items():
-            print(F"Create yaml {env_id}")
-            env_id = env_id.replace('_', '-')
-            creation_commands[env_id] = self.create_deployment(
-               env_id,
-            )
+    def create_deployments_process(self, env_cfg) -> dict:
+        # GET DEPLOYMENT COMMANDS
+        env_cfg = self.get_depl_cmd(env_cfg)
 
-        print("Deployment commands:", creation_commands)
+        # CREATE DEPLOYMENTS
+        self.create_deployments(env_cfg)
+
+        # update
+        changed_pod_identifiers = {}
+        for env_id, creation_cmd in env_cfg.items():
+            for pod in list(self.get_pods()):
+                if pod.startswith(pod) and env_id not in changed_pod_identifiers:
+                    env_cfg[env_id]["deployment_name"] = pod
+
+        # return dict{env_id : pod_name}
+        return env_cfg
 
 
-        for env_id, creation_cmd in creation_commands.items():
+    def create_deployments(self, env_cfg):
+        for env_id, struct in env_cfg.items():
             subprocess.run(
-                creation_cmd,
+                struct["deployment_command"],
                 check=True,
                 text=True,
                 shell=os.name == "nt"
             )
 
-        # update
-        changed_pod_identifiers = {}
-        for env_id, creation_cmd in creation_commands.items():
-            for pod in list(self.get_pods()):
-                if pod.startswith(pod) and env_id not in changed_pod_identifiers:
-                    changed_pod_identifiers[env_id] = pod
-
-        return changed_pod_identifiers
 
 
 
+    def get_depl_cmd(self, gke_cfg):
+        for env_id, content in gke_cfg.items():
+            print(F"Create yaml {env_id}")
+            env_id = env_id.replace('_', '-')
+            gke_cfg[env_id]["deployment_command"] = self.create_deployment_cmd(
+               env_id,
+            )
+        return gke_cfg
 
 
 
-        return creation_commands
+    def deploy_docker_to_deployment(self, env_cfg):
+        self.authenticate_cluster()
+        for env_id, struct in env_cfg.items():
+            env_vars = [f"{key}={value}" for key, value in struct["env"].items()]
 
 
 
-
-
-
-
-
-
-    def deploy_batch(self, creation_commands):
+    def deploy_batch(self, env_cfg):
         try:
             self.authenticate_cluster()
-            for env_id, cmd_stack in creation_commands.items():
+            for env_id, cmd_stack in env_cfg.items():
                 for cmd in cmd_stack:
                     print(f"Run command: {cmd}")
                     try:
@@ -156,19 +139,8 @@ class GKEAdmin:
                             all_pods:list = self.get_pods()
                             for pod in all_pods:
                                 if pod.startswith(env_id):
-
-
-
-
-
-
-
-                            subprocess.run(
-                                wait_command,
-                                check=True,
-                                text=True,
-                                shell=os.name == "nt"
-                            )
+                                    # save
+                                    env_cfg[""]
                             print("Deployment creation awaited")
                     except Exception as e:
                         print(f"Error exec cmd: {e}")
@@ -295,5 +267,27 @@ class GKEAdmin:
                     
 def get_deploy_commands(self, env_id: str, env_vars: dict) -> list[str]:
     print("Generating imperative kubectl commands...")                    
-    # 1. Base Deployment erstellen           
+    # 1. Base Deployment erstellen
+    
+    
+    
+    def get_deploy_commands(self, env_id: str, env_vars: dict) -> list[list[str]]:
+        print("Generating imperative kubectl commands...")
+        create_depl_cmd = self.create_deployment_cmd(env_id)
+
+        # 2. Env-Variablen hinzufügen
+
+
+        # 3. Ressourcenlimits setzen
+        set_res_cmd = [
+            "kubectl", "set", "resources", f"deployment/{env_id}",
+            "--requests=cpu=4,memory=16Gi", "--limits=cpu=16, memory=25Gi",
+            "-c", self.image_name
+        ]
+
+        commands = [create_depl_cmd, set_env_cmd, set_res_cmd]
+        print("Commands generated successfully.")
+        return commands
+    
+               
 """
