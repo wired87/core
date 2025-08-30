@@ -1,12 +1,18 @@
 import os
 import subprocess
+from kubernetes import client, config
+
+from artifact_registry.artifact_admin import ArtifactAdmin
+
 
 class GKEAdmin:
     def __init__(self, **kwargs):
         # IMAGE OPONENTS
         self.project_id = kwargs.get('project_id', 'aixr-401704')
         self.region = kwargs.get('region', 'us-central1')
-        self.repo = "qfs"
+        self.repo = "qfs-repo"
+
+        self.artifact_admin=ArtifactAdmin()
 
         # RAY cluster image
         self.image_name = "qfs"
@@ -18,33 +24,67 @@ class GKEAdmin:
         self.container_port = kwargs.get('container_port', 8001)
         self.full_tag = None
 
-    def build_and_push(self):
-        self.full_tag = f"{self.region}-docker.pkg.dev/{self.project_id}/{self.repo}/{self.image_name}:{self.tag}"
-        command = ['gcloud', 'builds', 'submit', '--tag', self.full_tag, self.source]
-        subprocess.run(command, check=True, text=True)
-        print("Image erfolgreich erstellt und im Artifact Registry gespeichert.")
-        
+
+    def create_deployments_process(self, env_cfg:dict) -> dict:
+        # GET DEPLOYMENT COMMANDS
+        env_cfg = self.get_depl_cmd(env_cfg)
+
+        # CREATE DEPLOYMENTS
+        self.create_deployments(env_cfg)
+
+        # update env_cfg with pod_name
+        env_cfg:dict = self.get_pod_names(env_cfg)
+
+        # SET VM/POD SPECS
+        for env_id, struct in env_cfg.items():
+            self.set_pod_vm_spacs_cmd(
+                pod_name=struct["deployment"]["name"]
+            )
+
+        # EXPOSE DEPLOYMENTS
+        for env_id, struct in env_cfg.items():
+            self.expose_deployment(
+                deployment_name=struct["deployment"]["name"],
+                service_name=struct["deployment"]["name"],
+                port=80,
+                target_port=8001,
+            )
+        print("Deployment process finished")
+        return env_cfg
+
+
+
     def get_img_tag(self):
         return f"{self.region}-docker.pkg.dev/{self.project_id}/{self.repo}/{self.image_name}:{self.tag}"
 
-    def create_deployment_images(self, gke_cfg: dict) -> dict:
-        creation_commands = {}
-        for env_id, content in gke_cfg.items():
-            print(F"Create yaml {env_id}")
-            env_id = env_id.replace('_', '-')
-            creation_commands[env_id] = self.get_deploy_commands(
-               env_id,  
-               env_vars=content["env"],
-            )
-        print("creation_commands:", creation_commands)
-        return creation_commands
 
-
-    def create_deployment_cmd(self, env_id):
-        # 1. Base Deployment erstellen
+    def create_deployment_with_images_cmd(self, env_id):
+        # 1. Base Deployment mit allen images erstellen
         create_cmd = ["kubectl", "create", "deployment", env_id, "--image", self.get_img_tag()]
         return create_cmd
 
+
+    def expose_deployment(
+            self,
+            deployment_name: str,
+            service_name: str,
+            port: int = 80, # cluster requests
+            target_port: int = 8080, # extern requests
+            namespace: str = "default"
+    ):
+        """
+        Expose ein Deployment als Service (LoadBalancer).
+        """
+        cmd = (
+            f"kubectl expose deployment {deployment_name} "
+            f"--name={service_name} "
+            f"--type=LoadBalancer "
+            f"--port={port} "
+            f"--target-port={target_port} "
+            f"--namespace={namespace}"
+        )
+        subprocess.run(cmd, check=True, shell=(os.name == "nt"), text=True)
+        print(f"Deployment '{deployment_name}' exposed as Service '{service_name}' on port {port}->{target_port}")
 
     def set_env_cmd(self, env_id, env_vars:dict):
         """
@@ -55,17 +95,19 @@ class GKEAdmin:
         return set_env_cmd
 
 
-    def set_pod_vm_spacs_cmd(self, env_id):
+    def set_pod_vm_spacs_cmd(self, pod_name):
         set_res_cmd = [
-            "kubectl", "set", "resources", f"deployment/{env_id}",
+            "kubectl", "set", "resources", f"deployment/{pod_name}",
             "--requests=cpu=4,memory=16Gi", "--limits=cpu=16, memory=25Gi",
             "-c", self.image_name
         ]
         return set_res_cmd
 
-
-
-
+    def get_pod_ip(self, pod_name: str, namespace: str = "default") -> str:
+        config.load_kube_config()  # nutzt ~/.kube/config nach get-credentials
+        v1 = client.CoreV1Api()
+        pod = v1.read_namespaced_pod(name=pod_name, namespace=namespace)
+        return pod.status.pod_ip
 
     def authenticate_cluster(self, cluster_name="autopilot-cluster-1"):
         auth_command = f"gcloud container clusters get-credentials {cluster_name} --region us-central1 --project aixr-401704"
@@ -73,92 +115,135 @@ class GKEAdmin:
         print("Authenticated")
 
 
-    def create_deployments_process(self, env_cfg) -> dict:
-        # GET DEPLOYMENT COMMANDS
-        env_cfg = self.get_depl_cmd(env_cfg)
 
-        # CREATE DEPLOYMENTS
-        self.create_deployments(env_cfg)
 
-        # update
+
+
+    def get_pod_names(self, env_cfg):
         changed_pod_identifiers = {}
         for env_id, creation_cmd in env_cfg.items():
             for pod in list(self.get_pods()):
                 if pod.startswith(pod) and env_id not in changed_pod_identifiers:
-                    env_cfg[env_id]["deployment_name"] = pod
-
-        # return dict{env_id : pod_name}
+                    env_cfg[env_id]["deployment"]["pod_name"] = pod
         return env_cfg
 
 
     def create_deployments(self, env_cfg):
         for env_id, struct in env_cfg.items():
+            # erst YAML erzeugen (dry-run) und dann apply
+            cmd = struct["deployment"]["command"] + ["--dry-run=client", "-o", "yaml"]
+            p1 = subprocess.run(cmd, capture_output=True, text=True, check=True, shell=os.name == "nt")
             subprocess.run(
-                struct["deployment_command"],
-                check=True,
+                ["kubectl", "apply", "-f", "-"],
+                input=p1.stdout,
                 text=True,
+                check=True,
                 shell=os.name == "nt"
             )
 
-
-
-
-    def get_depl_cmd(self, gke_cfg):
-        for env_id, content in gke_cfg.items():
+    def get_depl_cmd(self, env_cfg:dict):
+        for env_id, content in env_cfg.items():
             print(F"Create yaml {env_id}")
-            env_id = env_id.replace('_', '-')
-            gke_cfg[env_id]["deployment_command"] = self.create_deployment_cmd(
-               env_id,
+            a = env_id.replace('_', '-')
+            env_cfg[env_id]["deployment"] = {}
+            env_cfg[env_id]["deployment"]["command"] = self.create_deployment_with_images_cmd(
+               a,
             )
-        return gke_cfg
+            env_cfg[env_id]["deployment"]["name"] = a
+        return env_cfg
 
+    def cleanup(self):
+        self.delete_all_deployments()
+        self.delete_all_services()
+        self.delelte_pods()
 
-
-    def deploy_docker_to_deployment(self, env_cfg):
-        self.authenticate_cluster()
-        for env_id, struct in env_cfg.items():
-            env_vars = [f"{key}={value}" for key, value in struct["env"].items()]
-
-
-
-    def deploy_batch(self, env_cfg):
-        try:
-            self.authenticate_cluster()
-            for env_id, cmd_stack in env_cfg.items():
-                for cmd in cmd_stack:
-                    print(f"Run command: {cmd}")
-                    try:
-                        subprocess.run(
-                            cmd,
-                            check=True,
-                            text=True,
-                            shell=os.name == "nt"
-                        )
-                        if "create" in cmd and "deployment" in cmd:
-                            print("Await deployment creation")
-                            all_pods:list = self.get_pods()
-                            for pod in all_pods:
-                                if pod.startswith(env_id):
-                                    # save
-                                    env_cfg[""]
-                            print("Deployment creation awaited")
-                    except Exception as e:
-                        print(f"Error exec cmd: {e}")
-            print(f"All resources created")
-            return True
-        except Exception as e:
-            print(f"Unable do deploy images: {e}")
-            return False
-
-
-    def delelte_pods(self, pod_names:list[str]):
+    def delelte_pods(self, pod_names:list[str]=None, all=False):
         # Löschbefehl für den Pod
-        for pn in pod_names:
-            command = ['kubectl', 'delete', 'pod', pn]
-            subprocess.run(command, check=True, text=True, capture_output=True)
+        if all is True:
+            pod_names = self.get_pods()
+
+        if pod_names is not None:
+            for pn in pod_names:
+                print(f"Working del equest or pod: {pn}")
+                if pn.startswith("env"):
+                    command = ['kubectl', 'delete', 'pod', pn]
+                    subprocess.run(command, check=True, text=True, capture_output=True)
+                    print(f"Deleted: {pn}")
         print("Pod names deleted")
 
-    def get_pod_ips(self, pod_names: list) -> dict:
+
+    def delete_all_services(self, namespace: str = "default"):
+        """
+        Löscht alle Services im angegebenen Namespace (außer dem 'kubernetes'-Service).
+        """
+        # Alle Service-Namen holen
+        result = subprocess.run(
+            ["kubectl", "get", "svc", "-n", namespace, "-o", "jsonpath={.items[*].metadata.name}"],
+            check=True, capture_output=True, text=True
+        )
+        services = result.stdout.strip().split()
+
+        # Standard-Service rausfiltern
+        services = [svc for svc in services if svc != "kubernetes"]
+
+        if not services:
+            print(f"Keine Services im Namespace '{namespace}' gefunden (außer dem Standard 'kubernetes').")
+            return
+
+        for svc in services:
+            cmd = ["kubectl", "delete", "svc", svc, "-n", namespace]
+            subprocess.run(cmd, check=True, text=True)
+            print(f"Service '{svc}' gelöscht.")
+
+        print("Alle Services erfolgreich gelöscht.")
+
+    def delete_all_deployments(self, namespace: str = "default"):
+        """
+        Löscht alle Deployments im angegebenen Namespace, inkl. aller Pods.
+        """
+        # Alle Deployment-Namen holen
+        result = subprocess.run(
+            ["kubectl", "get", "deployments", "-n", namespace, "-o", "jsonpath={.items[*].metadata.name}"],
+            check=True, capture_output=True, text=True
+        )
+        deployments = result.stdout.strip().split()
+
+        if not deployments:
+            print(f"Keine Deployments im Namespace '{namespace}' gefunden.")
+            return
+
+        for dep in deployments:
+            cmd = ["kubectl", "delete", "deployment", dep, "-n", namespace]
+            subprocess.run(cmd, check=True, text=True)
+            print(f"Deployment '{dep}' inkl. Pods gelöscht.")
+
+        print("Alle Deployments erfolgreich gelöscht.")
+
+    def get_public_service_ip(self, service_name: list[str]) -> dict:
+        """
+        Retrieves the public external IP for a Kubernetes LoadBalancer service.
+
+        Args:
+            service_name: The name of the Kubernetes service.
+
+        Returns:
+            The external IP address as a string, or an empty string if not found.
+        """
+        ips = {}
+        try:
+            for sn in service_name:
+                cmd = ['kubectl', 'get', 'service', service_name, '-o=jsonpath={.status.loadBalancer.ingress[0].ip}']
+                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                public_ip = result.stdout.strip()
+                ips[sn] = public_ip
+            print(f"All public ips extracted: {ips}")
+        except subprocess.CalledProcessError as e:
+            print(f"Error getting public IP for service '{service_name}': {e.stderr}")
+        except Exception as e:
+            print(f"An error occurred get_public_service_ip: {e}")
+        return ips
+
+    def get_intern_pod_ips(self, pod_names: list) -> dict:
         """
         Retrieves the internal IP and port for a list of pods.
 
@@ -189,8 +274,15 @@ class GKEAdmin:
         print("Successfully retrieved pod IPs.")
         return pod_ips
 
-
-
+    def create_or_update_deployment(self, env_id: str):
+        image = self.artifact_admin.get_latest_image()
+        print(f"Using image: {image}")
+        cmd = [
+            "kubectl", "create", "deployment", env_id, "--image", image, "--dry-run=client", "-o", "yaml"
+        ]
+        # apply damit es immer funktioniert (egal ob neu oder update)
+        p1 = subprocess.run(cmd, capture_output=True, text=True, check=True, shell=os.name == "nt")
+        subprocess.run(["kubectl", "apply", "-f", "-"], input=p1.stdout, text=True, check=True, shell=os.name == "nt")
 
     def get_pods(self) -> list:
         # Pods anzeigen
@@ -200,7 +292,8 @@ class GKEAdmin:
             ['kubectl', 'get', 'pods'],
             check=True,
             text=True,
-            capture_output=True
+            capture_output=True,
+            shell=os.name == "nt",
         )
         
         print(result.stdout)
@@ -209,85 +302,12 @@ class GKEAdmin:
         pod_lines = result.stdout.strip().split('\n')
         pod_names = [line.split()[0] for line in pod_lines if line]
         return pod_names
+#us-central1-docker.pkg.dev/aixr-401704/qfs-repo/qfs:latest
+#us-central1-docker.pkg.dev/aixr-401704/qfs-repo/qfs:latest
+
+if __name__ == "__main__":
+    admin = GKEAdmin()
+    #admin.delelte_pods(all=True)
+    admin.cleanup()
 
 
-
-"""
-    def rm_gke_cfg_dir(self):
-        self.file_store.cleanup()
-        print(f"Temporary directory {self.file_store.name} removed.")ss
-    def create_single_image(self, env_id, env_content): #all_pixels todo
-        yaml_content = content
-
-        manifest_file = f"{env_id}.yaml"
-
-        path = os.path.join(
-            self.file_store.name,
-            manifest_file
-        )
-
-        with open(path, "w") as f:
-            f.write(yaml_content)
-    def get_env_section(self, env_vars):
-        env_list = [f"\n                  - name: {key}\n                    value: \"{value}\"" for key, value in
-                    env_vars.items()]
-        env_section = f"\n                  env:{''.join(env_list)}"
-        return env_section
-"""
-
-"""
-            apiVersion: apps/v1
-            kind: Deployment
-            metadata:
-              name: {env_id}
-              labels:
-                app: {self.deployment_name}
-            spec:
-              replicas: 1
-              selector:
-                matchLabels:
-                  app: {self.deployment_name}
-              template:
-                metadata:
-                  labels:
-                    app: {self.deployment_name}
-                spec:
-                  containers:
-                  - name: {self.image_name}
-                    image: {self.get_img_tag()}
-                    ports:
-                    - containerPort: {self.container_port}{self.get_env_section(env_vars=env_content)}
-                resources: 
-                  requests:
-                    cpu: "4" 
-                    memory: "16Gi"
-                  limits:
-                    cpu: "16" 
-                    memory: "25Gi"           
-                    
-def get_deploy_commands(self, env_id: str, env_vars: dict) -> list[str]:
-    print("Generating imperative kubectl commands...")                    
-    # 1. Base Deployment erstellen
-    
-    
-    
-    def get_deploy_commands(self, env_id: str, env_vars: dict) -> list[list[str]]:
-        print("Generating imperative kubectl commands...")
-        create_depl_cmd = self.create_deployment_cmd(env_id)
-
-        # 2. Env-Variablen hinzufügen
-
-
-        # 3. Ressourcenlimits setzen
-        set_res_cmd = [
-            "kubectl", "set", "resources", f"deployment/{env_id}",
-            "--requests=cpu=4,memory=16Gi", "--limits=cpu=16, memory=25Gi",
-            "-c", self.image_name
-        ]
-
-        commands = [create_depl_cmd, set_env_cmd, set_res_cmd]
-        print("Commands generated successfully.")
-        return commands
-    
-               
-"""

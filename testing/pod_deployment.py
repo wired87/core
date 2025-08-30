@@ -1,10 +1,12 @@
-import asyncio
 import os
+import threading
 
 from app_utils import USER_ID, ENV_ID
 from fb_core.real_time_database import FirebaseRTDBManager
+from gke.build_admin import GKEAdmin
 from qf_core_base.qf_utils.all_subs import FERMIONS
 from qf_sim.dj.websockets.relay_station import EnvCreatorProcess
+from utils.dj_websocket.handler import ConnectionManager
 from utils.graph.local_graph_utils import GUtils
 from utils.utils import Utils
 
@@ -13,38 +15,123 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def create_world_process(user_id=USER_ID, env_id=ENV_ID):
+def create_world_process(user_id=USER_ID):
     print("DEBUG: Starting create_world_process()")
-    envs = []
-    db_root = f"users/{user_id}/env/{env_id}"
-    print(f"DEBUG: Firebase RTDB base path: {db_root}")
-    db_manager = FirebaseRTDBManager(
-        database_url=os.environ.get("FIREBASE_RTDB"),
-        base_path=db_root,
-    )
-    print("DEBUG: FirebaseRTDBManager initialized.")
-
-    cluster_root = ""  # Assuming this is intentionally empty or set elsewhere
-    print(f"DEBUG: Cluster root: '{cluster_root}'")
-
     env_creator = EnvCreatorProcess(
-        USER_ID,
+        user_id,
         Utils(),
-        db_manager,
-        cluster_root,
     )
     print("DEBUG: EnvCreatorProcess initialized.")
 
     world_cfg = env_creator.cfg_creator.env_cfg_default
     print(f"DEBUG: Default world config obtained: {world_cfg}")
 
-    env_creator.world_cfg_process(
+    env_creator.create_world_process(
         world_cfg=[
             world_cfg
-        ]
+        ],
+        env_id=ENV_ID  # testing same alltimes
     )
     print("DEBUG: world_cfg_process finished.")
-    print("Process finished")
+    print("Create World Process finished")
+    return env_creator
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class Connector:
+
+    """
+    After pod deployment :  Connect
+    """
+    def __init__(self, env_cfg, user_id, env_id):
+        self.ready_sessions = []
+
+        self.env_cfg=env_cfg
+        self.user_id=user_id
+        self.env_id=env_id
+
+        self.instance = os.environ.get("FIREBASE_RTDB")
+        self.database = f"users/{self.user_id}/env/{env_id}"
+
+        self.connection_manager = ConnectionManager()
+        self.gke_admin = GKEAdmin()
+        self.db_manager = FirebaseRTDBManager(
+            database_url=self.instance,
+            base_path=self.database,
+        )
+
+    async def connect_to_pods(self):
+        # dict : pod_name : ip
+        self.all_ips: dict = self.gke_admin.get_public_service_ip(
+            service_name=list(
+                struct["deployment"]["name"]
+                for struct in self.env_cfg.values()
+            ),
+        )
+        print(f"All ips extracted: {self.all_ips}")
+        # check globs ready -
+        # cluster finished build
+        await self.check_ready()
+
+        # Spam requests
+        self.connection_manager.start_connection_thread(
+            self.all_ips
+        )
+        print("All connections threads started")
+
+    async def check_ready(self):
+        print("Start ready Thread")
+
+        def _connect():
+            """
+            Wait till all clusters are build up
+            """
+            all_ips = self.all_ips.copy()
+            try:
+                while self.connection_manager.all_ready is not True:
+                    ready = False
+                    pod_name = ""
+                    for pod_name in all_ips.keys():
+
+                        data = self.db_manager.get_data(
+                            path=f"users/{self.user_id}/env/{pod_name}/global_states/"
+                        )
+                        if "global_states" in data:
+                            ready: bool = data["global_states"]["ready"]
+                            if ready is True:
+                                self.ready_sessions.append(pod_name)
+
+                                if len(self.ready_sessions) > len(list(all_ips.keys())):
+                                    self.connection_manager.all_ready = True
+
+                    if ready is True:
+                        all_ips.pop(pod_name)
+                        ready = False
+                        pod_name = ""
+            except Exception as e:
+                print(f"Error chck for global state: {e}")
+
+        #
+        self.ready_thread = threading.Thread(
+            target=_connect,
+            name="GLOBAL_READY_THREAD",
+            daemon=True
+        )
+
+        # Start Thread
+        self.ready_thread.start()
+        print("Threadstarted succesfuully")
 
 
 def create_cfg():
@@ -119,7 +206,6 @@ def create_cfg():
         return  # Exit if no center pixel
     print("Cfg upsertion finished")
 
-
 default_cfg = {
         "max_value": 1,
         "phase": [
@@ -164,10 +250,12 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"ERROR: Error creating World: {e}")
 
+    """    
     try:
         create_cfg()
     except Exception as e:
         print(f"ERROR: Error creating NCG: {e}")
+    """
     print("DEBUG: Script execution finished.")
 
 
