@@ -1,3 +1,4 @@
+import asyncio
 import os
 import threading
 
@@ -5,25 +6,23 @@ from app_utils import USER_ID, ENV_ID
 from fb_core.real_time_database import FirebaseRTDBManager
 from gke.build_admin import GKEAdmin
 from qf_core_base.qf_utils.all_subs import FERMIONS
-from qf_sim.dj.websockets.relay_station import EnvCreatorProcess
+from qf_sim.world.create_env import EnvCreatorProcess
 from utils.dj_websocket.handler import ConnectionManager
 from utils.graph.local_graph_utils import GUtils
 from utils.utils import Utils
 
 from dotenv import load_dotenv
-
 load_dotenv()
 
-
-def create_world_process(user_id=USER_ID):
+def create_world_process(world_cfg=None, user_id=USER_ID):
     print("DEBUG: Starting create_world_process()")
     env_creator = EnvCreatorProcess(
         user_id,
         Utils(),
     )
     print("DEBUG: EnvCreatorProcess initialized.")
-
-    world_cfg = env_creator.cfg_creator.env_cfg_default
+    if world_cfg is None:
+        world_cfg = env_creator.cfg_creator.env_cfg_default
     print(f"DEBUG: Default world config obtained: {world_cfg}")
 
     env_creator.create_world_process(
@@ -57,9 +56,9 @@ class Connector:
     def __init__(self, env_cfg, user_id, env_id):
         self.ready_sessions = []
 
-        self.env_cfg=env_cfg
-        self.user_id=user_id
-        self.env_id=env_id
+        self.env_cfg = env_cfg
+        self.user_id = user_id
+        self.env_id = env_id
 
         self.instance = os.environ.get("FIREBASE_RTDB")
         self.database = f"users/{self.user_id}/env/{env_id}"
@@ -72,51 +71,67 @@ class Connector:
         )
 
     async def connect_to_pods(self):
-        # dict : pod_name : ip
-        self.all_ips: dict = self.gke_admin.get_public_service_ip(
-            service_name=list(
-                struct["deployment"]["name"]
+        """
+        Monitor state till ready
+        Connect to all pods
+        save / return ips to connect to
+        send auth payload
+        """
+
+        print("Establish connecgion to pods")
+
+        all_pods = list(
+                struct["deployment"]["metadata"]["name"]
                 for struct in self.env_cfg.values()
-            ),
+            )
+
+
+
+        # dict : pod_name : ip
+        self.all_ips: dict = self.gke_admin.get_service_public_ips(
+            service_names=all_pods,
         )
-        print(f"All ips extracted: {self.all_ips}")
-        # check globs ready -
-        # cluster finished build
-        await self.check_ready()
+
+        # check globs ready
+        await self.check_ready(self.env_cfg)
 
         # Spam requests
+        await self.connection_manager.request_urls_process(self.all_ips)
+
         self.connection_manager.start_connection_thread(
             self.all_ips
         )
         print("All connections threads started")
 
-    async def check_ready(self):
+    async def check_ready(self, env_cfg:list[str]):
         print("Start ready Thread")
 
         def _connect():
             """
             Wait till all clusters are build up
             """
-            all_ips = self.all_ips.copy()
+            env_cfg_copy = env_cfg.copy()
             try:
                 while self.connection_manager.all_ready is not True:
                     ready = False
                     pod_name = ""
-                    for pod_name in all_ips.keys():
-
+                    for env_id, struct in env_cfg.items():
+                        print("_connect", env_id)
                         data = self.db_manager.get_data(
-                            path=f"users/{self.user_id}/env/{pod_name}/global_states/"
+                            path=f"global_states/",
+                            ref_root=f"users/{self.user_id}/env/{env_id}/",
                         )
+
                         if "global_states" in data:
                             ready: bool = data["global_states"]["ready"]
                             if ready is True:
-                                self.ready_sessions.append(pod_name)
+                                self.ready_sessions.append(env_id)
 
-                                if len(self.ready_sessions) > len(list(all_ips.keys())):
+                                if len(self.ready_sessions) > len(env_cfg_copy.keys()):
                                     self.connection_manager.all_ready = True
 
                     if ready is True:
-                        all_ips.pop(pod_name)
+                        env_cfg_copy.pop(env_id)
                         ready = False
                         pod_name = ""
             except Exception as e:

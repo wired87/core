@@ -1,6 +1,8 @@
 import os
 import subprocess
 
+from utils.run_subprocess import exec_cmd
+
 
 class ArtifactAdmin:
     def __init__(self, **kwargs):
@@ -28,10 +30,14 @@ class ArtifactAdmin:
             f"{self.region}-docker.pkg.dev/{os.environ.get('GCP_PROJECT_ID')}/{self.repo}/{self.image_name}",
             "--sort-by=~UPDATE_TIME",
             "--limit=1",
-            "--format=get(uri)"
+            "--format=get(IMAGE)"
         ]
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True, shell=True)
-        return result.stdout.strip()
+        result = exec_cmd(cmd)
+        image_name = result.strip()
+        print("image_name", image_name)
+        return image_name
+
+
 
     def list_all_images_artifact_registry(self) -> list[str]:
         """

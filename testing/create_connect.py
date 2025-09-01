@@ -9,9 +9,8 @@
 """
 import asyncio
 
-from gke.build_admin import GKEAdmin
 from testing.pod_deployment import create_world_process, Connector
-
+# es muss einen weg für noch eine chance geben irgendann amtag morgen zb in der stadt
 if __name__ == "__main__":
     try:
         #1+2+3
@@ -26,7 +25,5 @@ if __name__ == "__main__":
 
     except Exception as e:
         print(f"Error Create and connect process: {e}")
-    admin = GKEAdmin()
-    admin.cleanup()
-
-# todo double upsert (one time with None user_id & env_id
+        # admin = GKEAdmin()
+        # admin.cleanup()
