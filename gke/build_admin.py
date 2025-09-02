@@ -38,8 +38,12 @@ class GKEAdmin:
         """
         try:
             cmd = ['kubectl', 'apply', '-f', file_path]
-            exec_cmd(cmd)
-            print(f"Deployment was successfully created from '{file_path}'.")
+
+            result = exec_cmd(cmd)
+            if result is not None:
+                print(f"Deployment was successfully created from '{file_path}'.")
+            else:
+                raise ValueError("Failed create_deployment_from_yaml")
         except subprocess.CalledProcessError as e:
             print(f"Error creating Pod: {e}")
 
@@ -157,14 +161,14 @@ class GKEAdmin:
             # Pods im ingress-nginx Namespace
             cmd_pods = ["kubectl", "get", "pods", "-n", "ingress-nginx", "-o", "jsonpath={.items[*].status.phase}"]
             pods_status = exec_cmd(cmd_pods)
-            if pods_status and pods_status.stdout.strip():
-                result["pods"] = pods_status.stdout.strip().split()
+            if pods_status and pods_status:
+                result["pods"] = pods_status.split()
 
             # Services im ingress-nginx Namespace
             cmd_svc = ["kubectl", "get", "svc", "-n", "ingress-nginx", "-o", "jsonpath={.items[*].metadata.name}"]
             svc_result = exec_cmd(cmd_svc)
-            if svc_result and svc_result.stdout.strip():
-                result["services"] = svc_result.stdout.strip().split()
+            if svc_result and svc_result:
+                result["services"] = svc_result.split()
 
             # Installiert, wenn Controller-Pod und Service existieren
             if any("ingress-nginx-controller" in s for s in result["services"]):
@@ -174,7 +178,7 @@ class GKEAdmin:
             print(f"Fehler beim Check des Ingress-Controllers: {e}")
 
         print("Ingress-Controller-Check Ergebnis:")
-        pprint.pprint(result)
+        pprint.pp(result)
         return result
 
     def create_ingress_service_rule(self, env_id):
@@ -358,7 +362,7 @@ class GKEAdmin:
             print(f"Exception while create_deployments_process: {e}")
 
         finally:
-            print("GKE deployment process finalized.")
+            print("GKE create_deployments_process process finalized.")
 
         return env_cfg
 
@@ -471,7 +475,7 @@ class GKEAdmin:
             p1 = exec_cmd(cmd)
             if p1 is not None:
                 cmd =["kubectl", "apply", "-f", "-"]
-                exec_cmd(cmd, inp=p1.stdout)
+                exec_cmd(cmd, inp=p1)
 
 
 
@@ -549,7 +553,7 @@ class GKEAdmin:
             print(f"Exception while get_depl_cmd: {e}")
 
         finally:
-            print("GKE deployment process finalized.")
+            print("GKE get_depl_cmd process finalized.")
 
 
     def cleanup(self):
@@ -637,7 +641,7 @@ class GKEAdmin:
                 cmd = ['kubectl', 'get', 'service', sn, '-o=jsonpath={.status.loadBalancer.ingress[0].ip}']
                 result = exec_cmd(cmd)
                 if result is not None:
-                    public_ip = result.stdout.strip()
+                    public_ip = result
                     ips[sn] = public_ip
             print(f"All public ips extracted: {ips}")
         except subprocess.CalledProcessError as e:
@@ -695,7 +699,7 @@ class GKEAdmin:
                 result = exec_cmd(cmd)
                 if result is not None:
 
-                    ip_address = result.stdout.strip()
+                    ip_address = result
 
                     # Check if an IP was found and add it to the dictionary
                     if ip_address:
@@ -720,7 +724,7 @@ class GKEAdmin:
         p1 = exec_cmd(cmd)
         if p1 is not None:
             cmd = ["kubectl", "apply", "-f", "-"]
-            exec_cmd(cmd, inp=p1.stdout)
+            exec_cmd(cmd, inp=p1)
             print("Depl. proc finsied")
 
 
@@ -732,7 +736,7 @@ class GKEAdmin:
         result = exec_cmd(cmd)
         print("Alle Pods angezeigt.")
         if result is not None:
-            pod_lines = result.stdout.strip().split('\n')
+            pod_lines = result.split('\n')
             pod_names = [line.split()[0] for line in pod_lines if line]
             return pod_names
 #us-central1-docker.pkg.dev/aixr-401704/qfs-repo/qfs:latest

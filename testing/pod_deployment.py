@@ -7,6 +7,7 @@ from fb_core.real_time_database import FirebaseRTDBManager
 from gke.build_admin import GKEAdmin
 from qf_core_base.qf_utils.all_subs import FERMIONS
 from qf_sim.world.create_env import EnvCreatorProcess
+from utils.deserialize import deserialize
 from utils.dj_websocket.handler import ConnectionManager
 from utils.graph.local_graph_utils import GUtils
 from utils.utils import Utils
@@ -20,6 +21,8 @@ def create_world_process(world_cfg=None, user_id=USER_ID):
         user_id,
         Utils(),
     )
+    world_cfg = deserialize(world_cfg)
+
     print("DEBUG: EnvCreatorProcess initialized.")
     if world_cfg is None:
         world_cfg = env_creator.cfg_creator.env_cfg_default
