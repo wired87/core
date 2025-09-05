@@ -16,7 +16,7 @@ urlpatterns = [
     #path('bq/', include("_bq_core.dj.urls")),
     path('docai/', include("documentai.views.urls")),
 
-    path('gke/', include("gke.urls")),
+    path('gke/', include("gke_admin.urls")),
 
     # frontend
     #path("frontend/", include("frontend.urls")),

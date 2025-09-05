@@ -19,7 +19,6 @@ if __name__ == "__main__":
         connector=Connector(
             env_cfg=env_creator.env_cfg,
             user_id=env_creator.user_id,
-            env_id=env_creator.env_id
         )
         asyncio.run(connector.connect_to_pods())
 
