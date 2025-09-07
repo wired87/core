@@ -14,3 +14,5 @@ sudo systemctl restart gunicorn
 sudo systemctl restart fail2ban
 sudo journalctl -u gunicorn -f
 """
+
+# cd qf_sim && git pull && cd .. && cd qf_core_base && git pull && cd .. && utils && git pull && cd ..
