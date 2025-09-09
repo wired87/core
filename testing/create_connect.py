@@ -9,7 +9,6 @@
 """
 import asyncio
 
-from testing.pod_deployment import create_world_process, Connector
 # es muss einen weg für noch eine chance geben irgendann amtag morgen zb in der stadt
 if __name__ == "__main__":
     try:
