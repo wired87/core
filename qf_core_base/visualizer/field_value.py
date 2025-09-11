@@ -2,17 +2,18 @@ import tempfile
 
 import matplotlib.pyplot as plt
 import numpy as np
+import ray
 from matplotlib.animation import FuncAnimation, FFMpegWriter
 import os
 import base64
 from io import BytesIO
 
+from app_utils import USER_ID
 from qf_core_base.fermion.ferm_utils import FermUtils
 from qf_core_base.g.gauge_utils import GaugeUtils
 from qf_core_base.qf_utils.all_subs import ALL_SUBS, FERMIONS, G_FIELDS
 from qf_core_base.qf_utils.field_utils import FieldUtils
-from qf_sim._qutip.visualizer import QuTiPRenderer
-
+#from qf_sim._qutip.visualizer import QuTiPRenderer
 
 """
 
@@ -81,16 +82,15 @@ class Visualizer(
     Data get written to tmp dir (save_dir)
     """
 
-    def __init__(self, g, user_id, save_dir, qf_utils):
-        self.g = g
+    def __init__(self, save_dir, host=None, qf_utils=None):
         super().__init__()
         self.frames = []  # Store field arrays
         #self.frontend=frontend
-        self.user_id = user_id
+        self.user_id = USER_ID
         self.qf_utils = qf_utils
         self.anim_buffer = BytesIO()
         self.save_dir = save_dir
-
+        self.host = host
         self.animation_folder_name="animations"
         self.plt_folder_name="plots"
 
@@ -108,20 +108,28 @@ class Visualizer(
 
 
 
-    def main(self):
+    def get_all_subs(self):
+        if self.host is None:
+            all_subs: dict = self.qf_utils.get_all_subs_list(
+                "base_type",
+                datastore=True,
+                just_attrs=False,
+                sort_for_types=True
+            )
+        else:
+            all_subs = ray.get(self.host["UTILS_WORKER"].get_all_subs_list.remote(
+
+            ))
+
+    def main(self, all_subs):
        #print("create field visuals form sorted_node_types:")
 
-        all_subs: dict = self.qf_utils.get_all_subs_list(
-            "base_type",
-            datastore=True,
-            just_attrs=False,
-            sort_for_types=True
-        )
+
 
         for i, (ntype, nodes) in enumerate(all_subs.items()):
             save_path = os.path.join(
                 self.save_dir,
-                f"qfn{ntype.split('qfn')[-1]}",
+                f"pixel{ntype.split('pixel')[-1]}",
 
             )
 
@@ -136,7 +144,7 @@ class Visualizer(
             extracted_field_data:dict = self._extract_field_values(
                 nodes, ntype
             )
-            for field_key, time_data in extracted_field_data.items():
+            """for field_key, time_data in extracted_field_data.items():
                 if field_key in ["psi"]:
                     self.qutip_renderer = QuTiPRenderer()
                     self.qutip_renderer.visualize(
@@ -145,7 +153,7 @@ class Visualizer(
                         save_path = save_path,
                         node_id=ntype,
                         save=True,
-                    )
+                    )"""
 
 
 
@@ -160,7 +168,7 @@ class Visualizer(
 
 
     def preprare_G(self, G):
-        all_nodes = [(nid, attrs) for nid, attrs in G.nodes(data=True) if attrs.get("base_type") in [*ALL_SUBS, "QFN"]]
+        all_nodes = [(nid, attrs) for nid, attrs in G.nodes(data=True) if attrs.get("base_type") in [*ALL_SUBS, "PIXEL"]]
         node_type_classified = {}
 
 

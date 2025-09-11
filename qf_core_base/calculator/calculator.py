@@ -2,128 +2,19 @@
 import numpy as np
 import sympy as sp
 
-from qf_core_base.calculator.calculator_creator import CalcCreator
 from qf_core_base.calculator.cutils import CalcUtils
 from qf_core_base.qf_utils import QFLEXICON
-from qf_core_base.qf_utils.all_subs import FERMIONS, G_FIELDS, H
-from qf_core_base.qf_utils.qf_utils import QFUtils
-
-from qf_sim.world.env import ENV_LEX
-def plan_graph():
-    test1=dict(
-        start1="wie partikelansammlungen intragieren lassen?",
-        FLOW1="Circuit ")
 
 
-
-
-
-class Calculator(CalcCreator):
+class Calculator(CalcUtils):
     """
-    partikel so expressen um auf gezieltem weg
-    miteinander zu interagieren
-
-
-    todo bau calculator zu CaclManager um.
-    er erhält immer nur parameter von einzelnen nodes (der QFN G bleibt erhalten nur
-    jede iter läd daten)
-    und muss gleichungen herausfinden welche passen könnten
-    Aber bring erstmal dieses system zum laufen sodass du eine basis hast
+    Tool box for universal equations like dirac etc.
     """
 
-    def __init__(self, g, equations: list or None = None):
-        super().__init__(g)
-        self.g = g
-        self.equations = equations
-
+    def __init__(self):
+        super().__init__()
         self.qf_lex = QFLEXICON.copy()
-        self.env_lex = ENV_LEX.copy()
-        self.cutils = CalcUtils(self.g)
-        self.qf_utils = QFUtils(g)
-
-
-
-    def main(self, parent, parent_id, env_attrs, child=None, edge_attrs=None, double=False, equations=None):
-        """
-        Calc vorerst alles zwischen einzelnem n -> n - paar. -> Gibt dir mehr kontrolle
-        """
-       #print("Start calc process")
-       #print("parent, parent_id, env_attrs", parent, parent_id, env_attrs)
-        if equations is None:
-            equations = self.equations
-
-        elif isinstance(equations, dict):
-            equations = [equations]
-
-        attr_stack = {
-            "local": parent,
-            "neighbor": child,
-            "edge_attrs": edge_attrs,
-            "global": env_attrs  # global
-        }
-
-        # Kalkulieren immer momentane state (nicht aufeinander aufbauend
-        try:
-            for calc_item in equations:
-                # Get function
-                result, returns = self._calc(
-                    calc_item,
-                    attr_stack,
-                    parent_id
-                )
-                self._save_calc_result(
-                    result,
-                    parent,
-                    returns=returns,
-                    nid=parent["id"],
-                    all_field_neighbors=[child],
-                    env_id=env_attrs["id"],
-                    env_attrs=env_attrs
-                )
-               #print("Finished single calc")
-        except Exception as e:
-           print("Error calc process:", e)
-
-    def _save_calc_result(
-            self,
-            result,
-            parent_attrs,
-            returns,
-            nid,
-            all_field_neighbors,
-            env_id,
-            env_attrs
-    ):
-        try:
-           #print(f"Save {returns}:{result}")
-            if result is not None:
-                if returns in parent_attrs:
-                   #print("Write result to parent")
-                    parent_attrs[returns] = result
-                    #parent_attrs["dirty"].append(returns)
-                    self.g.update_node(
-                        nid,
-                        attrs=parent_attrs,
-                        timestep=parent_attrs["time"]
-                    )
-
-
-                elif returns in env_attrs:
-                    self.g.G.nodes(env_id)[returns] = result
-
-                else:
-                   #print("Write result to neighbors")
-                    # intern_neighbors = [(nnid, nattrs) for nnid, nattrs in all_field_neighbors if nattrs.get("rel") == "intern_coupled"]
-                    for nnid, nattrs in all_field_neighbors:
-                        if returns in nattrs:
-                            nattrs[returns] = result
-                            self.g.data_handler.update_node(
-                                nnid,
-                                attrs=nattrs,
-                                timestep=parent_attrs["time"]
-                            )
-        except Exception as e:
-           print("Error sving calc result", e)
+        self.env_lex = {}
 
     def _calc(
             self,
@@ -140,9 +31,6 @@ class Calculator(CalcCreator):
         code = calc_item.get("code")
         #print(f"equation {equation}")
         eq_params = calc_item["parameters"]
-        #print(f"eq_params {eq_params}")
-        #return_dest = calc_item["dest"]
-        #print("return_dest", return_dest)
 
         # Get Values for params
         extracted_params = self._extract_args(
@@ -157,18 +45,10 @@ class Calculator(CalcCreator):
             equation,
             code,
             eq_args=extracted_params,
-
         )
 
         # time.sleep(1)
         return result, returns, #return_dest
-
-
-
-
-
-
-
 
     def _extract_args(self, parent_id, eq_params, attr_stack: dict, equation):
         """
@@ -190,7 +70,7 @@ class Calculator(CalcCreator):
                 if source == "neighbor":
 
                     for n in neighbors:
-                        nattrs = self.g.G.nodes[n]
+                        nattrs = self.get_node(n)
                         if pname in nattrs.keys():
                             p_neighbor_sum[n] = nattrs[pname]
                     data = self._convert_type(np.sum(p_neighbor_sum), pname, requ_args_item=p)
@@ -209,9 +89,6 @@ class Calculator(CalcCreator):
             return collected_args
         except Exception as e:
            print("Error while collecting params:", e)
-
-
-
 
 
     def _convert_type(self, value, key, requ_args_item):
@@ -319,119 +196,16 @@ class Calculator(CalcCreator):
             eq = self.g.G.nodes[eq_name]
             calc_process(eq_name, eq)
 
-    def update_G(self, nid):
-        for eq in self.all_equations:
-            collected_params = {}
-            parameters = eq["parameters"]
-            equation = eq["equation"]
-            returns = eq["returns"]
-            for p in parameters:
-                source = p["source"]
-                pname = p["name"]
-
-                #todo: momentan wird system nur durch externe veränderungen geupt (n-change/stimuli) -> erweiter auf interne updates based on
-                pid = f"{nid}_{pname}"
-
-                if source=="neighbor":
-                    neighbors = self.g.get_neighbor_list(pid, target_type=pname)
-
-                    all_neighbor_vals = []
-                    for nnid, nattrs in neighbors:
-                        """
-                        Compare edge attrs with nattrs vals for any changes
-                        """
-                        npid = f"{nnid}_{pname}"
-                        nval = nattrs.get(pname)
-
-                        # Get data from edges
-                        edge_attrs = self.g.G[pid][npid]
-                        edge_val = edge_attrs.get(pname)
-                        if edge_val is None or edge_val != nval:
-                            # Neighbor Value has changed sinc last iteration
-                            self.g.G[pid][npid][pname] = nval
-                        all_neighbor_vals.append(nval)
-
-                    # Calc average Value of all neighbors
-                    # todo refeine fro specific cases
-                    average = self.calc_average_neighbor_value(
-                        all_neighbor_vals,
-                        val_type=QFLEXICON[pname]["type"]
-                    )
-                    collected_params.update({pname: average})
-                    # Update intern state
-                else:
-                    collected_params.update({pname: self.g.G.nodes[f"{nid}_{pname}"]["value"]})
-
-            result = self._run(equation, eq_args=collected_params)
-            if result is not None:
-                self.g.G.nodes[f"{nid}_{returns}"]["value"] = result
-           #print("Calc process Finished")
-            return True
-
-    def calc_from_schema(self, nid, param_key, env_attrs, env_id):
-        """
-        VALUE HAS CHANGED.
-        GET EQUATIONS OF INFLUENCE
-        RECALC!!!! -
-
-
-
-        """
-        node_attrs = self.g.G.nodes(nid)
-
-        # Get all neighbor fields
-        # todo make a tiny structural graph with just field interactions
-        all_field_neighbors = self.g.get_neighbor_list(
-            nid,
-            target_type=[
-               *FERMIONS,
-                G_FIELDS,
-                *H
-            ],
-        )
-
-        equations = self.g.get_neighbor_list(param_key, "EQUATIONS")
-
-        for eq_id, eq_params in equations:
-            equation = eq_params["equation"]
-            returns = eq_params["returns"]
-
-            param_struct = {}
-            eq_params = self.g.get_neighbor_list(eq_id, trgt_rel="calc_with")
-            # Collect Params
-            for p_name, pparams in eq_params:
-                if pparams["source"] == "local":
-                    param_struct[p_name] = node_attrs[p_name]
-                elif pparams["source"] == "neighbor":
-                    n_sum = []
-                    for nnid, nattrs in all_field_neighbors:
-                        if p_name in nattrs:
-                            n_sum.append(nattrs[p_name])
-                elif pparams["source"] == "global":
-                    param_struct[p_name] = env_attrs[p_name]
-
-            result = self._run(equation, param_struct)
-
-            # save result -> generic udate loop will
-            self._save_calc_result(
-                result,
-                parent_attrs=node_attrs,
-                returns=returns,
-                nid=nid,
-                all_field_neighbors=all_field_neighbors,
-                env_id=env_id,
-                env_attrs=env_attrs
-
-            )
 
     def calc_from_schema_eq_based(self, nid):
-        sub_field_id, sub_field_attrs = self.g.get_single_neighbor(nid, trgt_rel="has_param")
+        sub_field_id, sub_field_attrs = self.g.get_neighbor_list_rel(nid, trgt_rel="has_param")
 
         # extract param key
         param_key = nid.replace(f"_{sub_field_id}", "")
 
-        isub_field_neighbors = self.g.get_neighbor_list(sub_field_id, trgt_rel="intern_coupled")
-        esub_field_neighbors = self.g.get_neighbor_list(sub_field_id, trgt_rel="extern_coupled")
+        isub_field_neighbors = self.g.get_neighbor_list_rel(sub_field_id, trgt_rel="intern_coupled")
+        esub_field_neighbors = self.g.get_neighbor_list_rel(sub_field_id, trgt_rel="extern_coupled")
+
 
         sub_field_neighbors = [
             *isub_field_neighbors,
@@ -444,7 +218,7 @@ class Calculator(CalcCreator):
         for eq_id, equations in equations:
             param_struct = {}
             # Get all Keys of that equation
-            eq_used_params = self.g.get_neighbor_list(eq_id, trgt_rel="calc_with")
+            eq_used_params = self.g.get_neighbor_list_rel(eq_id, trgt_rel="calc_with")
             for eqp_id, eq_attrs in eq_used_params:
                 if eq_attrs["source"] == "local":
                     pass
@@ -456,24 +230,6 @@ class Calculator(CalcCreator):
 
 
 
-
-
-
-    def calculate(self, changes:dict, env_attrs):
-        """
-        Stim / neighbor value change als trigger
-        changes: node_id: list[keys]
-        """
-        to_calc = []
-
-        for nid, list_keys in changes.items():
-            attrs = self.g.G.nodes(nid)
-
-            # Get parent field from single param
-
-            parent_field_id = nid.split("_")[1]
-            parent_field_attrs = self.g.G.nodes[parent_field_id]
-            parent_field_type=parent_field_attrs.get("type")
 
             # Get all PARAM node - neighbors
             #parent_field_neighbors = self.g.G.get_neighbor_list(parent_field_id, [k.upper() for k in QFLEXICON.keys()])
@@ -532,4 +288,55 @@ class Calculator(CalcCreator):
                         ),
                         env_attrs=env_attrs
                     )
+        
+
+    def update_G(self, nid):
+        for eq in self.all_equations:
+            collected_params = {}
+            parameters = eq["parameters"]
+            equation = eq["equation"]
+            returns = eq["returns"]
+            for p in parameters:
+                source = p["source"]
+                pname = p["name"]
+
+                #todo: momentan wird system nur durch externe veränderungen geupt (n-change/stimuli) -> erweiter auf interne updates based on
+                pid = f"{nid}_{pname}"
+
+                if source=="neighbor":
+                    neighbors = self.g.get_neighbor_list(pid, target_type=pname)
+
+                    all_neighbor_vals = []
+                    for nnid, nattrs in neighbors:
+                        Compare edge attrs with nattrs vals for any changes
+                        npid = f"{nnid}_{pname}"
+                        nval = nattrs.get(pname)
+
+                        # Get data from edges
+                        edge_attrs = self.g.G[pid][npid]
+                        edge_val = edge_attrs.get(pname)
+                        if edge_val is None or edge_val != nval:
+                            # Neighbor Value has changed sinc last iteration
+                            self.g.G[pid][npid][pname] = nval
+                        all_neighbor_vals.append(nval)
+
+                    # Calc average Value of all neighbors
+                    # todo refeine fro specific cases
+                    average = self.calc_average_neighbor_value(
+                        all_neighbor_vals,
+                        val_type=QFLEXICON[pname]["type"]
+                    )
+                    collected_params.update({pname: average})
+                    # Update intern state
+                else:
+                    collected_params.update({pname: self.g.G.nodes[f"{nid}_{pname}"]["value"]})
+
+            result = self._run(equation, eq_args=collected_params)
+            if result is not None:
+                self.g.G.nodes[f"{nid}_{returns}"]["value"] = result
+           #print("Calc process Finished")
+            return True
+
+        
+        
         """

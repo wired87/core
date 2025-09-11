@@ -38,16 +38,14 @@ Die Energie die das HIGGS Feld anregt .ist was wir modeliern
 """
 import time
 
-from bm.settings import TEST_USER_ID
 from itertools import chain, combinations
 
 from qf_core_base.calculator.calculator import Calculator
-from qf_core_base.fermion.ferm_base import FermionBase
-from qf_core_base.g.GaugeBase import GaugeBase
-from qf_core_base.higgs.higgs_base import HiggsBase
+from qf_core_base.qf_utils.field_utils import FieldUtils
+from qf_core_base.qf_utils.runtime_utils_creator import RuntimeUtilsCreator
 from qf_core_base.runner.qf_creator import QFCreator
 from qf_core_base.qf_utils import QFLEXICON
-from qf_core_base.qf_utils.all_subs import FERMIONS
+from qf_core_base.qf_utils.all_subs import FERMIONS, G_FIELDS, H
 from qf_core_base.qf_utils.mover import Mover
 from qf_core_base.qf_utils.qf_utils import QFUtils
 
@@ -61,7 +59,7 @@ def powerset_of_keysets(dict1, dict2):
 
 
 
-class QFUpdator(QFCreator):
+class QFUpdator(QFCreator, FieldUtils):
     """
     This creates a graph of a lot of charged particles
     and let them interact following the base laws of physics
@@ -87,28 +85,32 @@ class QFUpdator(QFCreator):
             self,
             g: GUtils,
             env,
+            user_id,
             testing=True,
             specs={},
-            user_id=TEST_USER_ID,
             run=False,
+            host=None,
     ):
         super().__init__(g, testing, specs)
+        self.short_lower_type = None
+        self.updator = None
         self.neighbors = None
         self.field_calculator = None
         # Core physics content
         self.user_id = user_id
         self.env=env
         self.g = g
+        self.host=None
+        # Utility classes https://console.google.com/
+        self.calculator = Calculator()
 
-        # Utility classes https://console.firebase.google.com/
-        self.calculator = Calculator(
-            g,
-            equations=list(
-                #STANDARD_MODELC
-            )
+        self.ruc = RuntimeUtilsCreator(
+            host=None,
+            g=self.g,
+            db_root=f"users/{self.user_id}/env/{self.env['id']}/"
         )
 
-        self.qf_utils = QFUtils(
+        self.qfu = QFUtils(
             g
         )
 
@@ -135,7 +137,7 @@ class QFUpdator(QFCreator):
         """
         LOGGER.info("Start update loop")
 
-        stuff = [(nid, attrs) for nid, attrs in self.g.G.nodes(data=True) if attrs.get("type") == "QFN"]
+        stuff = [(nid, attrs) for nid, attrs in self.g.G.nodes(data=True) if attrs.get("type") == "PIXEL"]
         len_stuff = len(stuff)
         index = 0
         #LOGGER.info(f"Startindex {index}, {len_stuff}")
@@ -155,7 +157,6 @@ class QFUpdator(QFCreator):
             self.update_process(
                 self.env,
                 attrs,
-                len_stuff,
                 nid,
             )
             index += 1
@@ -164,57 +165,33 @@ class QFUpdator(QFCreator):
     def update_process(
             self,
             env_attrs,
-            attrs,
-            len_stuff,
+            px_attrs,
             nid,
     ):
-        # Entry: QFN
-        # Option A: Calc everything, once per timestep
-        # Cons: Overhead, not realistic
-        # Pros: easy
 
-        # Option B: Set Trigger which updates the pathway
-        # Cons: Harder to implement (changes across QFN edges
-        # Pros: highly realistic -> Go with it
+        print(f"Start UPDATE PROCESS")
 
-        # -> Wir lauschen nicht nach attr changes sondern
-        # neuen parametern im system -> interaktion triggert
-        # pathway. ->
-        # Erzeuge Künstliches Feld mit ... parametern
-        # um Fermion, gauge usw zu triggern
-       #print(f"Start UPDATE PROCESS")
-        env_id = self.env.get("id")
-        # GET self FIELDS (PSI etc.)
-        if nid is None:
-            nid = attrs.get("id")
-        if env_id is None:
-            env_id = attrs.get("id")
-        if not env_id or not nid:
-            LOGGER.info("bad request")
-            return
-
-        if attrs.get("neighbors_pm") is None:
+        if px_attrs.get("neighbors_pm") is None:
             # Get neighbors in 3d space
             # enfachqfn ids müssen vorher gesetzt werden
-            attrs["neighbors_pm"] = self.calculator.cutils.set_neighors_plus_minus(
+            px_attrs["neighbors_pm"] = self.calculator.cutils.set_neighors_plus_minus(
                     node_id=nid,
-                    self_attrs=attrs,
+                    self_attrs=px_attrs,
                     d=self.env["d_default"],
-                    trgt_type="QFN",
-                    field_type=attrs["parent"][0].lower()
+                    trgt_type="PIXEL",
+                    field_type=px_attrs["parent"][0].lower()
                 )
 
-        ### VISUALS ###
         all_fields = self.qf_utils.get_all_node_sub_fields(nid)
+
         for fields_from_type in all_fields:
             for snid, sattrs in fields_from_type:
+                print(f"working {snid}")
                 self.update_core(
                     snid,
                     sattrs,
-                    attrs,
                     nid,
-                    env_attrs,
-                    attrs["neighbors_pm"],
+                    px_attrs["neighbors_pm"],
                 )
 
                 self._run_utils(snid, sattrs)
@@ -224,61 +201,30 @@ class QFUpdator(QFCreator):
             self,
             nid,
             attrs,
-            qf_attrs,
             qf_nid,
-            env_attrs,
             neighbors_pm,
     ):
-        #print(f"workign {nid}")
-
-        parents = [p.lower() for p in attrs.get("parent")]
         ntype = attrs.get("type")
-        # print("PARENTS:", parents)
+
+        runtime_utils = self.ruc.main(
+            nid,
+            ntype,
+            attrs,
+            self.host,
+            neighbors_pm,
+            qf_nid,
+        )
 
         attr_keys = [k for k in attrs.keys()]
-        if "psi" in parents:
-            sub_type = qf_attrs.get("sub_type")
 
-            if sub_type == "ITEM":
-                ferm_base = FermionBase(
-                    self.g,
-                    qfn_id=qf_nid,
-                    nid=nid,
-                    neighbors_pm=neighbors_pm,
-                    d=self.env["d"],
-                    attr_keys=attr_keys,
-                    theta_W=env_attrs["theta_W"],
-                    attrs=attrs,
-                    **attrs
-                )
-                ferm_base.main()
-
-            if sub_type == "BUCKET":
-                # Todo outsrc tasks to fermion bucket (holds all three quark items) -> (like total quark lagrangian, delta_t vom triplet...)
-                pass
-
-        elif "phi" in parents:
-            hu = HiggsBase(
-                g=self.g,
-                neighbors_pm=neighbors_pm,
-                d=env_attrs["d"],
-                attrs=attrs,
-                env=self.env,
-                **attrs
-            )
-            hu.main()
-        elif "gauge" in parents and ntype.lower() != "gluon_bucket":
-            gb = GaugeBase(
-                g_utils=self.g,
-                qfn_id=qf_nid,
-                d=self.env["d"],
-                attr_keys=attr_keys,
-                neighbors_pm=neighbors_pm,
-                attrs=attrs,
-                env=self.env
-            )
-            gb.main()
-
+        self.ruc.updator.main(
+            attrs={"id": nid, **{k: v for k, v in attrs.items() if k != "id"}},
+            env=self.env,
+            neighbor_pm_val_same_type=runtime_utils["neighbor_pm_val_same_type"],
+            all_subs=runtime_utils["all_subs"],
+            neighbor_pm_val_fmunu=runtime_utils["neighbor_pm_val_fmunu"]
+        )
+        print(f"finished {nid}")
 
 
     def event_sleep(self, type, len_stuff):
@@ -287,19 +233,7 @@ class QFUpdator(QFCreator):
                 time.sleep(100)
             else:
                 self.loop += 1
-       #print("loop", self.loop)
 
-    def update_single_field(self, nid, attrs, qfn_id, qfn_attrs, field_val_prev, parent):
-       #print(f"Working field {nid}")
-        # get all sub fields neihgbors
-        attrs[parent] = self.calculator.cutils.dmu(
-            nsum=qfn_attrs["neighbors_pm"],
-            prev=field_val_prev,
-            now=attrs[parent],  # psi
-            d=self.env["d_default"],
-            ntype=attrs.get("type"),
-            parent=parent,
-        )
 
     def _run_utils(self, nid, attrs):
         #print("Handle _run_utils")
@@ -309,17 +243,6 @@ class QFUpdator(QFCreator):
         # h entry in update G method
         #print(f"finished {nid}")
         attrs["time"] += 1
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -400,11 +323,9 @@ class QFUpdator(QFCreator):
 
 
 
-
-
 """
 
-        >>>>>>>>>>>>>>>Calculate ALL sub-fields of a single qfn<<<<<<<<<<<<<<<<<<
+        >>>>>>>>>>>>>>>Calculate ALL sub-fields of a single pixel<<<<<<<<<<<<<<<<<<
 
 
     def update_all_fields(
@@ -425,7 +346,7 @@ class QFUpdator(QFCreator):
                     node_id=qfn_id,
                     self_attrs=qfn_attrs,
                     d=self.env["d_default"],
-                    trgt_type="QFN",
+                    trgt_type="PIXEL",
                     field_type=qfn_attrs["parent"][0].lower()
                 )
 

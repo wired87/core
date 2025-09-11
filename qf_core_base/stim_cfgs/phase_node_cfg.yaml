@@ -1,0 +1,19 @@
+total_stim_strength: 10
+
+<<<<<<< HEAD
+multiplier_min: 1
+multiplier_max: 10
+
+stim_duration_ms: 1000 # how long to stim
+break_duration_ms: 1000 # how long to break after stim
+
+sets: 10 # Wiederholungen
+
+=======
+multiplier: 10
+
+stim_duration_iter: 2 # how long to stim
+break_duration_iter: 8 # how long to break after stim
+# keine wiederholungen
+>>>>>>> origin/master
+

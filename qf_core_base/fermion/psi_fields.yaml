@@ -1,14 +1,13 @@
 # Für ruhende ferms: energie = masse
 # wenn higgs energie asustößt: kinetic_e * e = m
-
-
 electron:
   y: 2.94e-6
   energy: 0.000511
   isospin: -0.5
   charge: -1
   mass: 5.11e-4
-myon:
+
+muon:
   y: 6.1e-4
   energy: 0.1057
   isospin: -0.5
@@ -36,6 +35,7 @@ down_quark:
   charge: -0.3333333333
   isospin: -0.5
   mass: 0.0048
+
 charm_quark:
   y: 0.0073
   energy: 1.275
@@ -49,7 +49,6 @@ strange_quark:
   isospin: -0.5
   charge: -0.3333333333
   mass: 0.095
-
 
 bottom_quark:
   y: 0.024
@@ -65,23 +64,23 @@ top_quark:
   charge: 0.6666666666666
   mass: 172
 
-
 electron_neutrino:
   y: 2.87e-11
-  energy: 1e-10
+  energy: 0.05
   isospin: 0.5
   charge: 0
-  mass: 1e-10
-myon_neutrino:
+  mass: 0.05
+
+muon_neutrino:
   y: 5.77e-11
-  energy: 2e-10
+  energy: 0.05
   isospin: 0.5
   charge: 0
-  mass: 2e-10
+  mass: 0.05
 
 tau_neutrino:
   y: 1.44e-10
-  energy: 5e-10
+  energy: 0.05
   isospin: 0.5
   charge: 0
-  mass: 5e-10
+  mass: 0.05

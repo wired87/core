@@ -28,6 +28,7 @@ todo graph of single equations: from qf_sim.calculator.knowledgebase import EQPa
 
 import numpy as np
 
+from qf_core_base.calculator.calculator import Calculator
 from qf_core_base.fermion.ferm_creator import FermCreator
 from qf_core_base.fermion.ferm_utils import FermUtils
 from qf_core_base.g.g_creator import GaugeCreator
@@ -49,10 +50,10 @@ from qf_core_base.fermion import FERM_PARAMS, PSI_UNIFORM
 class QFCreator:
     """
     Get 3d matrix of qfns.
-    0. Create QFN (Like a super Quantum Field)
-    1. Create for each qfn all its sub fields
+    0. Create PIXEL (Like a super Quantum Field)
+    1. Create for each pixel all its sub fields
     2. Set Pos
-    3. Link QFN neighbors
+    3. Link PIXEL neighbors
     4. Link single sub-fields
 
     ### @ Relay ###
@@ -61,36 +62,31 @@ class QFCreator:
     6. Link source fields together
     """
 
-    def __init__(self, g, testing, specs, **args):
+    def __init__(self, g, testing, dim, **args):
         super().__init__()
-
+        self.calculator = Calculator()
         self.field_utils = FieldUtils()
         self.fu = FermUtils()
         self.hu = HiggsUtils()
         self.gu = GaugeUtils()
 
         self.dim = None
-        self.layer = "QFN"
+        self.layer = "PIXEL"
 
         self.g = g  # GU -> struct
         self.mover = Mover(g)
 
         self.testing = testing
-        self.specs = specs
+        self.dim = dim
         self.save_path= r"/qf_core_base/calculator\tree.json"
 
         # Helper
         self.qf_utils = QFUtils(g)
-        #self.eqp_creator = EQPathwayCreator(g)
 
-
-        # Creators
-        """self.ferm_creator = FermCreator(
-            g_utils=self.g,
-        )"""
         self.g_creator = GaugeCreator(
             g_utils=self.g,
         )
+
         self.ferm_creator = FermCreator(
             g=self.g,
         )
@@ -100,17 +96,19 @@ class QFCreator:
 
 
 
-    def create(self, env_dim, env):
+    def create(self, cluster_dim, env):
+        self.env = env
         print("QF.create")
-        self.dim = env_dim
+        self.dim = cluster_dim
         # Add QQ
         amount_needed_nodes = self.get_amount_nodes()
 
         for i in range(amount_needed_nodes):
-            self.create_single_qf_node(index=i, env_id=env["id"])
+            self.create_single_pixel(index=i, env_id=env["id"])
 
         # 2. - 5.
         self.spread_connect_qfn()
+        self.g.print_edges("GLUON", "GLUON")
 
         #self.g.print_status_G()
         #self.g.save_graph(dest_name=self.save_path)
@@ -118,30 +116,30 @@ class QFCreator:
         print("Creation finished")
         #time.sleep(100)
 
-    def create_single_qf_node(self, index, env_id):
-        nid = f"qfn_{index}"
-        ##print("Creating QFN", nid)
+    def create_single_pixel(self, index, env_id):
+        nid = f"px_{index}"
+        ##print("Creating PIXEL", nid)
         self.g.add_node(
             {
                 "id": nid,
-                "parent": ["QF"],
+                "parent": ["ENV"],
                 "L_total": 0.0,
-                "type": "QFN",
+                "type": "PIXEL",
                 "pos": [0.0, 0.0, 0.0]
                 #**{k: v["value"] for k, v in self.qf_lex.items() if "value" in v},
             }
         )
 
-        print("QFN created:", nid)
+        print("PIXEL created:", nid)
 
-        # Link QFN to QF
+        # Link PIXEL to QF
         self.g.add_edge(
             env_id,
             nid,
             attrs=dict(
                 rel="has_point",
                 src_layer="ENV",
-                trgt_layer="QFN",
+                trgt_layer="PIXEL",
             )
         )
 
@@ -154,7 +152,7 @@ class QFCreator:
         # Connect local nodes
         self._connect_local_fields(nid)
 
-
+        self.g.print_edges("GLUON", "GLUON")
 
 
     def connect_field_types(
@@ -173,21 +171,20 @@ class QFCreator:
         src_fields = None
 
         if trgt_qfn_id is None:
-            # Connection within same QFN
+            # Connection within same PIXEL
             trgt_qfn_id = src_qfn_id
 
         if trgt_qfn_id != src_qfn_id:
             # Get all fields of th trgt node
-            src_fields = self.qf_utils.get_all_node_sub_fields(nid=src_qfn_id)
+            src_fields:dict = self.qf_utils.get_all_node_sub_fields(nid=src_qfn_id)
 
         # Get all fields of th trgt node
-        trgt_fields = self.qf_utils.get_all_node_sub_fields(nid=trgt_qfn_id)
+        trgt_fields:dict = self.qf_utils.get_all_node_sub_fields(nid=trgt_qfn_id)
 
         # HIGGS #####################################
         self._connect_phi(
-            src_fields=src_fields[0] if src_fields is not None else trgt_fields[0],
-            trgt_phi=trgt_fields[0],
-            #trgt_g=trgt_fields[2],
+            src_fields=src_fields["PHI"] if src_fields is not None else trgt_fields["PHI"],
+            trgt_phi=trgt_fields["PHI"],
             src_qfn_id=src_qfn_id,
             trgt_qfn_id=trgt_qfn_id,
         )
@@ -197,13 +194,13 @@ class QFCreator:
 
         # GAUGE ###############################
         self._connect_gauge(
-            gauge_fields=src_fields[2] if src_fields is not None else trgt_fields[2],
-            trgt_gs=trgt_fields[2],
-            trgt_ferms=trgt_fields[1],
+            gauge_fields=src_fields["GAUGE"] if src_fields is not None else trgt_fields["GAUGE"],
+            trgt_gs=trgt_fields["GAUGE"],
+            trgt_ferms=trgt_fields["FERMION"],
             src_qfn_id=src_qfn_id,
             trgt_qfn_id=trgt_qfn_id,
         )
-        ##print("Finished connect field types")
+        print("Finished connect field types")
 
     def _connect_phi(
             self,
@@ -215,10 +212,10 @@ class QFCreator:
     ):
         k = "PHI"
         print("Conect HIGGS")
-        src_phi_id = src_fields[0][0]
+        src_phi_id = list(src_fields.keys())[0] # src_fields[0][0]
         if trgt_qfn_id != src_qfn_id:
             # Higgs -> Higgs
-            trgt_phi_id = trgt_phi[0][0]
+            trgt_phi_id = list(trgt_phi.keys())[0]
             self.g.add_edge(
                 src_phi_id,
                 trgt_phi_id,
@@ -241,14 +238,14 @@ class QFCreator:
     ):
         k = "GAUGE"
         print("_connect_gauge")
-        for g_field_id, g_field_attrs in gauge_fields:
+        for g_field_id, g_field_attrs in gauge_fields.items():
             g_field_type = g_field_attrs.get("type")
 
             # Get valid coupling partners
             fields_to_couple:list = self.field_utils.gauge_to_gauge_couplings[g_field_type.lower()]
 
             # 1. Gauge ➝ Gauge INTERN & EXTERN
-            for trgt_field_id, trgt_field_attrs in trgt_gs:
+            for trgt_field_id, trgt_field_attrs in trgt_gs.items():
                 trgt_field_type = trgt_field_attrs.get("field")
                 # Valid coupling partner?
                 if trgt_field_type in fields_to_couple:
@@ -277,7 +274,7 @@ class QFCreator:
             # G -> FERM accross nodes
             # (FERM -> G -> FERM - interaction)
             gauge_ferm_coupling_partners:list = self.field_utils.gauge_to_fermion_couplings[g_field_type.lower()]
-            for fermid, ferm_attrs in trgt_ferms:
+            for fermid, ferm_attrs in trgt_ferms.items():
                 ferm_type = ferm_attrs.get("type")
                 for partner in gauge_ferm_coupling_partners:
                     if partner in fermid:
@@ -294,10 +291,10 @@ class QFCreator:
 
 
     def get_amount_nodes(self):
-        dim:list[int] = self.specs["dim"]
-        if dim:
+        print("dim:", self.dim)
+        if self.dim:
             amount_nodes = 1
-            for d in dim:
+            for d in self.dim:
                 amount_nodes *= d
             print("Create amount nodes", amount_nodes)
             # time.sleep(5)
@@ -318,16 +315,16 @@ class QFCreator:
             dict(
                 id=field_id,
                 type=phi,
-                _symmetry_groups=self.field_utils.get_sym_group(phi),
+                #_symmetry_groups=self.field_utils.get_sym_group(phi),
                 time=0.0,
                 d_phi=self.hu.init_d_phi(),
+                h_prev=h,
                 h=h,
                 phi=self.hu.init_phi(h),
                 **HIGGS_PARAMS,
-                #**FIELD_METADATA,
             )
         )
-        # Connect PHI to QFN
+        # Connect PHI to PIXEL
         self.g.add_edge(
             src_qfn_id,
             field_id,
@@ -358,13 +355,13 @@ class QFCreator:
                     time=0.0,
                     psi=serialize_complex(com=psi),
                     psi_bar=serialize_complex(com=psi_bar),
-                    _symmetry_groups=self.fu.get_sym_group(ferm_field),
+                    #_symmetry_groups=self.fu.get_sym_group(ferm_field),
                     **PSI_UNIFORM,
                     **attrs,
                 )
             )
 
-            # PSI -> QFN
+            # PSI -> PIXEL
             self.g.add_edge(
                 src_qfn_id,
                 f"{field_id}",
@@ -374,7 +371,7 @@ class QFCreator:
                     trgt_layer=ferm_field,
                 )
             )
-            # psi does not self couple across QFN edges
+            # psi does not self couple across PIXEL edges
             # Create & Connect params
             """self._create_connect_params_to_fields(
                 field_id=field_id,
@@ -424,16 +421,20 @@ class QFCreator:
     # problem = types
     def _connect_local_fields(self, nid):
         print("Connect local fields")
-        phi, psis, gs = self.qf_utils.get_all_node_sub_fields(nid)
-        #print("psis, gs", psis, gs)
-        for gid, gattrs in gs:
+        all_subs = self.qf_utils.get_all_node_sub_fields(nid)
+
+        phi_id = list(all_subs['PHI'].keys())[0]
+        phi_attrs = list(all_subs['PHI'].values())[0]
+
+        print(f"PHI data extracted: {phi_id}: {phi_attrs}")
+
+        for gid, gattrs in all_subs["GAUGE"].items():
             #print(" gid, gattrs",  gid, gattrs)
             # G -> PHI
             g_type = gattrs.get("type")
-            #print("g_type", g_type)
             self.g.add_edge(
                 gid,
-                f"{phi[0][0]}",
+                f"{phi_id}",
                 attrs=dict(
                     rel=f"intern_coupling",
                     src_layer=g_type.upper(),
@@ -441,30 +442,12 @@ class QFCreator:
                 )
             )
 
-            # G -> G
-            # Pre define all possible connections for
-            # each gluon item
-            for gn in self.field_utils.gauge_to_gauge_couplings[g_type.lower()]:
-                # get qfn intern gauge coupling partners
-                partner_id, pattrs = self.g.get_single_neighbor_nx(nid, gn.upper())
-
-
-                self.g.add_edge(
-                    gid,
-                    partner_id,
-                    attrs=dict(
-                        rel=f"intern_coupling",
-                        src_layer=g_type.upper(),
-                        trgt_layer=gn.upper(),
-                    )
-                )
-
-        for fid, fattrs in psis:
+        for fid, fattrs in all_subs["FERMION"].items():
             # Ferms -> PSIS
             ftype= fattrs.get("type")
             self.g.add_edge(
                 fid,
-                f"{phi[0][0]}",
+                f"{phi_id}",
                 attrs=dict(
                     rel=f"intern_coupling",
                     src_layer=ftype.upper(),
@@ -477,7 +460,7 @@ class QFCreator:
             for g in self.field_utils.fermion_to_gauge_couplings[ftype.lower()]:
                 if g == "gluon":
                     partners = self.g.get_neighbor_list(nid, g.upper())
-                    for partner_id, pattrs in partners:
+                    for partner_id, pattrs in partners.items():
                         self.g.add_edge(
                             fid,
                             partner_id,
@@ -499,13 +482,11 @@ class QFCreator:
                             trgt_layer=g.upper(),
                         )
                     )
-            #print("NEIGHBORS:", [nid for nid, attrs in self.g.get_neighbor_list(fid, ALL_SUBS)])
         print("Local field connection finished")
 
 
     def spread_connect_qfn(self):
         print("Spread and connect subs accross nodes...")
-        dx_set = False
 
         # 1. iter
         # SPREAD ITEMS OVER VIRTUAL AREA
@@ -515,27 +496,29 @@ class QFCreator:
         ]
 
        #print(f"Spread {len(spread_items)} items")
+        # räumlicher abstand überall gelich (nur Zeit anders)
+        d = self.env["d_default"]
 
-        d = 50
-
-        for nid, attrs in spread_items:
+        for index, (nid, attrs) in enumerate(spread_items):
             ##print("Dpread item", nid)
             attrs = self.mover.spread_objects_3d(
                 amount_items=len(spread_items),
-                dim=self.dim[0],
+                dim=self.dim[0],  # x,y,z
                 self_attrs=attrs,
                 spread_evenly=d
             )
+            print(f"{nid} pos: {attrs.get('pos')}")
+
             self.g.update_node(attrs)
 
-            # Scatter sub-fields around qfn center pos
+            # Scatter sub-fields around pixel center pos
             self.scatter_nodes_near_position(
                 qfn_id=nid,
                 center_pos=attrs["pos"],
             )
 
         # 2. Iter
-        # Connect nearest QFN neighbors
+        # Connect nearest PIXEL neighbors
         spread_items = [
             (nid, attrs) for nid, attrs in self.g.G.nodes(data=True) if
             attrs.get("type") == self.layer
@@ -551,7 +534,7 @@ class QFCreator:
             self.g.update_node(attrs)
 
         # 3. Iter
-        # Connect sub fields across QFNs
+        # Connect sub fields across PIXELs
         self.connect_subs_across_qfn()
 
         # 4. Connect Params between all sub-fields (intern & extern)
@@ -561,16 +544,14 @@ class QFCreator:
         self.mover.distribute_subpoints_around_qfns()
         print("Spread finished")
 
-
-
     def connect_subs_across_qfn(self):
         spread_items = [
             (nid, attrs) for nid, attrs in self.g.G.nodes(data=True) if
             attrs.get("type") == self.layer
         ]
         for nid, attrs in spread_items:
-            neighbors = self.g.get_neighbor_list(nid, "QFN")
-            for n in neighbors:
+            neighbors = self.g.get_neighbor_list(nid, "PIXEL")
+            for n in neighbors.items():
                 # Connect all fields direct
                 self.connect_field_types(
                     src_qfn_id=nid,
@@ -579,7 +560,7 @@ class QFCreator:
 
 
     def scatter_nodes_near_position(self, qfn_id, center_pos, radius=20):
-        intern_neighbors = self.g.get_neighbor_list(qfn_id, trgt_rel="has_field")
+        intern_neighbors = self.g.get_neighbor_list_rel(qfn_id, trgt_rel="has_field")
         center_pos = np.array(center_pos)
 
         for nid, _ in intern_neighbors:
@@ -693,7 +674,7 @@ if __name__ == "__main__":
     qfc = QFCreator(
         g=GUtils(),
         testing=True,
-        specs={
+        dim={
             "shape": "rect",
             "dim": [2, 2, 2]
         }
@@ -749,13 +730,13 @@ if __name__ == "__main__":
                         )
                     )
 
-                    # Connect to QFN
+                    # Connect to PIXEL
                     self.g.add_edge(
                         src_qfn_id,
                         f"{field_id}",
                         attrs=dict(
                             rel=f"has_field",
-                            src_layer="QFN",
+                            src_layer="PIXEL",
                             trgt_layer=k.upper(),
                         )
                     )
@@ -769,13 +750,13 @@ if __name__ == "__main__":
                         **PHI_PARAMS,
                     )
                 )
-                # Connect to QFN
+                # Connect to PIXEL
                 self.g.add_edge(
                     src_qfn_id,
                     f"{field_id}",
                     attrs=dict(
                         rel=f"has_field",
-                        src_layer="QFN",
+                        src_layer="PIXEL",
                         trgt_layer=k.upper(),
                     )
                 )
@@ -792,17 +773,34 @@ if __name__ == "__main__":
                             **GAUGE_PARAMS,
                         )
                     )
-                    # Connect to QFN
+                    # Connect to PIXEL
                     self.g.add_edge(
                         src_qfn_id,
                         f"{field_id}",
                         attrs=dict(
                             rel=f"has_field",
-                            src_layer="QFN",
+                            src_layer="PIXEL",
                             trgt_layer=k.upper(),
                         )
                     )
 
+        # todo get center node
+        # debug pos set  -> look 3d_pos def
+        ## Get center node from defined pos
+        for nid, attrs in spread_items:
+            check_center:bool = self.calculator.set_neighors_plus_minus(
+                node_id=nid,
+                self_attrs=attrs,
+                d=d,
+                all_pixel_nodes=spread_items,
+                check_center=True
+            )
+            if check_center is True:
+                attrs.update({"center": True})
+                print("center node set", nid)
+                self.g.update_node(attrs)
+            else:
+                raise ValueError("Couldnt set ceneter node")
 
 
     def g_creator(self, src_qfn_id):
@@ -934,7 +932,7 @@ if __name__ == "__main__":
             attrs=parent_attrs
         )
 
-        # G -> QFN
+        # G -> PIXEL
         self.g.add_edge(
             src_qfn_id,
             f"{gauge_id}",

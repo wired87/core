@@ -1,5 +1,7 @@
+
 import numpy as np
 
+from app_utils import ENV_ID, USER_ID
 from qf_core_base.fermion.ferm_utils import FermUtils
 from qf_core_base.qf_utils.field_utils import FieldUtils
 from qf_core_base.qf_utils.stimmulator.stim_utils import StimUtils
@@ -34,14 +36,15 @@ class Stimulator(StimUtils, FermUtils):
 
     """
 
-    def __init__(self, g: GUtils, types_of_interest, testing, demo):
+    def __init__(self, node_ids, g: GUtils = None, types_of_interest=None, testing=None, demo=None, user_id=USER_ID,
+                 env_id=ENV_ID):
+        super().__init__(node_ids)
         self.types_of_interest = types_of_interest
         self.g = g
         self.layer="STIMULATOR"
-        self.nodes = list(attrs for _, attrs in self.g.G.nodes(data=True) if attrs.get("type") in self.types_of_interest)
 
         self.demo = True
-        self.node_powerset = self._get_node_power_set()
+        #self.node_powerset = self._get_node_power_set()
         self.stim_queue = []
         self.total_runs=0
         self.field_utils = FieldUtils()
@@ -51,8 +54,8 @@ class Stimulator(StimUtils, FermUtils):
         self.multiplier_step = None
         self.testing=testing
         self.demo=demo
-        StimUtils.__init__(self, self.nodes)
-
+        self.user_id=user_id
+        self.env_id=env_id
 
 
 
@@ -118,7 +121,7 @@ class Stimulator(StimUtils, FermUtils):
                 attrs=dict(
                     rel="stimulates",
                     src_layer=self.layer,
-                    trgt_layer="QFN",
+                    trgt_layer="PIXEL",
                 )
             )
 
@@ -198,7 +201,7 @@ class Stimulator(StimUtils, FermUtils):
         all_stims = [(n, attrs) for n, attrs in self.g.G.nodes(data=True) if attrs.get("type") == self.layer]
 
         for node_id, stim_cfg in all_stims:
-            neighbors = self.g.get_neighbor_list(node_id, target_type="QFN")
+            neighbors = self.g.get_neighbor_list(node_id, target_type="PIXEL")
             for n in neighbors:
                 neighbor_id = n[0]
                 neighbor_attrs = n[1]
@@ -217,8 +220,10 @@ class Stimulator(StimUtils, FermUtils):
                         stim_cfg
                     })
                 else:
-                    self.g.remove_node(node_id, "QFN")
+                    self.g.remove_node(node_id, "PIXEL")
 
-
+if __name__ =="__main__":
+    s=Stimulator()
+    s.create_powerset()
 
 

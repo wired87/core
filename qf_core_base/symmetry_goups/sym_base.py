@@ -11,7 +11,7 @@ class SymBase(FieldUtils):
     def __init__(self):
         super().__init__()
 
-    def _dmuX(self, field_forward, field_backward, d, time=False):
+    def _dmu(self, field_forward, field_backward, d, time=False):
         if time is False:
             # convert neighbor phi to complex
             ##print("phi_forward, phi_backward", phi_forward, phi_backward)
@@ -28,7 +28,7 @@ class SymBase(FieldUtils):
     def _dmu(self, self_ntype, attrs, d, neighbors_pm, field_key="h"):
         #print("neighbors_pm", neighbors_pm)
 
-        phi_t = self._dmuX(
+        phi_t = self._dmu(
             attrs[field_key],
             attrs[f"prev_{field_key}"],
             d["t"],  # dt = timestep
@@ -59,7 +59,7 @@ class SymBase(FieldUtils):
             if phi_minus is None:
                 phi_minus = attrs[field_key]
 
-            dmu_x = self._dmuX(phi_plus, phi_minus, d[key])
+            dmu_x = self._dmu(phi_plus, phi_minus, d[key])
             #print(f">>>dmu{i}:", dmu_x)
             dmu.append(dmu_x)
 

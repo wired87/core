@@ -92,16 +92,30 @@ class FieldUtils:
         )
         self.gamma0_inv = np.linalg.inv(self.gamma[0])  # (4,4) matrix
 
-
+        self.ckm = {
+            "up": {"down": 0.974, "strange": 0.225, "bottom": 0.004},
+            "charm": {"down": 0.225, "strange": 0.973, "bottom": 0.041},
+            "top": {"down": 0.009, "strange": 0.040, "bottom": 0.999},
+        }
+        """            
+        "down": {"up": 0.974, "charm": 0.225, "top": 0.009},
+        "strange": {"up": 0.225, "charm": 0.973, "top": 0.040},
+        "bottom": {"up": 0.004, "charm": 0.041, "top": 0.999}
+        """
         self.fermion_to_gauge_couplings = {
             "electron": ["photon", "w_plus", "w_minus", "z_boson"],
-            "myon": ["photon", "w_plus", "w_minus", "z_boson"],
+            "muon": ["photon", "w_plus", "w_minus", "z_boson"],
             "tau": ["photon", "w_plus", "w_minus", "z_boson"],
             "electron_neutrino": ["w_plus", "w_minus", "z_boson"],
-            "myon_neutrino": ["w_plus", "w_minus", "z_boson"],
+            "muon_neutrino": ["w_plus", "w_minus", "z_boson"],
             "tau_neutrino": ["w_plus", "w_minus", "z_boson"],
-            "up_quark": ["photon", "w_plus", "w_minus", "z_boson",
-                         "gluon"],
+            "up_quark": [
+                "photon",
+                "w_plus",
+                "w_minus",
+                "z_boson",
+                "gluon"
+            ],
             "down_quark": ["photon", "w_plus", "w_minus", "z_boson", "gluon"],
             "charm_quark": ["photon", "w_plus", "w_minus", "z_boson", "gluon"],
             "strange_quark": ["photon", "w_plus", "w_minus", "z_boson", "gluon"],
@@ -112,10 +126,10 @@ class FieldUtils:
         self.fermion_fields = [
             # Leptonen
             "electron",  # ψₑ
-            "myon",  # ψ_μ
+            "muon",  # ψ_μ
             "tau",  # ψ_τ
             "electron_neutrino",  # νₑ
-            "myon_neutrino",  # ν_μ
+            "muon_neutrino",  # ν_μ
             "tau_neutrino",  # ν_τ
 
             # Quarks
@@ -163,7 +177,7 @@ class FieldUtils:
             #"b_boson": ["w_plus", "w_minus", "z_boson", "gluon"],  # z. B. in GUT wie SU(5)
 
             # Gravitationsähnlich (selten in QFT-Sim enthalten)
-            "graviton": ["photon", "gluon", "w_plus", "w_minus", "z_boson", "graviton"]
+            #"graviton": ["photon", "gluon", "w_plus", "w_minus", "z_boson", "graviton"]
         }
 
         self.g_h_couplings = [
@@ -173,25 +187,25 @@ class FieldUtils:
         ]
         self.gauge_to_fermion_couplings = {
             "photon": [
-                "electron", "myon", "tau",
+                "electron", "muon", "tau",
                 "up_quark", "down_quark", "charm_quark",
                 "strange_quark", "top_quark", "bottom_quark"
             ],
             "w_plus": [
-                "electron", "myon", "tau",
-                "electron_neutrino", "myon_neutrino", "tau_neutrino",
+                "electron", "muon", "tau",
+                "electron_neutrino", "muon_neutrino", "tau_neutrino",
                 "up_quark", "down_quark", "charm_quark",
                 "strange_quark", "top_quark", "bottom_quark"
             ],
             "w_minus": [
-                "electron", "myon", "tau",
-                "electron_neutrino", "myon_neutrino", "tau_neutrino",
+                "electron", "muon", "tau",
+                "electron_neutrino", "muon_neutrino", "tau_neutrino",
                 "up_quark", "down_quark", "charm_quark",
                 "strange_quark", "top_quark", "bottom_quark"
             ],
             "z_boson": [
-                "electron", "myon", "tau",
-                "electron_neutrino", "myon_neutrino", "tau_neutrino",
+                "electron", "muon", "tau",
+                "electron_neutrino", "muon_neutrino", "tau_neutrino",
                 "up_quark", "down_quark", "charm_quark",
                 "strange_quark", "top_quark", "bottom_quark"
             ],
@@ -210,10 +224,10 @@ class FieldUtils:
         # 4 array
         self.leptons = [
             "electron",
-            "myon",
+            "muon",
             "tau",
             "electron_neutrino",  # νₑ
-            "myon_neutrino",  # ν_μ
+            "muon_neutrino",  # ν_μ
             "tau_neutrino",  # ν_τ
         ]
 
@@ -238,10 +252,10 @@ class FieldUtils:
                 "photon",  # nach SSB Teil der Mischung
                 "Z_boson",  # ebenfalls Teil der Mischung
                 "electron",
-                "myon",
+                "muon",
                 "tau",
                 "electron_neutrino",  # νₑ
-                "myon_neutrino",  # ν_μ
+                "muon_neutrino",  # ν_μ
                 "tau_neutrino",  # ν_τ
                 *self.quarks,
                 "phi"
@@ -358,8 +372,13 @@ class FieldUtils:
         """print("get_g_V")
         #print("charge", charge)
         #print("isospin", isospin)"""
-        g_V = float(isospin) - 2 * float(charge) * sin2W
-        return g_V
+        print("get_g_V")
+        try:
+            g_V = float(isospin) - 2 * float(charge) * sin2W
+            return g_V
+        except Exception as e:
+            print(f"Exception get_g_V: {e}")
+
 
 
 
@@ -389,8 +408,42 @@ class FieldUtils:
 
 
 
+    def yukawa_term(self, y, ℎ:float, psi_bar, psi, is_quark, **attrs):
+        """
+        Nach SSB ist ℎ ein Skalar
+        Physikalischer Yukawa-Term nach SSB:
+        L = -(m_f / v) * h * (ψ̄ ψ)
+        """
+
+        y = float(y)
+        #print("y, h, psi_bar", y, h, psi_bar)
+        #print("psi, is_quark", psi, is_quark)
+        if is_quark:
+            """
+            Quark besteht aus 3 arrays (farbadungen) bei welchem jede einen dirac 
+            spinor repräsentiert (leptons tragen nur einen dirac spinor)
+            """
+            # psi bar und üsi ahben jeweils 3 spinoren welche man verwendn muss
+            result = [-y * ℎ * np.vdot(psi_bar[i], psi[i]) for i in range(3)]
+        else:
+            # h kein skalar mehr
+            result = [-y * ℎ * np.vdot(psi_bar, psi)]
+
+        result = np.array(result, dtype=complex)
+        print(f"-(m / v) * ℎ * (ψ̄ ψ): {result}")
+        return result
 
 
-
-
-
+    def get_gauge_field_symbol(self, ntype):
+        ntype = ntype.lower()
+        GAUGE_FIELD_SYMBOLS = {
+            "photon": "γ",  # Photon
+            "gluon": "g",  # Gluon
+            "w_plus": "W⁺",  # W+
+            "w_minus": "W⁻",  # W-
+            "z_boson": "Z⁰",  # Z
+            "higgs": "H",  # Higgs
+            "b_field": "B",  # Hypercharge
+            "w_field": "W",  # Weak isospin
+        }
+        return GAUGE_FIELD_SYMBOLS.get(ntype)

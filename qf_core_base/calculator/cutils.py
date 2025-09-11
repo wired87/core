@@ -5,19 +5,16 @@ from cmath import sqrt
 import numpy as np
 import inspect
 
-
+from qf_core_base.qf_utils.all_subs import G_FIELDS
 from utils._np.serialize_complex import deserialize_complex
-from utils.graph.local_graph_utils import GUtils
 from utils.logger import LOGGER
-
 
 class CalcUtils:
     """
     Definition einzelner code properties der Equation - nodes
     """
 
-    def __init__(self, g: GUtils):
-        self.g = g
+    def __init__(self):
         """self.arsenal = {
             "psi": [
                 *FERM_HIGGS_EQ,
@@ -110,24 +107,47 @@ class CalcUtils:
     def psi_bar_definition(self, gamma=None, psi=None):
         return np.dot(gamma[0], psi).conj().T
 
-    def set_neighors_plus_minus(self, node_id, self_attrs, d: int, trgt_type="QFN", field_type="phi"):
+    def set_neighors_plus_minus(
+            self,
+            node_id,
+            self_attrs,
+            d: int,
+            all_pixel_nodes:tuple[str, dict] or list[tuple],
+            check_center=False
+    ):
         """
-        :return: qfn neighbors foreach pos dir (p + m)
+        :return: pixel neighbors foreach pos dir (p + m)
         (x before and x after)
+        Deine Beobachtung in der Simulation hat eine sehr reale Entsprechung in der Physik, nämlich die gravitative Zeitdilatation, ein Phänomen der Allgemeinen Relativitätstheorie von Albert Einstein.
+
+        Es ist tatsächlich so: An einem Ort, an dem "mehr los ist" im
+        Sinne von mehr Masse oder Energie, vergeht die Zeit langsamer.
+        Das liegt daran, dass Masse und Energie die Raumzeit krümmen.
+        Je stärker diese Krümmung ist (also je mehr "Payload" oder
+        Masse an einem Punkt vorhanden ist), desto langsamer ticken die
+        Uhren in diesem Bereich.
         """
-        LOGGER.info("Set neighbors pm")
+
+        print("Set neighbors pm")
         direction_definitions = {
             "x": (1, 0, 0),
             "y": (0, 1, 0),
             "z": (0, 0, 1),
-
         }
 
-        nsum_phi = {}
+        nsum = {}
         self_pos = np.array(self_attrs["pos"])
 
-        all_nodes = [(k, v) for k, v in self.g.G.nodes(data=True) if v.get("type") == trgt_type]
-        node_pos_dict = {node: np.array(attrs.get("pos")) for node, attrs in all_nodes}
+        print("set_neighors_plus_minus all_pixel_nodes", all_pixel_nodes)
+        if all_pixel_nodes is not None:
+            # multiple pixels
+            node_pos_dict = {
+                node: np.array(attrs.get("pos"))
+                for node, attrs in all_pixel_nodes
+            }
+        else:
+            # single pixel
+            node_pos_dict = {node_id: self_pos}
 
         for direction_name, direction_matrix in direction_definitions.items():
             offset = np.array(direction_matrix) * d
@@ -140,52 +160,57 @@ class CalcUtils:
             # Fallback auf self_node, falls Ziel nicht gefunden
             node_plus = node_plus if node_plus else node_id
             node_minus = node_minus if node_minus else node_id
-
-            np_attrs = self.g.G.nodes[node_plus]
-            nm_attrs = self.g.G.nodes[node_minus]
-
-            nsum_phi.update(
+            
+            nsum.update(
                 {
                     direction_name: [
-                        np_attrs.get("id"),  # + npsi
-                        nm_attrs.get("id"),  # - npsi
+                        node_plus,  # + npsi
+                        node_minus,  # - npsi
                     ]
                 }
             )
 
-        return self_attrs
+        if check_center is True:
+            return self.check_center(nsum, self_id=node_id)
 
-    def _dmuX(
+        return nsum
+
+    def check_center(self, nsum, self_id):
+        # check center node
+        center_node = True
+        for dir, nodes in nsum.items():
+            for node in nodes:
+                if node == self_id:
+                    center_node = False
+        # If self_id has neighbors in all dirs -> center node
+        print(f"NPM ({self_id}):")
+        return center_node
+        
+
+
+    def _dmu(
             self,
             field_forward,
             field_backward,
             d,
-            self_time=None,
-            self_time_prev=None,
-            plus_time=None,
-            minus_time=None,
-
             time=False
     ):
-        #print("field_forward", field_forward)
-        #print("field_backward", field_backward)
         if time is False:
             # convert neighbor phi to complex
             ##print("phi_forward, phi_backward", phi_forward, phi_backward)
             field_forward = np.array(field_forward, dtype=complex)
             field_backward = np.array(field_backward, dtype=complex)
-
-            # phi_forward=self._convert_to_complex(phi_forward)
-            # phi_backward=self._convert_to_complex(phi_backward)
-            """delta_t_plus = plus_time - self_time
-            delta_t_minus = self_time - minus_time
-            d = delta_t_plus + delta_t_minus"""
         else:
             #d = 2
             pass
 
-        single_dphi = (field_forward - field_backward) / d
-        return single_dphi
+        if d > .5:
+            calc_d = 2 * d
+        else:
+            calc_d = d
+
+        dmu = (field_forward - field_backward) / calc_d
+        return dmu
 
 
 
@@ -208,9 +233,6 @@ class CalcUtils:
         # wir bekommen z. B. [6,6,7,7]
         indices = np.array_split(np.arange(26), 4)
 
-
-
-
         sums = np.zeros(4, dtype=d_X.dtype)
         for i, idx in enumerate(indices):
             sums[i] = np.sum(d_X[idx])
@@ -218,66 +240,43 @@ class CalcUtils:
 
 
 
-    def _dmu(self, self_ntype, attrs, d, neighbors_pm, field_key="h"):
+    def _dX(self, attrs, d, neighbor_pm_val_same_type=None, field_key="h"):
+        """
+        Kinetisch ableitung
+        """
         # todo auf 26 nachbar updaten
-        # update nachbarm
-        # adde merh params
+        try:
+            print(f"d: {d}")
+            phi_t = self._dmu(
+                deserialize_complex(attrs[field_key]),
+                deserialize_complex(attrs[f"{field_key}_prev"]),
+                d=d["t"],  # dt = timestep todo improve (no global time
+                time=True
+            )
 
-        #print("neighbors_pm", neighbors_pm)
+            dmu = [
+                phi_t
+            ]
 
-        phi_t = self._dmuX(
-            attrs[field_key],
-            attrs[f"prev_{field_key}"],
-            d=d["t"],  # dt = timestep todo improve (no global time
-            time=True
-        )
+            for i, (key, item) in enumerate(neighbor_pm_val_same_type.items()):  # x,y,z
+                #item:[tuple, tuple]
+                #unpack single p/m tuple
+                p_item = item[0]
+                m_item = item[1]
 
-        dmu = [
-            phi_t
-        ]
+                # extract value
+                val_plus = deserialize_complex(p_item[1])
+                val_minus = deserialize_complex(m_item[1])
 
-        ##print("neighbors", self.neighbors_pm)
-        for i, (key, pm) in enumerate(neighbors_pm.items()):  # x,y,z
-            #print("Dphi run", i)
-            plus_id = pm[0]
-            minus_id = pm[1]
+                dmu_x = self._dmu(val_plus, val_minus, d[key])
+                #print(f"dmu{i}:", dmu_x)
+                dmu.append(dmu_x)
+            print(f"Finished dmu ({field_key}): {dmu}")
 
-            neighhbor_plus = self.g.get_single_neighbor_nx(plus_id, self_ntype.upper())
-            neighhbor_minus = self.g.get_single_neighbor_nx(minus_id, self_ntype.upper())
+            return np.array(dmu)
+        except Exception as e:
+            print(f"Error calc dmu: {e}")
 
-
-            # Unpack serialized field values
-            plus_value_raw = neighhbor_plus[1][field_key]
-            minus_value_raw = neighhbor_minus[1][field_key]
-
-            # Deserialize field content
-            phi_plus = deserialize_complex(bytes_struct=plus_value_raw)
-            phi_minus = deserialize_complex(bytes_struct=minus_value_raw)
-
-
-            #print(f"nminus {plus_id}-> {neighhbor_minus[1]}:{phi_minus}")
-
-            if phi_plus is None:
-                phi_plus = attrs[field_key]
-            if phi_minus is None:
-                phi_minus = attrs[field_key]
-
-            dmu_x = self._dmuX(phi_plus, phi_minus, d[key])
-
-            #print(f">>>dmu{i}:", dmu_x)
-            dmu.append(dmu_x)
-        #print(f"Finished dmu forkey: {field_key}")
-        #return self.d_psi_quarters(d_X=dmu)
-        return dmu
-
-    ################
-    def _convert_eq2dict(self, method, name):
-        for name, method in self.all_equations:
-            return {
-                "name": name,
-                "code": json.dumps(method),
-                "parameters": self._extract_method_meta(method)
-            }
 
     def _extract_method_meta(self, method):
         # Signature-Objekt abrufen
@@ -300,14 +299,4 @@ class CalcUtils:
 "xyz_ppm": (1, 1, -1),
 "xyz_pmp": (1, -1, 1),
 "xyz_pmm": (1, -1, -1)
-
-
-
-LOGGER.info(f"Calc dmu nsum: {nsum}")
-LOGGER.info(f"Calc dmu prev: {prev}")
-LOGGER.info(f"Calc dmu now: {now}")
-LOGGER.info(f"Calc dmu d: {d}")
-LOGGER.info(f"Calc dmu ntype: {ntype}")
-LOGGER.info(f"Calc dmu parent: {parent}")
-
 """

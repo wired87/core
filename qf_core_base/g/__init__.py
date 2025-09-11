@@ -1,6 +1,5 @@
 import os
 
-from utils.convert_path_any_os import convert_path_any_os
 from utils.file._yaml import load_yaml
 
 #GAUGE = r"C:\Users\wired\OneDrive\Desktop\Projects\Brainmaster\simulator\physics\quantum_fields\nodes\g\gauge.yaml" if OS_NAME == "nt" else "qf_sim/physics/quantum_fields/nodes/g/gauge.yaml"

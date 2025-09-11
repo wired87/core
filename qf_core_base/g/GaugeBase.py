@@ -1,18 +1,15 @@
 import numpy as np
 
-from qf_core_base.calculator.calculator import Calculator
 from qf_core_base.g.gauge_utils import GaugeUtils
 from qf_core_base.g.vertex import Vertex
-from qf_core_base.qf_utils.all_subs import FERMIONS
-from qf_core_base.qf_utils.qf_utils import QFUtils
-from qf_core_base.symmetry_goups.main import SymMain
-from utils._np.serialize_complex import deserialize_complex, check_serialize_dict
-from utils.graph.local_graph_utils import GUtils
+from qf_core_base.ray_validator import RayValidator
+from utils._np.serialize_complex import check_serialize_dict
 from itertools import product
 
-
-class GaugeBase(GaugeUtils):
-
+class GaugeBase(
+    GaugeUtils,
+    RayValidator
+):
     """
     Repräsentiert ein qf_core_base / universelles Gauge feld welches durch
     erweiterte isntanzen angepasst werden kann
@@ -105,178 +102,148 @@ class GaugeBase(GaugeUtils):
     """
     def __init__(
             self,
-            g_utils: GUtils,
-            qfn_id,
-            neighbors_pm,
+            ntype,
             attr_keys,
-            attrs,
             env,
-            time=0.0,
-            **args
+            host=None,
+            g_utils=None
     ):
-        super().__init__()
-        self.attrs = self.restore_selfdict(attrs)
-        # LOGGER.info("init GaugeBase")
-        for k, v in self.attrs.items():
-            setattr(self, k, v)
-            # LOGGER.info(f"{k}:{v}")
+        self.field_key = None
+        self.g_utils=g_utils
+        self.host=host
+        RayValidator.__init__(self, host=host, g_utils=g_utils)
+        GaugeUtils.__init__(self)
+        self.field_symbol = self.get_gauge_field_symbol(ntype)
 
-        self.g_utils:GUtils = g_utils
-        self.qf_utils = QFUtils(g_utils)
-
-        if getattr(self, "field_key", None) is None:
-            setattr(self, "field_key", self._field_value(getattr(self, "type", None)))
-
-        # LOGGER.info("self.field_key", self.field_key)
-        self.field_value = getattr(self, self.field_key, None)  # (4,8)
-
-        if self.attrs.get("f_abc") is None:
-            f_abc = self.compute_fabc_from_generators()
-            setattr(self, "f_abc", f_abc)
-
-        self.calculator = Calculator(
-            g_utils
-        )
-
-        if self.type.lower() == "gluon":
-            self.parent = self.g_utils.get_single_neighbor_nx(
-                self.id,
-                "GLUON_BUCKET"
-            )
-
-        self.symmetry_group_class = SymMain(groups=getattr(self, "_symmetry_groups", []))
-        self.qf_utils = QFUtils(self.g_utils)
-
-        # If gauge item: request
-        self.neighbor_request_id = self.id if self.type.lower() in self.gauge_fields else self.parent[0]
-
-        # Get neighbors
-        self.neighbors = [
-            (nid, self.restore_selfdict(nattrs))
-            for nid, nattrs in self.g_utils.get_neighbor_list(
-                self.id,
-                self.qf_utils.all_sub_fields
-            )
-        ]
-        setattr(self, "is_gluon", getattr(self, "type", "").lower() == "gluon")
-
-        self.env=env
-        self.neighbors_pm=neighbors_pm
         self.d = env["d"]
         self.attr_keys = attr_keys
-        self.time = time
         self.dpsi = None
-        self.qf_utils = QFUtils(self.g_utils)
-        self.qfn_id = qfn_id
-
-        self.generators = [0.5 * lam for lam in self.su3_group_generators]
 
         self.vertex = Vertex(
-            g_utils,
-            self.neighbors,
             parent=self,
-            qf_utils=self.qf_utils,
         )
 
 
+    def main(
+            self,
+            env,
+            attrs,
+            all_subs,
+            neighbor_pm_val_same_type,
+            neighbor_pm_val_fmunu,
+    ):
+        try:
+            # args
+            self.env = env
+            self.all_subs = all_subs
+            self.neighbor_pm_val_same_type = neighbor_pm_val_same_type
+            self.neighbor_pm_val_fmunu = neighbor_pm_val_fmunu
 
-    def main(self):
-        # Set prev value
-        field_key = getattr(self, "field_key", None)
-        nid = getattr(self, "id", None)
+            # attrs
+            self.attrs = self.restore_selfdict(attrs)
 
-        prev_val = getattr(self, f"prev_{field_key}", None)
-        g = getattr(self, "g", None)
-        ntype = getattr(self, "type", None)
-        #print(">>> type", ntype)
-        theta_W = self.env["theta_W"]
-        d_field_value_key = f"dmu_{field_key}"
-        f_abc = getattr(self, "f_abc")
-        field_value = getattr(self, field_key)
+            # field key & value
+            ntype = attrs.get("type")
 
-        new_j_nu = self.init_j_nu(serialize=False)
+            if self.field_key is None:
+                field_key = self._field_value(ntype)
+                self.field_key = field_key
 
-        if prev_val is None:
-            self.attrs[f"prev_{field_key}"] = self.field_value
+            self.field_value = self.attrs.get(
+                self.field_key
+            )
 
-        snapshot_field_value = self.field_value
+            # Set prev field
+            prev_key = f"{self.field_key}_prev"
+            if getattr(self, prev_key, None) is None:
+                self.attrs[prev_key] = self.field_value
 
-        # Main calcs
-        j_nu = self._j_nu(nid, ntype, theta_W, g, new_j_nu)
-        #self._self_interaction(sym_group)
+            # Set prev fmunu
+            prev_fmunu = "F_mu_nu_prev"
+            self.attrs[prev_fmunu] = attrs.get("F_mu_nu")
 
-        # Dmu
-        self._dmu_field_value(field_key, d_field_value_key)
-        dmu_F_mu_nu = self._dmu_fmunu(field_key)
+            # fabc
+            if self.attrs.get("f_abc") is None:
+                f_abc = self.compute_fabc_from_generators()
+                self.attrs["f_abc"]= f_abc
+            else:
+                f_abc = self.attrs["f_abc"]
 
-        # Block 2
-        F_mu_nu = self._F_mu_nu(
-            d_field_value=getattr(self, d_field_value_key),
-            g=g,
-            ntype=ntype,
-            f_abc=f_abc,
-            field_value=getattr(self, field_key),
-        )
+            # Set prev value
+            nid = attrs["id"]
 
-        # VERTEX
-        self.vertex.main()
+            prev_val = attrs.get(f"prev_{self.field_key}")
 
-        # FIELD VALUE
-        self._update_gauge_field(
-            field_value,
-            field_key,
-            nid,
-            F_mu_nu,
-            j_nu,
-            f_abc,
-            dmu_F_mu_nu,
-            ntype,
-        )
+            g = attrs.get("g")
 
-        # G -> G interaction
-        """self._GG_coupling(
-            ntype,
-            field_value,
-            nid,
-            theta_W,
-            g,
-            field_key
-        )"""
+            theta_W = self.env["theta_W"]
 
-        """self.triple_coupler._triples(
-            field_value, field_key, ntype
-        )
+            d_field_value_key = f"dmu_{self.field_key}"
 
-        self.quad_coupler._quads(
-            field_value, field_key, ntype
-        )"""
+            field_value = attrs.get(self.field_key)
 
-        # finish
-        self.attrs[f"prev_{field_key}"] = snapshot_field_value
+            new_j_nu = self.init_j_nu(
+                serialize=False
+            )
 
+            if prev_val is None:
+                self.attrs[f"prev_{self.field_key}"] = self.field_value
 
-        new_dict = check_serialize_dict(
-            self.__dict__,
-            self.attr_keys
-        )
+            snapshot_field_value = self.field_value
 
-        self.g_utils.update_node(new_dict)
-       #print(f"Update for {nid} finished")
+            # Main calcs
+            j_nu = self._j_nu(nid, ntype, theta_W, g, new_j_nu)
 
-    def _check_dict(self):
-        for k,v in self.__dict__.items():
-           print(f"{k}:{v}")
+            # Dmu
+            self._dmu_field_value(field_key, d_field_value_key)
+            dmu_F_mu_nu = self._dmu_fmunu(field_key="F_mu_nu")
 
-    def _quads(self):
-        pass
+            # Block 2
+            F_mu_nu = self._F_mu_nu(
+                d_field_value=attrs.get(d_field_value_key),
+                g=g,
+                ntype=ntype,
+                f_abc=f_abc,
+                field_value=attrs.get(field_key),
+            )
 
+            # VERTEX
+            self.vertex.main(
+                neighbors=self.all_subs["GAUGE"],
+                edges=self.all_subs["edges"]
+            )
+
+            # FIELD VALUE
+            self._update_gauge_field(
+                field_value,
+                field_key,
+                nid,
+                F_mu_nu,
+                j_nu,
+                f_abc,
+                dmu_F_mu_nu,
+                ntype,
+            )
+
+            # finish
+            self.attrs[f"prev_{field_key}"] = snapshot_field_value
+
+            new_dict = check_serialize_dict(
+                self.__dict__,
+                [*self.attr_keys, prev_key]
+            )
+
+            return new_dict
+            #print(f"Update for {nid} finished")
+        except Exception as e:
+            print("Exception in gaugebase.main:", e)
 
     def _dmu_field_value(self, field_key, d_field_value_key):
-        dmu = self.calculator.cutils._dmu(
-            self_ntype=self.type,
+        dmu = self.call(
+            method_name="_dX",
             attrs=self.attrs,
             d=self.d,
-            neighbors_pm=self.neighbors_pm,
+            neighbor_pm_val_same_type=self.neighbor_pm_val_same_type,
             field_key=field_key
         )
 
@@ -286,11 +253,11 @@ class GaugeBase(GaugeUtils):
 
     def _dmu_fmunu(self, field_key):
         # dmuF(mu_nu)
-        dmu = self.calculator.cutils._dmu(
-            self_ntype=self.type,
+        dmu = self.call(
+            method_name="_dX",
             attrs=self.attrs,
             d=self.d,
-            neighbors_pm=self.neighbors_pm,
+            neighbor_pm_val_same_type=self.neighbor_pm_val_fmunu,
             field_key=field_key
         )
         setattr(self, "dmu_F_mu_nu", dmu)
@@ -308,60 +275,83 @@ class GaugeBase(GaugeUtils):
           - Leptonen (nur U(1) + SU(2))
           - Quarks (U(1) + SU(2) + SU(3))
         """
-        #print("calc jnu for", nid)
-        ferm_neighbors = self.g_utils.get_neighbor_list(nid, target_type=FERMIONS)
-        # LOGGER.info("# ferm_neighbors", len(ferm_neighbors))
-        for fermid, fattrs in ferm_neighbors:
+        print("jnu params", nid, ntype, theta_W, g, new_j_nu)
 
-            # GET ATTRS ###############
-            fattrs = self.restore_selfdict(fattrs)
-            nntype = fattrs.get("type")
-            #print(f"{ntype} fermon euighbor: {nntype}")
-            psi = fattrs.get("psi")
-            charge= fattrs.get("charge")
-            psi_bar= fattrs.get("psi_bar")
-            g = getattr(self, "g")
-            isospin=fattrs.get("isospin")
-            # Calc J_nu
-            new_j_nu = np.zeros((4,), dtype=complex)
-            #print("else nntype:", nntype)
+        #print("Calc j_nu")
+        try:
+            for nntype, neighbor_struct in self.all_subs["FERMION"].items():
+                print("self.all_subs['FERMION']", self.all_subs["FERMION"])
+                print("nntype", nntype)
+                print("neighbor_struct", neighbor_struct)
+                for nnid, fattrs in neighbor_struct.items():
+                    # ATTRS
+                    fattrs = self.restore_selfdict(fattrs)
+                    nntype = fattrs.get("type")
+                    print("fattrs", fattrs)
+                    print("nntype", nntype)
 
+                    if ntype:
+                        psi = fattrs.get("psi")
+                        charge = fattrs.get("charge")
+                        psi_bar = fattrs.get("psi_bar")
+                        isospin = fattrs.get("isospin")
 
-            # KB Single Gloun item needs 3,4 Dirac
-            # Quark -> photon (etc) needs 4, Dirac
-            gluon_index=None
-            if ntype.lower() == "gluon":
-                gluon_index = getattr(self, "gluon_index")
+                        print("psi", psi)
+                        print("charge", charge)
+                        print("psi_bar", psi_bar)
+                        print("isospin", isospin)
 
-            if ntype.lower() != "gluon" and "quark" in nntype.lower():
-                psi = psi[0]
-                psi_bar=psi_bar[0]
-            new_j_nu = self._j_nu_process(
-                    new_j_nu,
-                    psi=psi,
-                    charge=charge,
-                    psi_bar=psi_bar,
-                    g=g,
-                    isospin=isospin,
-                    ntype=ntype,
-                    gluon_index=gluon_index,
-                    nntype=nntype
+                        # Calc J_nu
+                        new_j_nu = np.zeros((4,), dtype=complex)
+
+                        gluon_index=None
+                        if ntype.lower() == "gluon":
+                            gluon_index = self.attrs.get("gluon_index")
+
+                        if ntype.lower() != "gluon" and "quark" in nntype.lower():
+                            psi = psi[0]
+                            psi_bar = psi_bar[0]
+
+                        new_j_nu = self._j_nu_process(
+                                new_j_nu,
+                                psi=psi,
+                                charge=charge,
+                                psi_bar=psi_bar,
+                                g=g,
+                                isospin=isospin,
+                                ntype=ntype,
+                                gluon_index=gluon_index,
+                                nntype=nntype
+                            )
+        except Exception as e:
+            print(f"Error calc jnu fermion: {e}")
+        try:
+            # HIGGS
+            if ntype.lower() not in ["gluon", "photon"]:  # gluon higgs !couple
+                hid, hattrs = self.call(
+                    method_name="get_single_neighbor_nx",
+                    node=nid,
+                    target_type="PHI",
                 )
+                print("hid, hattrs", hid, hattrs)
+                hattrs = self.restore_selfdict(data=hattrs)
+                if hid is not None:
+                    new_j_nu += self.j_nu_higgs(
+                        new_j_nu,
+                        phi=hattrs["phi"],
+                        d_phi=hattrs["d_phi"],
+                        g=g,
+                        ntype=ntype,
+                        theta_w=theta_W
+                    )
+            setattr(self, "j_nu", new_j_nu)
+            self.attrs["j_nu"]=new_j_nu
+            print(f"jν: {new_j_nu}")
+            return new_j_nu
 
-        if ntype.lower() != "gluon": # gluon higgs !couple
-            hid, hattrs = self.g_utils.get_single_neighbor_nx(nid, "PHI")
-            hattrs = self.restore_selfdict(data=hattrs)
-            if hid is not None:
-                new_j_nu += self.j_nu_higgs(
-                    new_j_nu,
-                    phi=hattrs["phi"],
-                    d_phi=hattrs["d_phi"],
-                    g=g,
-                    ntype=ntype,
-                    theta_w=theta_W
-                )
-        setattr(self, "j_nu", new_j_nu)
-        return new_j_nu
+        except Exception as e:
+            print(f"Error calc jnu higgs: {e}")
+
 
     def _F_mu_nu(self, d_field_value, g, ntype, f_abc, field_value):
         """
@@ -372,6 +362,7 @@ class GaugeBase(GaugeUtils):
         F_mu_nu = self.f_mu_nu(
             d_field_value, g, ntype, f_abc, field_value
         )
+
         setattr(self, "F_mu_nu", F_mu_nu)
         return F_mu_nu
 
@@ -386,157 +377,13 @@ class GaugeBase(GaugeUtils):
             self.d,
             ntype
         )
+
+        print(f"{self.field_symbol}: {new_fv}")
         setattr(self, field_key, new_fv)
-        #print("finished _update_gauge_field")
-
-
-
-    def _self_interaction(self, sym_group):
-        """
-        todo -> include triple and quad g->g couplings
-        :param sym_group:
-        :return:
-        """
-        self.symmetry_group_class.sym_classes[sym_group].compute_self_interaction(
-            **self.attrs
-        )
-
-
-
-
-    def _get_gg_coupling_utils(self, nid) -> dict:
-        utils = {}
-        intern_neighbors = self.g_utils.get_neighbor_list(nid, trgt_rel="intern_coupling")
-        for nnid, nattrs in intern_neighbors:
-            ntype = nattrs.get("type").lower()
-            nattrs = self.restore_selfdict(nattrs)
-            if ntype in ["w_plus", "w_minus"]:
-                field_key = self._field_value(type=ntype)
-                utils[field_key] = {
-                    "field_value": nattrs[field_key],
-                    "d": nattrs[f"dmu_{field_key}"]
-                }
-        return utils
-
-
-
-
-
-
-
-
-
 
 
     def tripple_id_list_powerset(self, neighbors):
         id_set = []
-        for k,v in neighbors.items():
+        for k, v in neighbors.items():
             id_set.append(list(v.keys()))
         return list(product(id_set[0], id_set[1], id_set[2]))
-
-    def _gluon_interaction(self, field_key):
-        """
-        gluon kuppeln hardcore untereinander
-        ob kupplung besteht
-        Wenn auch nur ein Feld =0 ist, wird der Term =0
-
-        Wenn außer abc auch (g,c,b) valid ist –>
-        wird die coupling_strength summiert
-        :return:
-        """
-        gluons = []
-        # Get gluons
-        for nnid, nattrs in self.neighbors:
-            ntype = nattrs.get("type").lower()
-            if ntype == "gluon":
-                gluons.append((nnid, nattrs))
-
-        # Extract all neighbor indices
-        all_neighbor_indices = {}
-        for nnid, g in gluons:
-            gluon_field_value = deserialize_complex(g[field_key])
-            # Check active
-            all_neighbor_indices[nnid] = self._check_active_indizes(gluon_field_value)
-
-
-
-
-
-
-
-
-"""
-
-
-            if nntype.lower() in self.quarks:
-                new_j_nu = np.zeros((3, 4,), dtype=complex)
-                #print("_j_nu gauge nntype:", nntype)
-                for i in range(3):  # auch nach ssb imernoch 3 spinoren
-                    # j_nu wird für alle quarks aufsummiert
-                    new_j_nu[i] = self._j_nu_process(
-                        new_j_nu[i],
-                        psi=psi[i],
-                        charge=charge,
-                        psi_bar=psi_bar[i],
-                        g=g,
-                        isospin=isospin,
-                        ntype=ntype,
-                    )
-            else:
-
-"""
-
-"""def _GG_coupling(
-            self,
-            ntype,
-            field_value,
-            nid,
-            theta_w,
-            g,
-            field_key,
-    ):
-        j_nu = getattr(self, "j_nu")
-
-        utils = self._get_gg_coupling_utils(nid)
-
-        if ntype.lower() == "photon":
-            j_nu_w_photon: Hauptanteil, der immer relevant ist.
-            j_nu_ww_aa: zusätzlicher Beitrag bei sehr 
-            hohen Feldstärken oder bei Prozessen mit 
-            zwei Photonen.
-            Komplette Nichtabelsche Feldtheorie:
-            ➤ Beide Terme summieren.
-            e = self._e(g, theta_w)
-            j_nu += self.j_nu_ww_aa(
-                W_plus=utils["w_plus"]["field_value"],
-                W_minus=utils["w_minus"]["field_value"],
-                A_field=field_value,
-                e=e
-            )
-            j_nu += self.j_nu_w_photon(
-                W_plus=utils["w_plus"]["field_value"],
-                dW_plus=utils["w_plus"]["d"],
-                W_minus=utils["w_minus"]["field_value"],
-                dW_minus=utils["w_plus"]["d"],
-                e=e
-            )
-
-        elif ntype.lower() == "z_boson":
-            j_nu += self.j_nu_w_z(
-                w_plus=utils["w_plus"]["field_value"],
-                dw_plus=utils["w_plus"]["d"],
-                w_minus=utils["w_minus"]["field_value"],
-                dw_minus=utils["w_minus"]["d"],
-                g=g,
-                theta_w=theta_w
-            )
-
-        elif ntype.lower() == "gluon":
-            self._gluon_interaction(field_key)
-
-        setattr(self, "j_nu", j_nu)"""
-
-
-
-
-

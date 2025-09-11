@@ -121,7 +121,7 @@ class Mover:
         return f"<{self.position.round(2)}>"
 
 
-    def spread_objects(self, amount_items, dim, self_attrs):
+    def spread_objects_2d(self, amount_items, dim, self_attrs):
         self.cell_index += 1
 
         # Use square cells for consistent spacing in x and y
@@ -139,13 +139,15 @@ class Mover:
 
         self_attrs["pos"] = [x, y, 0.0]
 
-
         #print(f"UPDATED POS {self.cell_index}:", self_attrs["pos"])
-       #print(self_attrs["pos"])
+        #print(self_attrs["pos"])
         return self_attrs, grid_size
 
-    def spread_objects_3d(self, amount_items, dim, self_attrs, spread_evenly:int or None=None):
-       #print("Spread items")
+    def spread_objects_3d(self, amount_items:int, dim:int, self_attrs:dict, spread_evenly:int or None=None):
+        """
+         dim:[x,y,z],
+        """
+        #print("Spread items")
         self.cell_index += 1
 
         # Berechne Würfelgitter: gleich viele Zellen in x, y, z Richtung
@@ -164,23 +166,23 @@ class Mover:
         y_idx = (index // per_side) % per_side
         z_idx = index // (per_side * per_side)
 
-        x = x_idx * grid_size # x_idx + .5
+        x = x_idx * grid_size  # x_idx + .5
         y = y_idx * grid_size
         z = z_idx * grid_size
 
         self_attrs["pos"] = [x, y, z]
 
-       #print(f"UPDATED POS {self.cell_index}:", self_attrs["pos"])
+        print(f"UPDATED POS {self.cell_index}:", self_attrs["pos"])
         return self_attrs
 
     def distribute_subpoints_around_qfns(self, ds=20):
         print("set sub pos")
         for nid, attrs in self.g.G.nodes(data=True):
-            if attrs.get("type").upper() == "QFN" and "pos" in attrs:
+            if attrs.get("type").upper() == "PIXEL" and "pos" in attrs:
                 base_pos = np.array(attrs["pos"])
 
                 # Finde Subpunkte
-                subs = self.g.get_neighbor_list(nid, trgt_rel="has_field")
+                subs = self.g.get_neighbor_list_rel(nid, trgt_rel="has_field")
                 print(f"Subs for {nid}: {len(subs)}")
                 if not subs:
                     continue
@@ -215,3 +217,40 @@ class Mover:
 
         print("All sub pos set!")
 
+"""
+todo 
+    def spread_objects_3d(
+            self,
+            amount_items:int,
+            dim:list,
+            self_attrs:dict,
+            spread_evenly:int or None=None
+    ):
+
+        #for index in range(amount_items):
+        #print("Spread items")
+        #self.cell_index += 1
+
+
+        ### s4t distance
+
+        #index = self.cell_index - 1
+
+
+        # 3D-Indizes
+        x_idx = index % dim[0]
+        y_idx = (index // dim[0]) % dim[1]
+        z_idx = index // (dim[0] * dim[1])
+
+        sx, sy, sz = self.set_distance(spread_evenly)
+
+        x = x_idx * sx  # x_idx + .5
+        y = y_idx * sy
+        z = z_idx * sz
+
+        self_attrs["pos"] = [x, y, z]
+
+       #print(f"UPDATED POS {self.cell_index}:", self_attrs["pos"])
+        return self_attrs
+
+"""

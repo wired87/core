@@ -8,8 +8,6 @@ class StimUtils:
         self.node_combi_generator = self._node_combi_generator(node_ids)
 
 
-
-
     def next_node_combi(self):
         return next(self.node_combi_generator)
 

@@ -15,7 +15,6 @@ Isospin, etc., je nach Teilchen.
 """
 import os
 
-from utils.convert_path_any_os import convert_path_any_os
 from utils.file._yaml import load_yaml
 
 r"""

@@ -1,0 +1,14 @@
+# Controls time evolution in a specific time block
+
+start_energy: 0.5
+
+
+multiplier_phases:
+  - # placeholder for all phases
+
+# mulitplier phases lets you define the data you want to exchange between fields
+multiplier_phase:
+
+  #multiplier_min: 1
+  multiplier_max: 10
+

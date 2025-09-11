@@ -12,10 +12,10 @@ G_FIELDS=[
 FERMIONS=[
     # Leptonen
     "electron",  # ψₑ
-    "myon",  # ψ_μ
+    "muon",  # ψ_μ
     "tau",  # ψ_τ
     "electron_neutrino",  # νₑ
-    "myon_neutrino",  # ν_μ
+    "muon_neutrino",  # ν_μ
     "tau_neutrino",  # ν_τ
 
     # Quarks
@@ -28,6 +28,12 @@ FERMIONS=[
 ]
 
 H = [
-    "PHI"
+    "phi"
 ]
-ALL_SUBS=[*[f.upper() for f in FERMIONS],*[g.upper() for g in G_FIELDS],*H]
+
+ALL_SUBS_LOWER=[*FERMIONS, *G_FIELDS, *H]
+ALL_SUBS=[*[f.upper() for f in FERMIONS],*[g.upper() for g in G_FIELDS],*[h.upper() for h in H]]
+
+
+
+

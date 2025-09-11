@@ -94,7 +94,7 @@ class FermUtils(
 
         return g / np.cos(theta_W) * np.sum(psi_bar * np.sum(self.gamma * np.sum(gauge * psi)))
     def get_psi_left_right(self, psi):
-        #print("get_psi_left_right psi", psi)
+        ##print("get_psi_left_right psi", psi)
         psi_l = 0.0
         psi_r = 0.0
         for i in range(4):
@@ -106,7 +106,7 @@ class FermUtils(
 
     def check_spin(self, psi, is_quark):
         """
-        Bestimmt die Chiralität deines Spinors:
+        Bestimmt die Chiralität eines Spinors:
         Links
         Rechts
         Gemischt oder Null
@@ -115,13 +115,13 @@ class FermUtils(
             # quark
             psi = psi[0]
 
-        #print("psi", psi)
+        ##print("psi", psi)
         psi_L, psi_R = self.get_psi_left_right(psi)
-        #print("psi_L, psi_R", psi_L, psi_R)
+        ##print("psi_L, psi_R", psi_L, psi_R)
 
         norm_L = np.linalg.norm(psi_L)
         norm_R = np.linalg.norm(psi_R)
-        #print("norm_L, norm_R", norm_L, norm_R)
+        ##print("norm_L, norm_R", norm_L, norm_R)
 
         if norm_R > 0 and norm_L == 0:
             return "right"
@@ -134,11 +134,12 @@ class FermUtils(
 
 
     def _isospin(self, handedness, ntype):
+        ntype=ntype.lower()
         # g_A Tabelle
         GA_TABLE = {
             "electron_neutrino": +0.5,
             "tau_neutrino": +0.5,
-            "myon_neutrino": +0.5,
+            "muon_neutrino": +0.5,
             "electron": -0.5,
             "muon": -0.5,
             "tau": -0.5,
@@ -185,7 +186,7 @@ class FermUtils(
             # Lepton: ψ† (1x4) @ γ⁰ (4x4) → (1x4)
             psi_bar = psi.conj().T @ self.gamma[0]
 
-        #print("ψ†", psi_bar, psi_bar.shape)
+        ##print("ψ†", psi_bar, psi_bar.shape)
         return psi_bar
 
     def _is_quark(self, type):
@@ -213,159 +214,144 @@ class FermUtils(
             raise ValueError(f"Invalid type {ntype}")
 
         if serialize is True:
-            ##print("psi before serialization", psi, psi.shape)
+            ###print("psi before serialization", psi, psi.shape)
             psi = serialize_complex(com=psi)
 
-        ##print("psi set", psi)
+        ###print("psi set", psi)
         return psi
-
-
-
-
-
-
 
 
     ############
     # COUPLINGS
     ############
 
-    def _calc_coupling_term_G(self, psi, field_value, g, ntype, total_g_coupling, is_quark):
-        if is_quark:
-            for i in range(3):
-                coupling_term = self.fermion_gauge_coupling(
-                    psi,
-                    field_value,
-                    g,
-                    ntype
-                )
-                ct_array = np.array(coupling_term)
-                total_g_coupling += ct_array
+
+    def _calc_coupling_term_G(
+            self,
+            psi,
+            field_value,
+            g,
+            ntype,
+            gluon_index,
+            total_g_coupling,
+            is_quark,
+            handedness):
+        if is_quark is True:
+            #print("Quark deteted")
+            coupling_term = self.fermion_gauge_coupling(
+                psi,  # without time
+                field_value,
+                g,
+                ntype,
+                gluon_index,
+                handedness,
+            )
+            #print(f"coupling_term: {coupling_term}")
+            #ct_array = np.array(coupling_term)
+            #print("ct_array", coupling_term.shape)
+            total_g_coupling += coupling_term
         else:
+            #print("!Quark")
             coupling_term = self.fermion_gauge_coupling(
                 psi,
                 field_value,
                 g,
-                ntype
+                ntype,
+                gluon_index,
+                handedness,
             )
-            ct_array = np.array(coupling_term)
-            total_g_coupling += ct_array
-
-        #print(f"# _yukawa_couping_process finished: {total_g_coupling}")
+            #ct_array = np.array(coupling_term)
+            #print(f"coupling_term: {coupling_term, coupling_term.shape}")
+            total_g_coupling += coupling_term
         return total_g_coupling
 
 
 
+    def get_gauge_generator(
+            self,
+            ntype,
+            handedness,
+            gluon_index=None,
+            psi=None,
+            Q=1.0,
+            theta_w=28.7,
 
-    def _coupling_term_single(self, g, field_value_item, psi, T, gamma_item):
-        return self.i * g * gamma_item @ (field_value_item * (T @ psi))
-
-    def fermion_gauge_coupling(self, psi, field_value, g, ntype, theta_w=28.7, Q=1.0):
-        """
-        Fermion-Gauge-Kopplung nach SSB.
-
-        Args:
-            psi: Spinor (ndarray)
-            field_value:
-                Photon/Z: shape (4,)
-                Gluon: shape (4,8)
-                W: shape (4,)
-            gamma: List mit gamma-Matrizen
-            g: Kopplungskonstante
-            ntype: 'photon', 'Z', 'gluon', 'W+','W-'
-            theta_w: Weinbergwinkel (nur Z)
-            Q: elektrische Ladung (nur Photon)
-            su3_generators: Liste der Gell-Mann-Matrizen (nur Gluon)
-
-        Returns:
-            term: Spinor (ndarray)
-        """
-        term = np.zeros_like(psi, dtype=complex)
-
+    ):
+        ntype = ntype.lower()
         if ntype == "photon":
             T = Q * np.identity(len(psi))
-            for mu in range(4):
-                term += self._coupling_term_single(
-                    g,
-                    field_value_item=field_value[mu],
-                    T=T,
-                    psi=psi,
-                    gamma_item=self.gamma[mu]
-                )
+            #print("p T", T)
 
         elif ntype == "z_boson":
             T3 = self.su2_group_generators[2]
             Y = 0.5 * np.identity(2, dtype=complex)
             T = np.cos(theta_w) * T3 - np.sin(theta_w) * Y
-            for mu in range(4):
-                term += self._coupling_term_single(
-                    g,
-                    field_value_item=field_value[mu],
-                    T=T,
-                    psi=psi,
-                    gamma_item=self.gamma[mu]
-                )
 
+            #print(f"zT final: {T}")
         elif ntype == "gluon":
-            if self.su2_group_generators is None:
-                raise ValueError("su3_generators müssen übergeben werden!")
-            for mu in range(4):
-                for a in range(8):
-                    T = self.su3_group_generators[a]
-                    term += self._coupling_term_single(
-                        g,
-                        field_value_item=field_value[mu, a],
-                        T=T,
-                        psi=psi,
-                        gamma_item=self.gamma[mu]
-                    )
+            T = self.su3_group_generators[gluon_index]
+            #print("gluon T", T)
 
         elif ntype == "w_plus":
             T = np.array([[0, 1], [0, 0]], dtype=complex)
-            for mu in range(4):
-                term += self._coupling_term_single(
-                    g,
-                    field_value_item=field_value[mu],
-                    T=T,
-                    psi=psi,
-                    gamma_item=self.gamma[mu]
-                )
+            #print("w+ T", T)
 
         elif ntype == "w_minus":
             T = np.array([[0, 0], [1, 0]], dtype=complex)
-            for mu in range(4):
-                term += self._coupling_term_single(
-                    g,
-                    field_value_item=field_value[mu],
-                    T=T,
-                    psi=psi,
-                    gamma_item=self.gamma[mu]
-                )
+            #print("w- T", T)
+        return T
+
+
+    def extract_psi_lrm(self, psi, handedness, is_quark):
+        #print(f"self.handedness: {handedness}")
+        #print(f"psi: {psi, psi.shape}")
+        if is_quark is False:
+            if handedness == "left":
+                """P_L = 0.5 * (np.eye(4) - self.gamma5)
+                return P_L @ psi"""
+                #psi_L = 0.5 * (np.eye(4) - self.gamma5) @ psi  # ergibt (4,1)
+                return psi[:2]
+            elif handedness == "right":
+                """P_R = 0.5 * (np.eye(4) + self.gamma5)
+                return P_R @ psi"""
+                #psi_R = 0.5 * (np.eye(4) + self.gamma5) @ psi
+                return psi[2:]
+            elif handedness == "mixed":
+                psi_R = 0.5 * (np.eye(4) + self.gamma5) @ psi
+                psi_R = psi_R[2:]
+                psi_L = 0.5 * (np.eye(4) - self.gamma5) @ psi  # ergibt (4,1)
+                psi_L= psi_L[:2]
+                #print("psi_L, psi_R", psi_L, psi_R)
+                return psi_L, psi_R
         else:
-            raise ValueError(f"Unbekanntes ntype: {ntype}")
+            # singlet quark (3,4) coupling
+            return psi
 
+
+
+    def fermion_gauge_coupling(
+            self,
+            psi,
+            field_value,
+            g,
+            ntype,
+            gluon_index,
+            handedness,
+            index=None
+    ):
+        """
+        Fermion-Gauge-Kopplung nach SSB.
+        Ja. W⁺/W⁻ koppeln ausschließlich an linkshändige Fermionen.
+        """
+
+        term = np.zeros_like(psi, dtype=complex)
+        T = self.get_gauge_generator(
+            ntype,
+            handedness,
+            gluon_index,
+            psi,
+        )
+        ##printer(locals())
+        for mu in range(4):
+            term += -self.i * g * field_value[mu] * (T @ psi)
         return term
-
-
-"""
-    def photon_coupling_term(self, g, A_mu, psi, d_psi, **attrs):
-        for mu in range(4):
-            d_psi += self.i * g * self.gamma[mu] @ A_mu[mu] @ psi
-
-    def z_boson_coupling_term(self, g, theta_W, Z_mu, psi, d_psi, **attrs):
-        gZ = self.z_boson_coupling(g, theta_W)
-        # return gZ * np.sum(psi_bar * np.sum(self.gamma * np.sum(Z_mu * psi)))
-        for mu in range(4):
-            d_psi += self.i * gZ * self.gamma[mu] @ Z_mu[mu] @ psi
-
-    def w_boson_coupling_term(self, g, W_mu, psi, d_psi, **attrs):
-        # return g * np.sum(psi_bar * np.sum(self.gamma * np.sum(W_mu * psi)))
-        for mu in range(4):
-            P_L = 0.5 * (np.eye(4) - self.gamma5)
-            d_psi += self.i * g * self.gamma[mu] @ W_mu[mu] @ (P_L @ psi)
-
-    def gluon_coupling_term(self, g, G_mu_a, psi, d_psi, **attrs):
-        # Achtung: T_a sind SU(3)-Generatoren (Gell-Mann)
-
-
-"""

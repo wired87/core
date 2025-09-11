@@ -1,5 +1,6 @@
 from qf_core_base.g import GAUGE_FIELDS
 from qf_core_base.g.gauge_utils import GaugeUtils
+from qf_core_base.qf_utils import FIELD_METADATA
 
 
 class GaugeCreator(GaugeUtils):
@@ -12,7 +13,7 @@ class GaugeCreator(GaugeUtils):
         """
         super().__init__()
         self.g = g_utils
-        self.qfn_layer = "QFN"
+        self.qfn_layer = "PIXEL"
         self.gluon_item_type = "GLUON"
 
     def create(self, src_qfn_id):
@@ -33,7 +34,7 @@ class GaugeCreator(GaugeUtils):
                     gluon,
                 )
             else:
-                self._create_g_parent(
+                self._create_gauge(
                     g_field,
                     src_qfn_id,
                     g,
@@ -41,6 +42,27 @@ class GaugeCreator(GaugeUtils):
                 )
 
             print(f"{g_field} for {src_qfn_id} created")
+
+        self.connect_intern_fields(pixel_id=src_qfn_id)
+
+    def connect_intern_fields(self, pixel_id):
+        for src_field, trgt_fields in self.gauge_to_gauge_couplings.items():
+            if src_field.lower() != "gluon": # -> alread connected in gluon process
+                src_id, src_attrs = self.g.get_single_neighbor_nx(pixel_id, src_field.upper())
+
+                for trgt_field in trgt_fields:
+                    trgt_id, trgt_attrs = self.g.get_single_neighbor_nx(pixel_id, trgt_field.upper())
+                    self.g.add_edge(
+                        src=src_id,
+                        trt=trgt_id,
+                        attrs=dict(
+                            rel="intern_coupled",
+                            src_layer=src_field.upper(),
+                            trgt_layer=trgt_field.upper(),
+                        )
+                    )
+        print("local gauges connected")
+
 
 
     def connect_gluons(self, nid):
@@ -57,7 +79,7 @@ class GaugeCreator(GaugeUtils):
         )
 
         # connect nid to all of them
-        for ngluon_sub_id, snattrs in all_gluon_neighbor_items:
+        for ngluon_sub_id, snattrs in all_gluon_neighbor_items.items():
             self.g.add_edge(
                 nid,
                 ngluon_sub_id,
@@ -69,41 +91,29 @@ class GaugeCreator(GaugeUtils):
             )
 
 
-
-
-
-
     def get_gluon_neighbor_items(self, nid, trgt_type):
         """
         Receive all possible gluon item cons for
         a single item
         intern & extern
         """
-        all_gluon_neighbor_items = []
-        # INTERN
-        intern_gloun_items = self.g.get_neighbor_list(
-            nid,
-            trgt_type
-        )
-        for intern_g_item_id, gattrs in intern_gloun_items:
-            if nid != intern_g_item_id:
-                all_gluon_neighbor_items.append(
-                    (intern_g_item_id, gattrs)
-                )
+        all_gluon_neighbor_items = {}
+
         # EXTERN
-        gluon_neighbors = self.g.get_neighbor_list(
+        gluon_neighbors:dict = self.g.get_neighbor_list(
             nid,
             "GLUON"
         )
 
-        for ngluon_id, _ in gluon_neighbors:
+        for ngluon_id, _ in gluon_neighbors.items():
             # Get neighbors sub-gluon-fields
-            gluon_neighbors_subs = self.g.get_neighbor_list(
+            gluon_neighbors_subs:dict = self.g.get_neighbor_list(
                 ngluon_id,
                 trgt_type
             )
-            all_gluon_neighbor_items.extend(gluon_neighbors_subs)
-
+            all_gluon_neighbor_items.update(
+                gluon_neighbors_subs
+            )
         return all_gluon_neighbor_items
 
 
@@ -126,8 +136,11 @@ class GaugeCreator(GaugeUtils):
         g,
         gluon,
     ):
+
+        all_gluon_ids = set()
         for i in range(8):
             gauge_id = f"{g_field}_{i}_{src_qfn_id}"
+            all_gluon_ids.add(gauge_id)
             g_item_field = g_field.upper()
 
             field_key, field_value, dmu_field_key, fmunu, j_nu = self._get_gauge_base_payload(
@@ -143,10 +156,8 @@ class GaugeCreator(GaugeUtils):
                 sub_type="ITEM",
                 j_nu=j_nu,
                 F_mu_nu=fmunu,
-                charge= 0,
-                mass= 0.0,
-                g= 1.217,
-                spin= 1,
+                **gattrs,
+                **FIELD_METADATA,
             )
 
             attrs[field_key] = field_value
@@ -157,9 +168,25 @@ class GaugeCreator(GaugeUtils):
             # Parent -> Child Edge
             self._connect_2_qfn(src_qfn_id, gauge_id, g_field)
 
+        # Connect intern each gluon
+        for gluon_id in all_gluon_ids:
+            for trgt_gluon_id in all_gluon_ids:
+                if gluon_id != trgt_gluon_id:
+                    self.g.add_edge(
+                        src=gluon_id,
+                        trt=trgt_gluon_id,
+                        attrs=dict(
+                            rel="intern_gluon",
+                            src_layer=self.gluon_item_type,
+                            trgt_layer=self.gluon_item_type,
+                        )
+                    )
+                    print(f"Connect {gluon_id} -> {trgt_gluon_id}, {self.g.G.has_edge(gluon_id, trgt_gluon_id)}")
+
+        self.g.print_edges("GLUON", "GLUON")
         print("Gluon items created")
 
-    def _create_g_parent(
+    def _create_gauge(
         self,
         g_field,
         src_qfn_id,
@@ -181,10 +208,9 @@ class GaugeCreator(GaugeUtils):
             type=g_field,
             j_nu=j_nu,
             F_mu_nu=fmunu,
-            _symmetry_groups=symmetry_groups,
+            #_symmetry_groups=symmetry_groups,
             #f_abc=None,
             **attrs,
-            #**FIELD_METADATA,
         )
         # Zusätzliche Felder nur für Nicht-Gluon
         parent_attrs[field_key] = field_value
@@ -199,7 +225,7 @@ class GaugeCreator(GaugeUtils):
 
 
     def _connect_2_qfn(self, src_qfn_id, gauge_id, g_field):
-        # QFN -> Parent Edge
+        # PIXEL -> Parent Edge
         self.g.add_edge(
             src_qfn_id,
             gauge_id,
@@ -209,35 +235,3 @@ class GaugeCreator(GaugeUtils):
                 trgt_layer=g_field,
             )
         )
-
-
-
-"""    def get_gauge_neighbor(self, nid):
-   Get all non gluon neighbors for non-gluon gauge
-   all_neighbor_items = []
-   target_type = [
-       *self.g_electroweak,
-       *self.g_qed
-   ]
-   # Get intern G-Fields
-   intern_items = self.g.get_neighbor_list(
-       nid,
-       target_type=target_type
-   )
-   # Valid intern coupliings
-   for innid, inattrs in intern_items:
-       if innid != nid:
-           all_neighbor_items.append(
-               (innid, inattrs)   
-           )
-        if g_field.lower() == "gluon":
-            parent_attrs = dict(
-                id=gauge_id,
-                parent=[g],
-                type=f"{g_field}",
-                sub_type="BUCKET",
-                _symmetry_groups=symmetry_groups,
-                time=0.0,
-            )
-        else:
-   # Valid extern couplings"""

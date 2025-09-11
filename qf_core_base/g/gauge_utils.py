@@ -1,3 +1,6 @@
+import itertools
+import pprint
+
 import numpy as np
 
 from qf_core_base.qf_utils.field_utils import FieldUtils
@@ -91,8 +94,6 @@ class GaugeUtils(FieldUtils):
             gluon_index=gluon_index
 
         )
-        #printer(locals())
-        #print("o_operator", o_operator)
         if gluon_index is not None and nntype is not None and "quark" in nntype.lower():
             j_nu = self.j_nu_gluon_quark(psi, psi_bar, self.gamma[index], o_operator, g)
         else:
@@ -113,8 +114,6 @@ class GaugeUtils(FieldUtils):
         return j_nu
 
 
-
-
     def _check_active_indizes(self, neighbors:list[tuple],nattrs=None):
         #
         # mark: gluons treated as single entries
@@ -129,7 +128,7 @@ class GaugeUtils(FieldUtils):
                     (nid, nattrs)
                 )
 
-       #print("_check_active_indizes finieshed")
+        #print("_check_active_indizes finieshed")
         return filtered_neighbors
 
 
@@ -499,41 +498,71 @@ class GaugeUtils(FieldUtils):
         e = g * np.sin(theta_w)
         return e
 
-"""
-from itertools import product, combinations
 
-        # Alle Nodes mit ihren aktiven Indizes einsammeln
-        node_indices = []
-        for k, v in neighbors.items():
-            for node_id, indices in v.items():
-                if indices:
-                    node_indices.append((node_id, indices))
 
-        if len(node_indices) < needed_len:
-           #print(f"⚠️ Nicht genug Nodes: {len(node_indices)} vorhanden, {needed_len} benötigt.")
-            return []
 
-        all_combinations = []
+    def ceate_powerset(
+            self,
+            self_ntype,
+            self_nid,
+            valid_vertex:list,
+            neighbors:dict,
+            self_nattrs:dict,
+            quad=True
 
-        # Alle Node-Kombinationen (ohne Wiederholung der Node)
-        node_combis = combinations(node_indices, needed_len)
+    ):
+        self_ntype=self_ntype.upper()
+        clasified_neighbors = {}
 
-        for nodes in node_combis:
-            # Für jede Node-Kombi (z.B. (A,B,C)) alle Produktkombinationen der Indizes erzeugen
-            id_lists = [indices for (_id, indices) in nodes]
-            for idx_combo in product(*id_lists):
-                # Jede Kombination als Liste von Tupeln (NodeID, Index)
-                combo = [(node_id, idx) for (node_id, _), idx in zip(nodes, idx_combo)]
-                all_combinations.append(combo)
+        self_struct = {"id": self_nid, **self.restore_selfdict(self_nattrs)}
+        if "gluon" not in valid_vertex:
+            for i, vtype in enumerate(valid_vertex):
+                vtype = vtype.upper()
+                print("neighbors")
+                pprint.pp(neighbors)
+                print("self attrs")
+                pprint.pp(self_nattrs)
+                if vtype != self_ntype:
+                    for nid, nattrs in neighbors[vtype.upper()].items():
+                        print("nid", nid)
+                        print("nattrs", nattrs)
+                        neighbor_struct = {"id": nid, **self.restore_selfdict(nattrs)}
 
-       #print(f"✅ Gluon combinations ({needed_len}-fold): {all_combinations}")
-        return all_combinations
-        if gluon is True:
-            for field_item_index, lorenz_vec in enumerate(field_value):
-                for i in range(len(field_item_index)):
-                    if lorenz_vec[i] > 0:
+                        # Create empty space
+                        if vtype.upper() not in clasified_neighbors:
+                            clasified_neighbors[vtype.upper()] = []
 
-                #
-                indizes.append(field_item_index)
+                        if vtype.upper() != self_ntype.upper() or (
+                            vtype.upper() == "GLUON" and i != 2) or (
+                            vtype.upper() != self_ntype.upper()
+                        ):  # -> or check to leave last item free (for self)
+                            clasified_neighbors[vtype.upper()].append(
+                                neighbor_struct  # single keys
+                            )
 
-"""
+            powerset = list(itertools.product(
+                *clasified_neighbors.values()
+            ))
+            print("powersetA:")
+            pprint.pp(powerset)
+        else:
+            # create
+            print("len gluon:", len(neighbors["GLUON"]))
+            powerset = list(itertools.combinations(
+                [
+                    {"id": nid, **self.restore_selfdict(nattrs)}
+                    for nid, nattrs in neighbors["GLUON"].items()
+                ],
+                r=3 if quad is True else 2
+            ))
+            print("len powerset", len(powerset))
+            #pprint.pp(powerset)
+
+        full_powerset = []
+        # Add self struct to powerset
+        for variation in powerset:
+            #print("variation", variation)
+            full_powerset.append(variation + (self_struct,))
+        print("full_powerset", len(full_powerset))
+
+        return full_powerset

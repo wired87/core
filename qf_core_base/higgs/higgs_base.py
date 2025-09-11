@@ -1,17 +1,15 @@
-
 import numpy as np
 
-from qf_core_base.calculator.calculator import Calculator
 from qf_core_base.higgs.phi_utils import HiggsUtils
-from qf_core_base.qf_utils.all_subs import FERMIONS, G_FIELDS
 from qf_core_base.qf_utils.field_utils import FieldUtils
-from qf_core_base.qf_utils.qf_utils import QFUtils
-
-from qf_core_base.symmetry_goups.main import SymMain
+from qf_core_base.ray_validator import RayValidator
 from utils._np.serialize_complex import check_serialize_dict
 
-
-class HiggsBase(FieldUtils, HiggsUtils):
+class HiggsBase(
+    FieldUtils,
+    HiggsUtils,
+    RayValidator
+):
     """
     Das Higgsfeld hat nach SSB einen konstanten Vakuumwert
     𝑣
@@ -28,72 +26,76 @@ class HiggsBase(FieldUtils, HiggsUtils):
 
     def __init__(
             self,
-            g,
             d,
-            neighbors_pm,
-            time,
-            attrs,
-            env,
-            **args,
+            attr_keys:list,
+            g=None,  # just if non ray
+            host=None,  # exists if
     ):
-        super().__init__()
+        RayValidator.__init__(self, g_utils=g, host=host)
+        HiggsUtils.__init__(self)
+        FieldUtils.__init__(self)
+        self.symbol = "Φ"
+        if host is None:
+            self.g = g
+            self.host = None
+        else:
+            self.g = None
+            self.host = host
+
+        self.d = d  # distance
+        self.attr_keys = attr_keys
+
+
+    def main(
+            self,
+            env,
+            attrs,
+            all_subs:dict,
+            neighbor_pm_val_same_type,
+            **kwargs,
+    ):
+        # Args
+        self.env=env
+        self.all_subs=all_subs
+        self.neighbor_pm_val_same_type = neighbor_pm_val_same_type
+
+        # attrs
         self.attrs = self.restore_selfdict(data=attrs)
-        # make class attrs
-        # LOGGER.info("init FermionBase")
         for k, v in self.attrs.items():
             setattr(self, k, v)
-            # LOGGER.info(f"{k}:{v}")
-        self.energy = None
-        self.d_phi = None
 
-        self.g = g
-        self.env = env
-        self.d = d  # distance
-        self.neighbors_pm = neighbors_pm
-        self.parent = self.attrs["parent"][0].lower()
+        # vars
+        if self.attrs.get("h_prev") is None:
+            self.h_prev = getattr(self, "h")
+            self.attrs["h_prev"] = self.h_prev
 
         self._laplacian_h()
         self._lambda_H()
         self._higgs_potential_derivative()
-
-        self.attr_keys = [k for k in attrs.keys()]
-
-
-        self.symmetry_group_class = SymMain(groups=getattr(self, "_symmetry_groups", [])[0])
-        self.calculator = Calculator(g)
-        self.qf_utils = QFUtils(g)
-
-        self.neighbors = self.g.get_neighbor_list(
-            getattr(self, "id"),
-            self.all_sub_fields
-        )
-
-    def main(self):
-        # Set prev value
-        #print("Update phi")
-        h = getattr(self, "h")
-        nid = getattr(self, "id")
-
-        if self.h_prev is None:
-            self.phi_prev = h
-
-        self.h_prev = h
         self._d_phi()
         self._h()
         self._phi()
         self._energy_density()
-        self._coupling(nid)
 
         new_dict = check_serialize_dict(
             self.__dict__,
             self.attr_keys
         )
+        return new_dict
 
 
+    def _d_phi(self):
+        #print("self.neighbor_pm_val_same_type", self.neighbor_pm_val_same_type)
+        #print("self.attrs", self.attrs)
+        self.d_phi = self.call(
+            method_name="_dX",
+            attrs=self.attrs,
+            d=self.d,
+            neighbor_pm_val_same_type=self.neighbor_pm_val_same_type,
+            field_key="h"
+        )
+        print(f"∂μh(x):{self.d_phi}")
 
-        self.g.update_node(new_dict)
-        # LOGGER.info(f"finiehsed update of {self.id}:")
-        #print(f"Update for {nid} finished")
 
 
     def _phi(self):
@@ -103,92 +105,7 @@ class HiggsBase(FieldUtils, HiggsUtils):
         #print("vev", vev)
         new_phi = (1/np.sqrt(2)) * np.array([0, vev + h])
         setattr(self, "phi", new_phi)
-        #print("_phi set")
-
-    def _coupling(self, nid):
-        h = getattr(self, "h")
-        for n in self.neighbors:
-            nnid = n[0]
-            nattrs = n[1]
-
-            ntype = nattrs.get("type")
-            phi = getattr(self, "phi")
-
-            coupling_term = None
-            if ntype in FERMIONS:
-                sub_type = nattrs.get("sub_type", "")
-                if sub_type.lower() == "item":
-                    coupling_term = self.symmetry_group_class.sym_classes.yukawa_term(
-                        **self.attrs,
-                        **nattrs,
-                    )
-
-            elif ntype in G_FIELDS:
-                g = nattrs.get("g")
-                field_value = nattrs.get(self._field_value(ntype))
-                coupling_term = self.hg_coupling(
-                    field_value,
-                    g,
-                    phi,
-                )
-
-            if coupling_term is not None:
-                self.g.update_edge(
-                    src=nid,
-                    trgt=nnid,
-                    rels=["intern_coupling", "extern_coupling"],
-                    attrs=self.attrs.update(
-                        {"coupling_term": coupling_term}
-                    )
-                )
-
-                h += self.d["t"] * coupling_term.real
-                setattr(self, "h", h)
-                # LOGGER.info(f"Φ = {self.h}")
-
-
-
-    def _d_phi(self):
-        # LOGGER.info("neighbors_pm", self.neighbors_pm)
-        # LOGGER.info("self.h", self.h)
-
-        phi_t = self.calculator.cutils._dmuX(
-            self.h, self.phi_prev, self.d["t"], time=True
-        )  # dt = timestep
-        dphi = [
-            self.init_phi(h=phi_t, serialize=False)
-        ]
-        # # LOGGER.info("neighbors", self.neighbors_pm)
-        for i, (key, pm) in enumerate(self.neighbors_pm.items()):  # x,y,z
-            # LOGGER.info("Dphi run", i)
-            plus_id = pm[0]
-            minus_id = pm[1]
-
-            neighhbor_plus = self.g.get_single_neighbor_nx(plus_id, self.type.upper())
-            neighhbor_minus = self.g.get_single_neighbor_nx(minus_id, self.type.upper())
-
-            phi_plus = neighhbor_plus[1]["h"]
-            # LOGGER.info(f"nplus {minus_id}-> {neighhbor_plus[1]}:{phi_plus}")
-
-            phi_minus = neighhbor_minus[1]["h"]
-            # LOGGER.info(f"nminus {plus_id}-> {neighhbor_minus[1]}:{phi_minus}")
-
-            if phi_plus is None:
-                phi_plus = self.h
-            if phi_minus is None:
-                phi_minus = self.h
-
-            dphi_x_h = self.calculator.cutils._dmuX(
-                phi_plus, phi_minus, self.d[key]
-            )
-
-            # convert to doublet
-            d_phi_X = self.init_phi(h=dphi_x_h, serialize=False)
-
-            ## LOGGER.info(f"dphi{i}", d_phi_X)
-            dphi.append(d_phi_X)  # -> alle koords
-        #print("Finished dphi", dphi)
-        setattr(self, "d_phi", np.array(dphi, dtype=complex))
+        print(f"{self.symbol}: {new_phi}")
 
 
 
@@ -206,6 +123,7 @@ class HiggsBase(FieldUtils, HiggsUtils):
         h_next = 2 * h - h_prev + self.d["t"] ** 2 * (laplacian_h + self._mass_term() - dV_dh)
         # LOGGER.info("h set", h_next)
         setattr(self, "h", h_next)
+        print(f"h(x): {h_next}")
 
     def _higgs_potential_derivative(self):
         """
@@ -220,6 +138,7 @@ class HiggsBase(FieldUtils, HiggsUtils):
         dV_dh = -mu ** 2 * (vev + h) + lambda_H * (vev + h) ** 3
         #dV_dh = self.lambda_h * h * (h + vev) ** 2
         setattr(self, "dV_dh", dV_dh)
+        print(f"∂V/∂h = {dV_dh}")
 
     def compute_mu(self, vev, lambda_h):
         """
@@ -237,12 +156,6 @@ class HiggsBase(FieldUtils, HiggsUtils):
         return mu
 
 
-
-
-
-
-
-
     def _lambda_H(self):
         """
         Higgs-Selbstkopplung
@@ -253,7 +166,8 @@ class HiggsBase(FieldUtils, HiggsUtils):
         vev = getattr(self, "vev", [])
         lambda_h = (m ** 2) / (2 * vev ** 2)
         # LOGGER.info("lambda_h set", lambda_h)
-        setattr(self,"lambda_h",lambda_h)
+        setattr(self, "lambda_h", lambda_h)
+        print(f"λ_H = {lambda_h}")
 
     def _energy_density(self):
         """
@@ -269,6 +183,7 @@ class HiggsBase(FieldUtils, HiggsUtils):
         s_gradient = np.abs(gradient)
         self.energy = np.array(kinetic + s_gradient + potential).tolist()
         # LOGGER.info("self.energy updated", self.energy, type(self.energy))
+        print(f"E = {self.energy}")
 
     def _higgs_potential(self):
         """
@@ -289,9 +204,20 @@ class HiggsBase(FieldUtils, HiggsUtils):
     def _laplacian_h(self):
         h = getattr(self, "h", None)
         laplacian_h = 0
-        for coord, (plus, minus) in self.neighbors_pm.items():
-            p_phi = self.g.get_single_neighbor_nx(plus, "PHI")[1]["h"]
-            m_phi = self.g.get_single_neighbor_nx(minus, "PHI")[1]["h"]
-            laplacian_h += (p_phi + m_phi - 2 * h) / self.env["d"][coord] ** 2
+        for key, item in self.neighbor_pm_val_same_type.items():
+            if key in ["x", "y", "z"]:
+                item:[tuple, tuple]
+                p_item = item[0]
+                m_item = item[1]
+
+                # extract value
+                val_plus = p_item[1]
+                val_minus = m_item[1]
+
+                laplacian_h += (val_plus + val_minus - 2 * h) / self.env["d"][key] ** 2
         # LOGGER.info("laplacian set", laplacian_h)
         setattr(self, "laplacian_h", laplacian_h)
+
+
+
+

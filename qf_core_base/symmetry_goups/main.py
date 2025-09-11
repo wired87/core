@@ -52,50 +52,6 @@ class SymMain(FieldUtils):
         return total_g_coupling
 
 
-    def _yukawa_couping_process(self, nattrs, yukawa_total_coupling, is_quark, y, attrs):
-        #print("nattrs", nattrs)
-        if is_quark:
-            for i in range(3):
-                yukawa_term = self.yukawa_term(
-                    y,
-                    self.u.getr(nattrs, "h"),
-                    self.u.getr(attrs, "psi_bar",),
-                    self.u.getr(attrs, "psi"),
-                    is_quark
-                )
-                yukawa_total_coupling[i] += yukawa_term[i]
-
-        else:
-            yukawa_term = self.yukawa_term(
-                y,
-                self.u.getr(nattrs, "h"),
-                self.u.getr(attrs, "psi_bar"),
-                self.u.getr(attrs, "psi"),
-                is_quark
-            )
-            yukawa_total_coupling = yukawa_term
-        #print(f"# _yukawa_couping_process finished: {yukawa_total_coupling}")
-        return yukawa_total_coupling
 
 
-    def yukawa_term(self, y, h:float, psi_bar, psi, is_quark, **attrs):
-        """
-        Nach SSB ist ℎ ein Skalar
-        Physikalischer Yukawa-Term nach SSB:
-        L = -(m_f / v) * h * (ψ̄ ψ)
-        """
 
-        y = float(y)
-        #print("y, h, psi_bar", y, h, psi_bar)
-        #print("psi, is_quark", psi, is_quark)
-        if is_quark:
-            """
-            Quark besteht aus 3 arrays (farbadungen) bei welchem jede einen dirac 
-            spinor repräsentiert (leptons tragen nur einen dirac spinor)
-            """
-            # psi bar und üsi ahben jeweils 3 spinoren welche man verwendn muss
-            result = [-y * h * np.vdot(psi_bar[i], psi[i]) for i in range(3)]
-        else:
-            # h kein skalar mehr
-            result = [-y * h * np.vdot(psi_bar, psi)]
-        return np.array(result, dtype=complex)
