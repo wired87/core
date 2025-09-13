@@ -1,4 +1,9 @@
 import os.path
+"""
+
+daphne bm.asgi:application
+
+"""
 
 r"""if __name__ == "__main__":
     input_path = r"C:\Users\wired\OneDrive\Desktop\Projects\bm\gnn\processing\layer\uniprot\cc_pred_ckpt.json"

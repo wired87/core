@@ -44,7 +44,7 @@ if os.name == "nt":
     REQUEST_URL = "http://127.0.0.1:8000/"
     GCP_TOKEN =r"C:\Users\wired\OneDrive\Desktop\Projects\bm\ggoogle\g_auth\token.json"
     matplotlib.use("TkAgg")
-    TEST_ENV_ID="env_bare_rajtigesomnlhfyqzbvx"
+    TEST_ENV_ID="env_rajtigesomnlhfyqzbvx_zddioeaduhvnyphluwvu"# one dim for demo_G
     ALLOWED_HOSTS = ["*"]
     WS_URL = "ws://127.0.0.1:8000/"
     FIREBASE_CREDENTIALS = r"C:\\Users\\wired\OneDrive\\Desktop\\Projects\\Brainmaster\\_google\\g_auth\\firebase_creds.json"
@@ -53,7 +53,7 @@ else:
     matplotlib.use("Agg")
     DEBUG = False
     TEST_USER_ID = "rajtigesomnlhfyqzbvx" # todo
-    TEST_ENV_ID="env_bare_rajtigesomnlhfyqzbvx"
+    TEST_ENV_ID="env_rajtigesomnlhfyqzbvx_zddioeaduhvnyphluwvu"
     REQUEST_URL = "https://bm2-1004568990634.asia-east1.run.app/"
     GCP_TOKEN="utils/ggoogle/g_auth/token.json"
     ALLOWED_HOSTS = ['bestbrain.tech', 'www.bestbrain.tech', "34.69.187.50", "6000-firebase-studio-1749574544448._qfn_cluster_node-jbb3mjctu5cbgsi6hwq6u4btwe.cloudworkstations.dev"]
@@ -62,6 +62,7 @@ else:
 
 CORS_ALLOW_ALL_ORIGINS = True
 
+RAY_HELPER_NODES=["DB_WORKER", "GLOB_LOGGER", "GLOB_STATE_HANDLER", "UTILS_WORKER", "HEAD"]
 
 os.environ.setdefault("FIREBASE_CREDENTIALS", FIREBASE_CREDENTIALS)
 
