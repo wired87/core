@@ -1,19 +1,5 @@
 import os.path
-"""
 
-daphne bm.asgi:application
-
-"""
-
-r"""if __name__ == "__main__":
-    input_path = r"C:\Users\wired\OneDrive\Desktop\Projects\bm\gnn\processing\layer\uniprot\cc_pred_ckpt.json"
-
-    with open(input_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    with open(input_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-"""
 
 headers = {
     "Content-Type": "application/json"   # <-- MANDATORY
