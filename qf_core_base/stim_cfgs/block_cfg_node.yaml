@@ -1,5 +1,3 @@
-iteration_start:
-max_val_multiplier: 1
 id: "somthing1"
 
 sets: 10 # Wiederholungen
@@ -7,6 +5,4 @@ block_break_duration_ms: 1000 # after block finished
 
 sets_iter: 100 # Wiederholungen
 block_break_duration_iters: 5 # after block finished
-phase: # all defeined phases
-  -
-  -
+

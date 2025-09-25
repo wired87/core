@@ -3,7 +3,6 @@ import zipfile
 from io import BytesIO
 from tempfile import TemporaryDirectory
 
-from bm.settings import TEST_ENV_ID
 from qf_core_base.qf_utils.field_utils import FieldUtils
 from qf_core_base.qf_utils.qf_utils import QFUtils
 
@@ -184,7 +183,13 @@ class SimCore:
         if env is None:
             env=self.env
 
-        self.updator = QFUpdator(g, env)
+        self.updator = QFUpdator(
+            g,
+            env,
+            self.user_id,
+        )
+
+        # todo @ testig start local docker and connect -> return endpoint when ready. rest keeps the same
 
         i = 0
         print("Start sim loop")
@@ -242,10 +247,8 @@ class SimCore:
         self.create_archive()
 
 
-
 if __name__ == "__main__":
     sc = SimCore()
-
     g = GUtils(
         nx_only=False,
         G=None,
@@ -254,7 +257,7 @@ if __name__ == "__main__":
     )
 
     ###
-    sc.env = g.G.nodes[TEST_ENV_ID]
+    sc.env = g.G.nodes[ENV_ID]
     print("QFUpdator ENV:", sc.env)
     sc.run_sim(g)
 

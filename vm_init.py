@@ -3,7 +3,6 @@ clone="""
 git clone --recurse-submodules https://github.com/wired87/betse_drf.git
 """
 init=f"""
-
 source workenv/bin/activate && cd BestBrain && export PYTHONPATH=$PYTHONPATH:$(pwd) && git pull
 """
 
@@ -15,4 +14,3 @@ sudo systemctl restart fail2ban
 sudo journalctl -u gunicorn -f
 """
 
-# cd qf_sim && git pull && cd .. && cd qf_core_base && git pull && cd .. && utils && git pull && cd ..

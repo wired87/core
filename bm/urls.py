@@ -17,6 +17,7 @@ urlpatterns = [
     path('docai/', include("documentai.views.urls")),
 
     path('gke/', include("gke_admin.urls")),
+    path('batch/', include("cloud_batch.urls")),
 
     # frontend
     #path("frontend/", include("frontend.urls")),

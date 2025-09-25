@@ -175,19 +175,21 @@ class FermUtils(
         Returns:
             bar_psi: np.ndarray – konjugierter Spinor
         """
+        try:
+            if is_quark is True:
+                psi_bar = np.zeros((3, 4), dtype=complex)
+                # Quark: Zeilenweise ψ† @ γ⁰ → Ergebnis ist (3,4)
+                for i in range(3):
+                    psi_bar_i = psi[i].conj().T @ self.gamma[0]
+                    psi_bar[i]=psi_bar_i
+            else:
+                # Lepton: ψ† (1x4) @ γ⁰ (4x4) → (1x4)
+                psi_bar = psi.conj().T @ self.gamma[0]
 
-        if is_quark is True:
-            psi_bar = np.zeros((3, 4), dtype=complex)
-            # Quark: Zeilenweise ψ† @ γ⁰ → Ergebnis ist (3,4)
-            for i in range(3):
-                psi_bar_i = psi[i].conj().T @ self.gamma[0]
-                psi_bar[i]=psi_bar_i
-        else:
-            # Lepton: ψ† (1x4) @ γ⁰ (4x4) → (1x4)
-            psi_bar = psi.conj().T @ self.gamma[0]
-
-        ##print("ψ†", psi_bar, psi_bar.shape)
-        return psi_bar
+            ##print("ψ†", psi_bar, psi_bar.shape)
+            return psi_bar
+        except Exception as e:
+            print(f"Error in _psi_bar: {e}, psi: {psi}, is_quark: {is_quark}")
 
     def _is_quark(self, type):
         ntype = type.upper()

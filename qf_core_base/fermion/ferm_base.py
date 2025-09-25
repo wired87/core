@@ -3,7 +3,7 @@ import numpy as np
 import ray
 
 from qf_core_base.fermion.ferm_utils import FermUtils
-from qf_core_base.ray_validator import RayValidator
+from _ray_core.ray_validator import RayValidator
 
 from utils._np.serialize_complex import check_serialize_dict, deserialize_complex
 from utils.graph.local_graph_utils import GUtils
@@ -56,6 +56,41 @@ class FermionBase(
         # locals
         self.quark_type_coupling_check = ["up", "charm", "top"]
 
+    def set_params(
+            self,
+            env,
+            attrs,
+            all_subs,
+            neighbor_pm_val_same_type,
+            **kwargs
+    ):
+        try:
+            # args
+            self.env = env
+            self.all_subs = all_subs
+            self.attrs = self.restore_selfdict(attrs)
+            self.type = self.attrs.get("type")
+            self.neighbor_pm_val_same_type = neighbor_pm_val_same_type
+
+            # attrs
+            for k, v in self.attrs.items():
+                setattr(self, k, v)
+
+            # quark
+            if self.type:
+                self.is_quark = self._is_quark(self.type)
+
+            # extract lower pre type for quarks (up, down, etc.)
+            self.short_lower_type = self.type.lower().split("_")[0]
+
+            # prev
+            if self.attrs.get("psi_prev") is None:
+                self.attrs["psi_prev"] = self.psi.copy()
+            self.new_prev_psi = self.psi.copy()
+        except Exception as e:
+            print(f"Err set_params: {e}")
+
+
     def main(
             self,
             env,
@@ -64,28 +99,8 @@ class FermionBase(
             neighbor_pm_val_same_type,
             **kwargs
     ):
-        # args
-        self.env = env
-        self.all_subs=all_subs
-        self.attrs = self.restore_selfdict(attrs)
-        self.type = self.attrs.get("type")
-        self.neighbor_pm_val_same_type = neighbor_pm_val_same_type
-
-        # attrs
-        for k, v in self.attrs.items():
-            setattr(self, k, v)
-
-        #quark
-        if self.type:
-            self.is_quark = self._is_quark(self.type)
-
-        # extract lower pre type for quarks (up, down, etc.)
-        self.short_lower_type = self.type.lower().split("_")[0]
-
-        # prev
-        if self.attrs.get("psi_prev") is None:
-            self.attrs["psi_prev"] = self.psi.copy()
-        new_prev_psi = self.psi.copy()
+        # def params
+        self.set_params(**locals())
 
         # spin
         self.handedness = self.check_spin(getattr(self, "psi", None), self.is_quark)
@@ -94,7 +109,10 @@ class FermionBase(
             ntype=self.type
         )
         
-        self.attrs["psi_bar"] = self._psi_bar(self.psi.copy(), self.is_quark)
+        psi_bar = self._psi_bar(self.psi.copy(), self.is_quark)
+        if psi_bar is not None:
+            self.attrs["psi_bar"] = psi_bar
+
         self._coupling_term()
         self._dpsi()
         self._dirac_process()
@@ -103,7 +121,7 @@ class FermionBase(
         # convert back
         self.dpsi = None
 
-        self.attrs["psi_prev"] = new_prev_psi
+        self.attrs["psi_prev"] = self.new_prev_psi
 
         new_dict = check_serialize_dict(
             self.__dict__,
@@ -121,7 +139,7 @@ class FermionBase(
             neighbor_pm_val_same_type=self.neighbor_pm_val_same_type,
             field_key="psi"
         )
-        print(f"∂μψ(x): {self.dpsi}")
+        #print(f"∂μψ(x): {self.dpsi}")
 
 
     def _dirac_process(self):
@@ -253,14 +271,17 @@ class FermionBase(
         """
         ψ(t+Δt) = ψ + Δt · ∂tψ
         """
-        m = float(getattr(self, "mass", None))
-        print(f"m: {m}")
-        # print(f"dpsi_dt", dpsi_dt)
+        try:
+            #m = float(getattr(self, "mass", None))
+            #print(f"m: {m}")
+            # print(f"dpsi_dt", dpsi_dt)
 
-        # ENDLICH: ψ = ψ + Δt · ∂tψ
-        #dpsi_dt = self.gamma0_inv @ self.dirac_result  # ∂tψ = γ⁰⁻¹ · Dirac-Term
-        self.psi = self.psi + self.d["t"] * self.dirac_result  # ψ = ψ + Δt · ∂tψ
-        print(f"ψ+Δt·∂tψ: {self.psi}")
+            # ENDLICH: ψ = ψ + Δt · ∂tψ
+            #dpsi_dt = self.gamma0_inv @ self.dirac_result  # ∂tψ = γ⁰⁻¹ · Dirac-Term
+            self.psi = self.psi + self.d["t"] * self.dirac_result  # ψ = ψ + Δt · ∂tψ
+            #print(f"ψ+Δt·∂tψ: {self.psi}")
+        except Exception as e:
+            print("Err _psi", e)
 
 
     def _coupling_term(self):
@@ -309,7 +330,7 @@ class FermionBase(
                             psi, field_value, g, ntype, gluon_index, gauge_coupling_schema, is_quark=self.is_quark,
                             handedness=self.handedness
                         )
-                    print(f"J(x): {gauge_coupling_schema}")
+                    #print(f"J(x): {gauge_coupling_schema}")
                     self.add_coupling_term(
                         nid,
                         nnid,
@@ -586,30 +607,3 @@ class FermionBase(
         #print(f"Quark doublet extracted: {doublet, doublet.shape}")
 
         return doublet
-
-
-
-"""
-
-        if isinstance(split_psi, tuple):
-            print("Start wroking mixed handedness psis")
-            # self. handedness == mixed ->
-            # need to calc L/R sepparate and sum coupling term
-            coupling_term = np.zeros_like(self.psi, dtype=complex)
-            
-            for i, side_psi in enumerate(split_psi):
-                print(f"calc coupling with {side_psi, side_psi.shape}")
-                coupling = self._calc_coupling_term_G(
-                    side_psi, field_value, g, ntype, gluon_index, gauge_coupling_schema, is_quark=self.is_quark
-                )
-
-                # Apply both single couplings to term spinor
-                if coupling_term is not None:
-                    if i == 0:
-                        # left side
-                        coupling_term[:2] += coupling
-                    else:
-                        # r
-                        coupling_term[2:] += coupling
-
-"""

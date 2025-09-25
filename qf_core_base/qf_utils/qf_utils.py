@@ -1,5 +1,4 @@
-import os
-
+from app_utils import ENV_ID
 from fb_core.real_time_database import FirebaseRTDBManager
 from qf_core_base.fermion import FERM_PARAMS
 from qf_core_base.g import GAUGE_FIELDS
@@ -59,7 +58,9 @@ class QFUtils(FieldUtils):
     def fetch_db_build_G(self):
         self.initial_frontend_data = {}
 
-        initial_data = self.db_manager._fetch_g_data()
+        initial_data = self.db_manager._fetch_g_data(
+            db_root=f"users/{self.user_id}/env/{ENV_ID}/"
+        )
 
         # Build a G from init data and load in self.g
         self.g.build_G_from_data(initial_data, self.env_id)

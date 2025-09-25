@@ -2,7 +2,7 @@ import numpy as np
 
 from qf_core_base.higgs.phi_utils import HiggsUtils
 from qf_core_base.qf_utils.field_utils import FieldUtils
-from qf_core_base.ray_validator import RayValidator
+from _ray_core.ray_validator import RayValidator
 from utils._np.serialize_complex import check_serialize_dict
 
 class HiggsBase(
@@ -94,19 +94,21 @@ class HiggsBase(
             neighbor_pm_val_same_type=self.neighbor_pm_val_same_type,
             field_key="h"
         )
-        print(f"∂μh(x):{self.d_phi}")
+        #print(f"∂μh(x):{self.d_phi}")
 
 
 
     def _phi(self):
-        h = getattr(self, "h")
-        vev = getattr(self, "vev")
-        #print("h", h)
-        #print("vev", vev)
-        new_phi = (1/np.sqrt(2)) * np.array([0, vev + h])
-        setattr(self, "phi", new_phi)
-        print(f"{self.symbol}: {new_phi}")
-
+        try:
+            h = getattr(self, "h")
+            vev = getattr(self, "vev")
+            #print("h", h)
+            #print("vev", vev)
+            new_phi = (1/np.sqrt(2)) * np.array([0, vev + h])
+            setattr(self, "phi", new_phi)
+            #print(f"{self.symbol}: {new_phi}")
+        except Exception as e:
+            print(f"Error phi: {e}")
 
 
 
@@ -114,31 +116,36 @@ class HiggsBase(
         return -self.mass ** 2 * self.h
 
     def _h(self):
-        h = getattr(self, "h")
-        h_prev = getattr(self, "h_prev")
-        laplacian_h = getattr(self, "laplacian_h")
-        dV_dh = getattr(self, "dV_dh")
+        try:
+            h = getattr(self, "h")
+            h_prev = getattr(self, "h_prev")
+            laplacian_h = getattr(self, "laplacian_h")
+            dV_dh = getattr(self, "dV_dh")
 
-        # Klein-Gordon-Update (explizit)
-        h_next = 2 * h - h_prev + self.d["t"] ** 2 * (laplacian_h + self._mass_term() - dV_dh)
-        # LOGGER.info("h set", h_next)
-        setattr(self, "h", h_next)
-        print(f"h(x): {h_next}")
-
+            # Klein-Gordon-Update (explizit)
+            h_next = 2 * h - h_prev + self.d["t"] ** 2 * (laplacian_h + self._mass_term() - dV_dh)
+            # LOGGER.info("h set", h_next)
+            setattr(self, "h", h_next)
+            #print(f"h(x): {h_next}")
+        except Exception as e:
+            print(f"Error _h: {e}")
     def _higgs_potential_derivative(self):
         """
         ∂V/∂h = λ_H * h * (h + v)^2
         Beschreibung: Lokale Rückstellkraft auf das Higgsfeld h
         nach SSB.
         """
-        h = getattr(self, "h")
-        vev = getattr(self, "vev")
-        lambda_H = getattr(self, "lambda_h")
-        mu = self.compute_mu(vev, lambda_H)
-        dV_dh = -mu ** 2 * (vev + h) + lambda_H * (vev + h) ** 3
-        #dV_dh = self.lambda_h * h * (h + vev) ** 2
-        setattr(self, "dV_dh", dV_dh)
-        print(f"∂V/∂h = {dV_dh}")
+        try:
+            h = getattr(self, "h")
+            vev = getattr(self, "vev")
+            lambda_H = getattr(self, "lambda_h")
+            mu = self.compute_mu(vev, lambda_H)
+            dV_dh = -mu ** 2 * (vev + h) + lambda_H * (vev + h) ** 3
+            #dV_dh = self.lambda_h * h * (h + vev) ** 2
+            setattr(self, "dV_dh", dV_dh)
+            #print(f"∂V/∂h = {dV_dh}")
+        except Exception as e:
+            print(f"Error _higgs_potential_derivative: {e}")
 
     def compute_mu(self, vev, lambda_h):
         """
@@ -162,12 +169,15 @@ class HiggsBase(
         λh bestimmt, wie steil der Mexican Hat ist
         λ_H = m_H² / (2 * v²)
         """
-        m = getattr(self, "mass", [])
-        vev = getattr(self, "vev", [])
-        lambda_h = (m ** 2) / (2 * vev ** 2)
-        # LOGGER.info("lambda_h set", lambda_h)
-        setattr(self, "lambda_h", lambda_h)
-        print(f"λ_H = {lambda_h}")
+        try:
+            m = getattr(self, "mass", [])
+            vev = getattr(self, "vev", [])
+            lambda_h = (m ** 2) / (2 * vev ** 2)
+            # LOGGER.info("lambda_h set", lambda_h)
+            setattr(self, "lambda_h", lambda_h)
+            #print(f"λ_H = {lambda_h}")
+        except Exception as e:
+            print(f"Error _lambda_H: {e}")
 
     def _energy_density(self):
         """
@@ -175,15 +185,18 @@ class HiggsBase(
         E = 0.5*(∂_t h)^2 + 0.5*(∇h)^2 + V(h)
         Hamiltonian = k*(L0^2/2 + 2*l1*(l1*cos(q1) - L0)*cos(q1)) - g*(l1*m1*sin(q1) + l2*m2*cos(q2)) + (m3*a*a + m1*l1*l1*p2*p2 + 4*b*(b*(m2 + m3) + m3*a*cos(q2)))/(2*l1^2*l2^2*m3*(m1 + 4*(m2 + m3*sin(q2)^2)*sin(q1)^2))
         """
-        kinetic = 0.5 * (self.d_phi[0]) ** 2  # Energie, die durch zeitliche Änderungen entsteht
-        gradient = 0.5 * sum([c ** 2 for c in self.d_phi[1:]])
-        potential = self._higgs_potential()
-        # LOGGER.info("kinetic", kinetic)
-        # LOGGER.info("gradient", gradient)
-        s_gradient = np.abs(gradient)
-        self.energy = np.array(kinetic + s_gradient + potential).tolist()
-        # LOGGER.info("self.energy updated", self.energy, type(self.energy))
-        print(f"E = {self.energy}")
+        try:
+            kinetic = 0.5 * (self.d_phi[0]) ** 2  # Energie, die durch zeitliche Änderungen entsteht
+            gradient = 0.5 * sum([c ** 2 for c in self.d_phi[1:]])
+            potential = self._higgs_potential()
+            # LOGGER.info("kinetic", kinetic)
+            # LOGGER.info("gradient", gradient)
+            s_gradient = np.abs(gradient)
+            self.energy = np.array(kinetic + s_gradient + potential).tolist()
+            # LOGGER.info("self.energy updated", self.energy, type(self.energy))
+            #print(f"E = {self.energy}")
+        except Exception as e:
+            print(f"Error energy density: {e}")
 
     def _higgs_potential(self):
         """
@@ -202,22 +215,24 @@ class HiggsBase(
         return h_potential
 
     def _laplacian_h(self):
-        h = getattr(self, "h", None)
-        laplacian_h = 0
-        for key, item in self.neighbor_pm_val_same_type.items():
-            if key in ["x", "y", "z"]:
-                item:[tuple, tuple]
-                p_item = item[0]
-                m_item = item[1]
+        try:
+            h = getattr(self, "h", None)
+            laplacian_h = 0
+            for key, item in self.neighbor_pm_val_same_type.items():
+                if key in ["x", "y", "z"]:
+                    item:[tuple, tuple]
+                    p_item = item[0]
+                    m_item = item[1]
 
-                # extract value
-                val_plus = p_item[1]
-                val_minus = m_item[1]
+                    # extract value
+                    val_plus = p_item[1]
+                    val_minus = m_item[1]
 
-                laplacian_h += (val_plus + val_minus - 2 * h) / self.env["d"][key] ** 2
-        # LOGGER.info("laplacian set", laplacian_h)
-        setattr(self, "laplacian_h", laplacian_h)
-
+                    laplacian_h += (val_plus + val_minus - 2 * h) / self.env["d"][key] ** 2
+            # LOGGER.info("laplacian set", laplacian_h)
+            setattr(self, "laplacian_h", laplacian_h)
+        except Exception as e:
+            print(f"Error _laplacian_h: {e}")
 
 
 

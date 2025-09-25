@@ -47,6 +47,7 @@ if os.name == "nt":
     TEST_ENV_ID="env_rajtigesomnlhfyqzbvx_zddioeaduhvnyphluwvu"# one dim for demo_G
     ALLOWED_HOSTS = ["*"]
     WS_URL = "ws://127.0.0.1:8000/"
+
     FIREBASE_CREDENTIALS = r"C:\\Users\\wired\OneDrive\\Desktop\\Projects\\Brainmaster\\_google\\g_auth\\firebase_creds.json"
 
 else:
@@ -137,6 +138,7 @@ INSTALLED_APPS = [
     "_ray_core",
     "_google",
     "gke_admin",
+    "cloud_batch",
 ]
 
 ASGI_APPLICATION = "bm.asgi.application"

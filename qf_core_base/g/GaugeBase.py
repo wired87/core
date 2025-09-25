@@ -2,7 +2,7 @@ import numpy as np
 
 from qf_core_base.g.gauge_utils import GaugeUtils
 from qf_core_base.g.vertex import Vertex
-from qf_core_base.ray_validator import RayValidator
+from _ray_core.ray_validator import RayValidator
 from utils._np.serialize_complex import check_serialize_dict
 from itertools import product
 
@@ -195,7 +195,7 @@ class GaugeBase(
             j_nu = self._j_nu(nid, ntype, theta_W, g, new_j_nu)
 
             # Dmu
-            self._dmu_field_value(field_key, d_field_value_key)
+            self._dmu_field_value(d_field_value_key)
             dmu_F_mu_nu = self._dmu_fmunu(field_key="F_mu_nu")
 
             # Block 2
@@ -204,7 +204,7 @@ class GaugeBase(
                 g=g,
                 ntype=ntype,
                 f_abc=f_abc,
-                field_value=attrs.get(field_key),
+                field_value=attrs.get(self.field_key),
             )
 
             # VERTEX
@@ -216,7 +216,7 @@ class GaugeBase(
             # FIELD VALUE
             self._update_gauge_field(
                 field_value,
-                field_key,
+                self.field_key,
                 nid,
                 F_mu_nu,
                 j_nu,
@@ -226,7 +226,7 @@ class GaugeBase(
             )
 
             # finish
-            self.attrs[f"prev_{field_key}"] = snapshot_field_value
+            self.attrs[f"prev_{self.field_key}"] = snapshot_field_value
 
             new_dict = check_serialize_dict(
                 self.__dict__,
@@ -238,13 +238,13 @@ class GaugeBase(
         except Exception as e:
             print("Exception in gaugebase.main:", e)
 
-    def _dmu_field_value(self, field_key, d_field_value_key):
+    def _dmu_field_value(self, d_field_value_key):
         dmu = self.call(
             method_name="_dX",
             attrs=self.attrs,
             d=self.d,
             neighbor_pm_val_same_type=self.neighbor_pm_val_same_type,
-            field_key=field_key
+            field_key=self.field_key
         )
 
         #print("var_key", d_field_value_key, "=", dmu)
@@ -275,20 +275,20 @@ class GaugeBase(
           - Leptonen (nur U(1) + SU(2))
           - Quarks (U(1) + SU(2) + SU(3))
         """
-        print("jnu params", nid, ntype, theta_W, g, new_j_nu)
+        #print("jnu params", nid, ntype, theta_W, g, new_j_nu)
 
         #print("Calc j_nu")
         try:
             for nntype, neighbor_struct in self.all_subs["FERMION"].items():
-                print("self.all_subs['FERMION']", self.all_subs["FERMION"])
-                print("nntype", nntype)
-                print("neighbor_struct", neighbor_struct)
+                #print("self.all_subs['FERMION']", self.all_subs["FERMION"])
+                #print("nntype", nntype)
+                #print("neighbor_struct", neighbor_struct)
                 for nnid, fattrs in neighbor_struct.items():
                     # ATTRS
                     fattrs = self.restore_selfdict(fattrs)
                     nntype = fattrs.get("type")
-                    print("fattrs", fattrs)
-                    print("nntype", nntype)
+                    #print("fattrs", fattrs)
+                    #print("nntype", nntype)
 
                     if ntype:
                         psi = fattrs.get("psi")
@@ -296,11 +296,12 @@ class GaugeBase(
                         psi_bar = fattrs.get("psi_bar")
                         isospin = fattrs.get("isospin")
 
+                        """
                         print("psi", psi)
                         print("charge", charge)
                         print("psi_bar", psi_bar)
                         print("isospin", isospin)
-
+                        """
                         # Calc J_nu
                         new_j_nu = np.zeros((4,), dtype=complex)
 
@@ -333,7 +334,7 @@ class GaugeBase(
                     node=nid,
                     target_type="PHI",
                 )
-                print("hid, hattrs", hid, hattrs)
+                #print("hid, hattrs", hid, hattrs)
                 hattrs = self.restore_selfdict(data=hattrs)
                 if hid is not None:
                     new_j_nu += self.j_nu_higgs(
@@ -346,7 +347,7 @@ class GaugeBase(
                     )
             setattr(self, "j_nu", new_j_nu)
             self.attrs["j_nu"]=new_j_nu
-            print(f"jν: {new_j_nu}")
+            #print(f"jν: {new_j_nu}")
             return new_j_nu
 
         except Exception as e:
@@ -378,7 +379,7 @@ class GaugeBase(
             ntype
         )
 
-        print(f"{self.field_symbol}: {new_fv}")
+        #print(f"{self.field_symbol}: {new_fv}")
         setattr(self, field_key, new_fv)
 
 

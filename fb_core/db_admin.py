@@ -70,6 +70,6 @@ class DBAdmin:
 
 if __name__ == "__main__":
     admin = DBAdmin(env_id="env_rajtigesomnlhfyqzbvx_qjodlmdexctwpfvaeqan")
-    #admin.delete_process()
-    pprint.pp(admin.db_manager.get_data(path="cfg"))
+    admin.delete_process()
+    #pprint.pp(admin.db_manager.get_data(path="cfg"))
     #admin.change_state(state="inactive")

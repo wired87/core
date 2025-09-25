@@ -35,6 +35,7 @@ class ArtifactAdmin:
             "--limit=1",
             "--format=get(IMAGE)"
         ]
+        #print("List images form cmd:", cmd)
         result = exec_cmd(cmd)
         image_name = result.strip()
         print("image_name", image_name)
@@ -48,7 +49,6 @@ class ArtifactAdmin:
         """
         cmd = f"gcloud artifacts docker images list us-central1-docker.pkg.dev/{self.project_id}/{self.repo} --format=\"value(uri)\""
 
-        #result = subprocess.run(["gcloud", "init"], check=True, capture_output=True, text=True, shell=True)
         result = subprocess.run(cmd, check=True, capture_output=True, text=True, shell=True)
         images = result.stdout.strip().splitlines()
 
@@ -98,7 +98,7 @@ class ArtifactAdmin:
 
 if __name__ == "__main__":
     aa = ArtifactAdmin()
-    #aa.list_all_images_artifact_registry()
-    aa.delete_all_images(
+    aa.get_latest_image()
+    """aa.delete_all_images(
         repo="qfs-repo",
-    )
+    )"""

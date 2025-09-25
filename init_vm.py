@@ -1,5 +1,4 @@
 init=r"""
-
 sudo apt update && sudo apt install python3.11-venv git tmux -y && \
 python3 -m venv workenv && git clone https://github.com/wired87/BestBrain.git && \
 export PYTHONPATH=$PYTHONPATH:$(pwd) && source workenv/bin/activate && \

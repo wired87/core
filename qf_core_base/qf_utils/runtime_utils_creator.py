@@ -2,17 +2,16 @@ from typing import List
 
 import ray
 
-from app_utils import FB_DB_ROOT
-from qf_core_base.qf_utils.all_subs import ALL_SUBS, G_FIELDS, FERMIONS, H
+from qf_core_base.qf_utils.all_subs import ALL_SUBS, G_FIELDS
 from qf_core_base.qf_utils.field_utils import FieldUtils
-from qf_core_base.ray_validator import RayValidator
+from _ray_core.ray_validator import RayValidator
 
 class RuntimeUtilsCreator(
     RayValidator,
     FieldUtils
 ):
 
-    def __init__(self, g, host={}):
+    def __init__(self, g, database, host={}):
         self.host = host
         RayValidator.__init__(
             self,
@@ -22,7 +21,7 @@ class RuntimeUtilsCreator(
         FieldUtils.__init__(self)
         self.updator = None
         self.g = g
-        self.database = FB_DB_ROOT
+        self.database = database
         self.sub_content = {}
         self.env = None  # -> set before creation of workers
 
@@ -279,7 +278,7 @@ class RuntimeUtilsCreator(
                 trgt_type="PIXEL",
                 single=False
             ))
-            print("pixel_neighbors", pixel_neighbors)
+            #print("pixel_neighbors", pixel_neighbors)
 
             px_subs: dict = ray.get(self.host["UTILS_WORKER"].call.remote(
                 method_name="get_neighbor_list",
@@ -287,10 +286,10 @@ class RuntimeUtilsCreator(
                 target_type=ALL_SUBS,
             ))
 
-            print("px_subs", len(list(px_subs.keys())))
+            #print("px_subs", len(list(px_subs.keys())))
 
             px_subs_ids = list(px_subs.keys())
-            print("px_subs_ids", px_subs_ids)
+            #print("px_subs_ids", px_subs_ids)
 
             # reset
             px_subs = None
@@ -301,7 +300,6 @@ class RuntimeUtilsCreator(
                 all_pixel_nodes=pixel_neighbors,
                 env=self.env
             ))
-            #print("npm", npm)
 
             return {
                 "neighbors_pm": npm,

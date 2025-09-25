@@ -1,4 +1,0 @@
-bases:
-  - ../../application
-patches:
-  - replica_count.yaml
