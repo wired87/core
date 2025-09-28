@@ -1,10 +1,12 @@
 import os
 
-from bm.settings import TEST_USER_ID, TEST_ENV_ID
 from utils.file._yaml import load_yaml
 
-USER_ID = TEST_USER_ID
-ENV_ID = TEST_ENV_ID
+import dotenv
+dotenv.load_dotenv()
+
+USER_ID = os.getenv("USER_ID")
+ENV_ID = os.getenv("ENV_ID")
 
 NCFG_PAYLOAD = {
         "blocks": [

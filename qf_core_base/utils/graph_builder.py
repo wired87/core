@@ -4,20 +4,21 @@ from _ray_core.ray_validator import RayValidator
 from app_utils import ENV_ID
 from fb_core.real_time_database import FirebaseRTDBManager
 from qf_core_base.qf_utils.all_subs import ALL_SUBS
+from utils.graph.local_graph_utils import GUtils
 
 
 class GraphBuilder:
     def __init__(self, user_id, g, ray_validator=None, testing=False, host=None, db_manager=None):
-        self.ray_validator = ray_validator or RayValidator()
+        self.ray_validator = ray_validator or RayValidator(host=host, g_utils=g)
         self.db_manager = db_manager or FirebaseRTDBManager()
         self.user_id = user_id
-        self.g = g
+        self.g:GUtils = g
         self.host = host
         self.testing = testing
 
     async def main(
             self,
-            env_ids:list[str],
+            env_ids: list[str],
             build_frontend_data=False,
             include_metadata=False,
             reset_g_after=True,
@@ -34,7 +35,9 @@ class GraphBuilder:
             self.worker_states_db_path = f"{self.database}/metadata/"
             self.instance = os.environ.get("FIREBASE_RTDB")
 
-            env = await self.build_graph(testing)
+            env = await self.build_graph(
+                db_root=self.database
+            )
 
             # EXTEND WITH METADATA
             if include_metadata is True:
