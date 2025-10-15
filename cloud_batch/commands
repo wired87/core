@@ -1,4 +1,0 @@
-delete
-describe
-
-gcloud batch jobs describe --location europe-west10 env-rajtigesomnlhfyqzbvx-yat88mnjzkjwd8cydajr
