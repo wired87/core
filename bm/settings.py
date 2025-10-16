@@ -5,9 +5,7 @@ import os
 from datetime import timedelta
 import logging
 
-import django_unicorn
 import matplotlib
-import resend
 from django.utils.module_loading import import_string
 
 from bm.logging_custom import cpr
@@ -36,7 +34,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'django-insecure-gq0rr+q=s$=lci8=r%whnubclama3db!wnl1gpmh!_z2x5u_i3'
 
-resend.api_key = "re_XaUKeMuq_EzcpCLqdqEk2o1m2H3tdBbw9"
+
 
 if os.name == "nt":
     DEBUG = True
@@ -68,39 +66,6 @@ RAY_HELPER_NODES=["DB_WORKER", "GLOB_LOGGER", "GLOB_STATE_HANDLER", "UTILS_WORKE
 os.environ.setdefault("FIREBASE_CREDENTIALS", FIREBASE_CREDENTIALS)
 
 
-#allowed_main_host=REQUEST_URL.replace("https:", "").replace("http:", "").replace("/", "").replace(":8000", "")
-
-"""
-SOMETHIN HER EPROTECTS GET REQUESTS = !DRF
-##########################################
-# FIREWALL
-##########################################
-SECURE_SSL_REDIRECT = True
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
-
-CSRF_TRUSTED_ORIGINS = ['https://bestbrain.tech', 'https://www.bestbrain.tech']
-# X-Frame Protection (clickjacking)
-X_FRAME_OPTIONS = 'DENY'
-
-# Content sniffing protection
-SECURE_CONTENT_TYPE_NOSNIFF = True
-
-# Browser cross-site protections
-SECURE_BROWSER_XSS_FILTER = True
-
-# HSTS - Force HTTPS for all future connections
-SECURE_HSTS_SECONDS = 31536000  # 1 year
-SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-SECURE_HSTS_PRELOAD = True"""
-
-
-
-
-
-
-
-
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -123,8 +88,6 @@ CORS_ALLOW_CREDENTIALS = True
 
 INSTALLED_APPS = [
     "channels",
-    "documentai",
-    "qf_sim",
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -133,12 +96,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     "corsheaders",
-    'rest_framework.authtoken',
-    'rest_framework_simplejwt.token_blacklist',
-    "_ray_core",
-    "_google",
-    "gke_admin",
-    "cloud_batch",
+    #'rest_framework.authtoken',
+    #'rest_framework_simplejwt.token_blacklist',
 ]
 
 ASGI_APPLICATION = "bm.asgi.application"
@@ -156,24 +115,11 @@ MIDDLEWARE = [
     #'bm.middleware.AllowedMethodsMiddleware',
 ]
 
-
-
-
-
 ROOT_URLCONF = 'bm.urls'
-"""
-# Beispiel-Konfiguration für Nginx, um den Zugriff zu blockieren:
-location ~ /\.env {
-    deny all;
-    return 404; # Oder 403, um weniger Informationen preiszugeben
-}
 
-location ~ /\.git {
-    deny all;
-    return 404;
-}
 
-"""
+
+
 
 
 
@@ -330,7 +276,7 @@ USE_I18N = True
 
 USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-UNICORN_PATH = os.path.join(os.path.dirname(django_unicorn.__file__), "static")
+#UNICORN_PATH = os.path.join(os.path.dirname(django_unicorn.__file__), "static")
 
 
 STATIC_URL = '/static/'

@@ -2,7 +2,7 @@ import os
 import pprint
 
 from app_utils import USER_ID, ENV_ID
-from fb_core.real_time_database import FirebaseRTDBManager
+from fb_core.real_time_database import FBRTDBMgr
 
 
 class DBAdmin:
@@ -14,7 +14,7 @@ class DBAdmin:
         self.metadata_path = "metadata"
         self.states_path = "global_states"
 
-        self.db_manager = FirebaseRTDBManager()
+        self.db_manager = FBRTDBMgr()
         self.db_manager.set_root_ref(self.database)
 
     def change_state(self, state=None):

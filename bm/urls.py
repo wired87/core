@@ -9,19 +9,21 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     #path('betse/', include("_betse.urls")),
 
-    path('world/', include("qf_sim.dj.urls")),
-    path('eval/', include("qf_sim.evaluation.dj.urls")),
+    path('world/', include("urls")),
     path('auth/', include("auth.urls")),
-
-    #path('bq/', include("_bq_core.dj.urls")),
-    path('docai/', include("documentai.views.urls")),
-
-    path('gke/', include("gke_admin.urls")),
-    path('batch/', include("cloud_batch.urls")),
-
-    # frontend
-    #path("frontend/", include("frontend.urls")),
-    path("unicorn/", include("django_unicorn.urls", namespace="django_unicorn")),
 
 ] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 
+"""
+#path('bq/', include("_bq_core.dj.urls")),
+path('docai/', include("documentai.views.urls")),
+
+path('gke/', include("gke_admin.urls")),
+path('batch/', include("cloud_batch.urls")),
+path('eval/', include("qf_sim.evaluation.dj.urls")),
+
+# frontend
+#path("frontend/", include("frontend.urls")),
+path("unicorn/", include("django_unicorn.urls", namespace="django_unicorn")),
+
+"""

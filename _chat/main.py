@@ -1,11 +1,9 @@
-import google.generativeai as genai
 import json
 import os
 
-from _google.gem import ask_gem
-from qf_core_base.qf_utils import QFLEXICON
-from utils.logger import LOGGER
+from google import genai
 
+from utils.logger import LOGGER
 
 class AIChatClassifier:
     """
@@ -27,15 +25,13 @@ class AIChatClassifier:
             "set_fields": self._extract_fields,
         }
 
-        self.all_params = QFLEXICON.copy().keys()
-
-        genai.configure(
+        """genai.configure(
             api_key=os.environ.get('GEMINI_API_KEY')
         )
 
         self.model = genai.GenerativeModel('gemini-pro')
         self.simulation_state = {"running": False, "parameters": {}}
-
+        """
     def _extract_fields(self):
         prompt = f"""
         Given is a list of FIELDS.
@@ -43,7 +39,7 @@ class AIChatClassifier:
         Return identified FIELD, separated by comma(,) - nothing else. 
         If you cant identify anything, return the word 'NA'.
         """
-        fields = ask_gem(prompt)
+        fields =None# ask_gem(prompt)
         if 'NA' not in fields and ',' in fields:
             fields_list = fields.split(",")
             self.cfg_creator.add_fields(fields=fields_list)
@@ -70,10 +66,8 @@ class AIChatClassifier:
             f"{', '.join(self.use_cases.keys())}. Gib nur den Usecase-Namen zurück. "
             f"Eingabe: '{user_input}'")
 
-
-
         try:
-            classification = ask_gem(prompt)
+            classification = None#ask_gem(prompt)
             if classification and isinstance(classification, str):
                 classification = classification.strip().lower()
                 if classification in self.use_cases:

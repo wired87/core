@@ -10,7 +10,7 @@ class ArtifactAdmin:
     def __init__(self, **kwargs):
         # IMAGE SETTINGS
         self.project_id = os.environ["GCP_PROJECT_ID"]
-        self.region = 'us-central1'
+        self.region = os.environ["GCP_REGION"]
         self.repo = 'qfs-repo'
 
         # RAY cluster image
@@ -37,8 +37,12 @@ class ArtifactAdmin:
         ]
         #print("List images form cmd:", cmd)
         result = exec_cmd(cmd)
-        image_name = result.strip()
-        print("image_name", image_name)
+        if result is not None:
+            image_name = result.strip()
+            print("image_name", image_name)
+        else:
+            # default image name
+            image_name = "docker.io/library/hello-world"
         return image_name
 
 
@@ -49,8 +53,7 @@ class ArtifactAdmin:
         """
         cmd = f"gcloud artifacts docker images list us-central1-docker.pkg.dev/{self.project_id}/{self.repo} --format=\"value(uri)\""
 
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True, shell=True)
-        images = result.stdout.strip().splitlines()
+        images = exec_cmd(cmd)
 
         if not images:
             print("⚠️ Keine Images in Artifact Registry gefunden.")
@@ -95,10 +98,3 @@ class ArtifactAdmin:
             print("Fehler beim Löschen:", e.stderr)
 
 
-
-if __name__ == "__main__":
-    aa = ArtifactAdmin()
-    aa.get_latest_image()
-    """aa.delete_all_images(
-        repo="qfs-repo",
-    )"""

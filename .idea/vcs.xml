@@ -2,15 +2,10 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/_google" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/_ray_core" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/_spanner_graph" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/artifact_registry" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/fb_core" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/gdb_manager" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/gke_admin" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/qf_core_base" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/qf_sim" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/utils" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/utils/file" vcs="Git" />
   </component>
 </project>

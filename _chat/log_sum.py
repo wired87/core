@@ -1,8 +1,6 @@
 import json
 
-from _google.gem import ask_gem
 from app_utils import USER_ID, ENV_ID
-from utils.g_utils import DBManager
 
 
 class LogAIExplain:
@@ -37,15 +35,6 @@ class LogAIExplain:
             f"==========================="
             f"Output Logs:\n{json.dumps(out_logs, indent=2)}"
         )
-        response = ask_gem(prompt)
+        response = None#ask_gem(prompt)
         return response
 
-
-if __name__ == '__main__':
-    db_manager = DBManager()
-    log_analyzer = LogAIExplain(
-        db_manager)
-
-    summary = log_analyzer.analyze_logs()
-    print("Log-Analyse-Zusammenfassung:\n")
-    print(summary)

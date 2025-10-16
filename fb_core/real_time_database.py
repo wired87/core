@@ -1,32 +1,25 @@
+import json
 import os
-import pprint
 import re
 
 import firebase_admin
 from firebase_admin import db
 import logging # Good practice for backend applications
+from firebase_admin import credentials as fb_creds
 
 from dotenv import load_dotenv
 from firebase_admin.db import Reference
 
-
-
 from app_utils import ENV_ID, USER_ID
-from utils.auth import AuthManager
-from qf_core_base.qf_utils.all_subs import ALL_SUBS
+from fb_core import FIREBASE_CREDS
+
 
 load_dotenv()
 DB_URL = os.environ.get("FIREBASE_RTDB")
 
-# DS PATH             fb_dest=f"users/{self.user_id}/datastore/{self.envc_id}/",
-# G STATE PATH             fb_dest=f"users/{self.user_id}/env/{self.envc_id}/",
-# GLOBAL STATE PATH f"{self.database}/global_states/"
-
-
 # todo alle ds werden in gleichen apth geuppt (keine extra sessions) (vorerst)
 
-
-class FirebaseRTDBManager(AuthManager):
+class FBRTDBMgr:
     """
     A class to manage interactions with Firebase Realtime Database
     from a Python backend using the Admin SDK.
@@ -39,22 +32,20 @@ class FirebaseRTDBManager(AuthManager):
         """
         Initializes the Firebase Admin SDK and gets a database reference.
 
-        Args:
-            service_account_key_path: Path to your Firebase Service Account JSON key file.
             database_url: The URL of your Firebase Realtime Database (e.g., 'https://YOUR-PROJECT-ID-default-rtdb.europe-west1.firebaseio.com/').
         """
-
-        AuthManager.__init__(self, auth=["fb"])
+        with open(FIREBASE_CREDS, "r", encoding="utf-8") as f:
+            _creds = json.load(f)
+        self.creds = fb_creds.Certificate(_creds)
         self.db_url = DB_URL
 
         print("Firebase url:", self.db_url)
 
         if not firebase_admin._apps:
-            firebase_admin.initialize_app(self.creds["fb"], {
+            firebase_admin.initialize_app(self.creds, {
                 'databaseURL': DB_URL
             })
-            logging.info("Firebase Admin SDK initialized successfully.")
-
+            print("Firebase Admin SDK initialized successfully.")
 
         self.invalid_keys_detected = []
 
@@ -70,9 +61,6 @@ class FirebaseRTDBManager(AuthManager):
         if path.startswith('/'):
              path = path[1:]
         return self.root_ref.child(path)
-
-
-
 
 
     def upsert_data(
@@ -93,18 +81,21 @@ class FirebaseRTDBManager(AuthManager):
             True on success, False on failure.
         """
 
-        try:
-            #print("Upsert data:")
-            #pprint.pp(data)
+        #try:
+        #print("Upsert data:")
+        #pprint.pp(data)
 
-            if list_entry is True:
-                db.reference(path).push(data)
-            else:
-                db.reference(path).update(data)
-            return True
+        if list_entry is True:
+            db.reference(path).push(data)
+        else:
+            db.reference(path).update(data)
+        """
         except Exception as e:
             print(f"Failed to upsert data at path {path}: {e}")
             return False
+        """
+        return True
+
 
     def push_list_item(self, path, item):
         ref = db.reference(path)
@@ -182,11 +173,8 @@ class FirebaseRTDBManager(AuthManager):
                     data = data[0]
                 sub_data[p] = data
 
-            """if child is True:
-                sub_data = list(sub_data.values())[0]"""
-            #print(f"get_data result: {sub_data}")
             sub_data:dict = self.filter_raw_graph_data_keys(sub_data)
-            print("sub_data keys", sub_data.keys())
+
             return sub_data
         except Exception as e:
             print(f"Failed to retrieve data from path {path}: {e}")
@@ -321,11 +309,11 @@ class FirebaseRTDBManager(AuthManager):
             for nid in nodes
         ]
 
-    def _get_db_paths_from_G(self, g, db_base, edges=True):
+    def _get_db_paths_from_G(self, g, db_base, valid_ntypes=[], edges=True):
         # get paths for each node to lsiten to
         listener_paths = {
             "nodes": [],
-            "edges": [],
+            "EDGES": [],
             "meta": [],
             "global": [],
             "value": []
@@ -335,7 +323,7 @@ class FirebaseRTDBManager(AuthManager):
             f"{db_base}/global_states/"
         )
 
-        for nid, attrs in [(nid, attrs) for nid, attrs in g.G.nodes(data=True) if attrs["type"] in [*ALL_SUBS, "ENV"]]:
+        for nid, attrs in [(nid, attrs) for nid, attrs in g.G.nodes(data=True) if attrs["type"] in valid_ntypes]:
             ntype = attrs['type']
 
             path = f"{db_base}/{ntype}/{nid}"
@@ -350,18 +338,18 @@ class FirebaseRTDBManager(AuthManager):
             for src, trgt, attrs in g.G.edges(data=True):
                 eid = attrs.get("id")
                 epath = f"{db_base}/edges/{eid}"
-                listener_paths["edges"].append(epath)
+                listener_paths["EDGES"].append(epath)
 
         return listener_paths
 
-    def _fetch_g_data(self, db_root):
+    def _fetch_g_data(self, db_root, valid_ntypes):
         print("Fetching entire graph data from Firebase RTDB")
         self.initial_data = {}
 
         # Create paths
         paths = [
             f"{db_root}/{sub}"
-            for sub in [*ALL_SUBS, "PIXEL", "ENV", "edges"]
+            for sub in valid_ntypes
         ]
 
         print("Fetch entire dir from FB")
@@ -387,12 +375,12 @@ class FirebaseRTDBManager(AuthManager):
 
 
 if __name__ == "__main__":
-    f = FirebaseRTDBManager()
-    #f.delete_data(path="/")
-    path = f"users/{USER_ID}/env/{ENV_ID}/cfg/{ENV_ID}/world/"
-    data = f.get_data(path=path)
+    f = FBRTDBMgr()
+    f.delete_data(path="/")
+    #path = f"users/{USER_ID}/env/{ENV_ID}/cfg/{ENV_ID}/world/"
+    #data = f.get_data(path=path)
     print("data")
-    pprint.pp(data)
+    #pprint.pp(data)
 
 
 
