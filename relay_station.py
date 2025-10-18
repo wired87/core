@@ -157,7 +157,7 @@ class Relay(
         print(f"query_params extracted {query_params}")
 
         user_id = query_params.get("user_id")[0]  # todo user_id create frontend
-        self.user_id = user_id if self.testing is False else TEST_USER_ID
+        self.user_id = user_id
 
         self.session_id = generate_id()
 
@@ -221,7 +221,7 @@ class Relay(
 
             if data_type == "world_cfg":
                 print("CREATE WORLD REQUEST RECEIVED")
-                await self.world_creator.world_cfg_process(data)
+                await self.world_creator.world_cfg_process(data["world_cfg"])
 
             elif data_type == "node_cfg":
                 print("CREATE NODE CFG REQUEST RECEIVED")

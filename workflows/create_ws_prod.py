@@ -57,7 +57,7 @@ class WorldCreationWf:
 
 
 
-    async def world_cfg_process(self, data):
+    async def world_cfg_process(self, world_cfg_struct):
         """
         unpack raw cfg file
         start thead
@@ -67,10 +67,9 @@ class WorldCreationWf:
             [TEST_ENV_ID])
         print("G Data sent")"""
 
-        self.world_cfg_struct:list[dict] = data.get("world_cfg")
 
         print(f"world_cfg_process:")
-        pprint.pp(self.world_cfg_struct)
+        self.world_cfg_struct = world_cfg_struct
 
         print("finit_handler")
         self.start_creation_thread()
@@ -117,7 +116,7 @@ class WorldCreationWf:
             # extend env_id
             wcfg['id'] = f"env_{self.user_id}{wcfg['id']}"
             env_cfg_path = f"users/{self.user_id}/env/{wcfg['id']}/cfg/"
-
+            print("env_cfg_path", env_cfg_path)
             self.db_manager.upsert_data(
                 path=env_cfg_path,
                 data={
