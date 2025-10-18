@@ -227,7 +227,7 @@ class Relay(
                 print("CREATE NODE CFG REQUEST RECEIVED")
                 self.world_creator.node_cfg_process(data)
 
-            elif data_type == "get_envs":
+            elif data_type == "env_ids":
                 await self.send(
                     text_data=json.dumps({
                         "type": "env_ids",
