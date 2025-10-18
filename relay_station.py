@@ -228,39 +228,59 @@ class Relay(
                 self.world_creator.node_cfg_process(data)
 
             elif data_type == "start_sim":
-                print("START SIM REQUEST RECEIVED")
-                self.env_creator = EnvCreatorProcess(self.user_id)
-                env_ids = data.get("data", {}).get("env_ids")
-                for env_id in env_ids:
-                    if self.world_creator.env_id_map:
-                        self.sim_deployer.create_vm(
-                            instance_name=env_id,
-                            gpu_count=1,
-                            testing=self.testing,
-                            env=self.env_creator.create_env_variables(env_id),
-                        )
-                        await self.send(
-                            text_data=json.dumps({
-                                "type": "deployment_success",
-                                "data": {
-                                    "msg": "Invalid Command registered",
-                                },
-                            })
-                        )
-                    else:
-                        print(f"skipping invalid env id: {env_id}")
-                        await self.send(
-                            text_data=json.dumps({
-                                "type": "deployment_error",
-                                "data": {
-                                    "msg": f"skipping invalid env id: {env_id}",
-                                },
-                            }))
+                await self.handle_sim_start(data)
+
             else:
                 print(f"Unknown command type received: {data_type}")
 
         except Exception as e:
             print(f">>Error processing received message: {e}")
+
+
+
+    async def handle_sim_start(self, data):
+        print("START SIM REQUEST RECEIVED")
+        try:
+            self.env_creator = EnvCreatorProcess(self.user_id)
+            env_ids = data.get("data", {}).get("env_ids")
+            for env_id in env_ids:
+                if self.world_creator.env_id_map:
+                    self.sim_deployer.create_vm(
+                        instance_name=env_id,
+                        gpu_count=1,
+                        testing=self.testing,
+                        env=self.env_creator.create_env_variables(env_id),
+                    )
+                    await self.send(
+                        text_data=json.dumps({
+                            "type": "deployment_success",
+                            "data": {
+                                "msg": "Invalid Command registered",
+                            },
+                        })
+                    )
+                else:
+                    print(f"skipping invalid env id: {env_id}")
+                    await self.send(
+                        text_data=json.dumps({
+                            "type": "deployment_error",
+                            "data": {
+                                "msg": f"skipping invalid env id: {env_id}",
+                            },
+                        }))
+        except Exception as e:
+            print(f"Err deploymnt: {e}")
+            await self.send(
+                text_data=json.dumps({
+                    "type": "deployment_success",
+                    "data": {
+                        "msg": "Invalid Command registered",
+                    },
+                })
+            )
+
+
+
 
 
     async def ai_log_sum_process(self, data):
