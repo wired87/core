@@ -68,7 +68,7 @@ class WorldCreationWf:
         print("G Data sent")"""
 
 
-        print(f"world_cfg_process:")
+        print(f"world_cfg_process:", world_cfg_struct)
         self.world_cfg_struct = world_cfg_struct
 
         print("finit_handler")
@@ -116,7 +116,6 @@ class WorldCreationWf:
             # extend env_id
             wcfg['id'] = f"env_{self.user_id}{wcfg['id']}"
             env_cfg_path = f"users/{self.user_id}/env/{wcfg['id']}/cfg/"
-            env_cfg_path = f"users/{self.user_id}/env/{wcfg['id']}/user_info/"
             print("env_cfg_path", env_cfg_path)
             self.db_manager.upsert_data(
                 path=env_cfg_path,
