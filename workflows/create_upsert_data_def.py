@@ -5,11 +5,8 @@ import numpy as np
 from fb_core.real_time_database import FBRTDBMgr
 from utils.file._yaml import load_yaml
 
-from qf_sim.world.create_world import CreateWorld
-from utils.graph.local_graph_utils import GUtils
 
-
-def create_process(user_id, world_cfg, env_id):
+"""def create_process(user_id, world_cfg, env_id):
     print(locals())
 
     cluster_dim = world_cfg["cluster_dim"]
@@ -35,7 +32,7 @@ def create_process(user_id, world_cfg, env_id):
         user_id,
         env_id,
         world_cfg=world_cfg,
-    )
+    )"""
 
 
 def upsert_env(user_id, env_id, world_cfg):
