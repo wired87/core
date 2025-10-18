@@ -1,6 +1,5 @@
 from rest_framework.views import APIView
 
-from qf_core_base.qf_utils.sim_core import SimCore
 from utils.id_gen import generate_id
 from utils.logger import LOGGER
 
@@ -22,15 +21,15 @@ class RunDemo(APIView):
         user_id = data.get("user_id", generate_id())
         visualize = data.get("visualize", False)
 
-        test = SimCore(
+        """test = SimCore(
             user_id=user_id,
             env_id=f"env_bare_{user_id}",
             visualize=visualize,
             demo=True
         )
-
+        tets={}
         test.run_connet_test()
-
+        
         LOGGER.info("Demo finished. Return zip buffer ")
 
         return FileResponse(
@@ -38,7 +37,7 @@ class RunDemo(APIView):
             as_attachment=True,
             filename=f"{user_id}.zip",
             content_type="application/zip"
-        )
+        )"""
 
 
 
