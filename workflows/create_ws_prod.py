@@ -39,7 +39,23 @@ class WorldCreationWf:
         self.db_manager = FBRTDBMgr()
         self.db_manager.set_root_ref(self.database)
         self.testing = testing
-        self.env_cfg_path = f"{self.database}/cfg/"
+
+    def node_cfg_process(self, data):
+        node_cfg = data.get("node_cfg")
+        env_id = data.get("env_id")
+        # extend env_id
+        env_cfg_path = f"users/{self.user_id}/env/{env_id}/cfg/"
+        for ncfg in node_cfg:
+            self.db_manager.upsert_data(
+                path=env_cfg_path,
+                data={
+                    ncfg["id"]: ncfg
+                },
+            )
+        print(f"NCFG for {env_id} set")
+
+
+
 
     async def world_cfg_process(self, data):
         """
@@ -106,9 +122,10 @@ class WorldCreationWf:
                 path=env_cfg_path,
                 data={
                     "world": wcfg["world_cfg"],
-                    "node": wcfg["node_cfg"]
+                    #"node": wcfg["node_cfg"]
                 },
             )
+
             env_id = wcfg["world_cfg"]["id"]
             content[env_id] = wcfg["world_cfg"]["cluster_dim"]
             self.env_id_map.add(env_id)
@@ -181,8 +198,6 @@ class WorldCreationWf:
         if node_id in all_sub_nodes:
             return True
         return False
-
-
 
 
 

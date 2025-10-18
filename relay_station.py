@@ -221,8 +221,11 @@ class Relay(
 
             if data_type == "world_cfg":
                 print("CREATE WORLD REQUEST RECEIVED")
-                # data: list[{world_cfg:{}, node_cfg:[{]]}]
                 await self.world_creator.world_cfg_process(data)
+
+            elif data_type == "node_cfg":
+                print("CREATE NODE CFG REQUEST RECEIVED")
+                self.world_creator.node_cfg_process(data)
 
             elif data_type == "start_sim":
                 print("START SIM REQUEST RECEIVED")
