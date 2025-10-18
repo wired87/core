@@ -67,7 +67,7 @@ class WorldCreationWf:
             [TEST_ENV_ID])
         print("G Data sent")"""
 
-        self.world_cfg_struct:list[dict] = data.get("data")
+        self.world_cfg_struct:list[dict] = data.get("world_cfg")
 
         print(f"world_cfg_process:")
         pprint.pp(self.world_cfg_struct)
@@ -115,19 +115,19 @@ class WorldCreationWf:
 
         for wcfg in world_cfg_struct:
             # extend env_id
-            wcfg['world_cfg']['id'] = f"env_{self.user_id}{wcfg['world_cfg']['id']}"
-            env_cfg_path = f"users/{self.user_id}/env/{wcfg['world_cfg']['id']}/cfg/"
+            wcfg['id'] = f"env_{self.user_id}{wcfg['id']}"
+            env_cfg_path = f"users/{self.user_id}/env/{wcfg['id']}/cfg/"
 
             self.db_manager.upsert_data(
                 path=env_cfg_path,
                 data={
-                    "world": wcfg["world_cfg"],
+                    "world": wcfg,
                     #"node": wcfg["node_cfg"]
                 },
             )
 
-            env_id = wcfg["world_cfg"]["id"]
-            content[env_id] = wcfg["world_cfg"]["cluster_dim"]
+            env_id = wcfg["id"]
+            content[env_id] = wcfg["cluster_dim"]
             self.env_id_map.add(env_id)
 
         data = {
