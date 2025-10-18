@@ -240,10 +240,11 @@ class Relay(
 
     async def handle_sim_start(self, data):
         print("START SIM REQUEST RECEIVED")
-        try:
-            self.env_creator = EnvCreatorProcess(self.user_id)
-            env_ids = data.get("data", {}).get("env_ids")
-            for env_id in env_ids:
+        self.env_creator = EnvCreatorProcess(self.user_id)
+
+        env_ids = data.get("data", {}).get("env_ids")
+        for env_id in env_ids:
+            try:
                 if self.world_creator.env_id_map:
                     self.sim_deployer.create_vm(
                         instance_name=env_id,
@@ -268,16 +269,16 @@ class Relay(
                                 "msg": f"skipping invalid env id: {env_id}",
                             },
                         }))
-        except Exception as e:
-            print(f"Err deploymnt: {e}")
-            await self.send(
-                text_data=json.dumps({
-                    "type": "deployment_success",
-                    "data": {
-                        "msg": "Invalid Command registered",
-                    },
-                })
-            )
+            except Exception as e:
+                print(f"Err deploymnt: {e}")
+                await self.send(
+                    text_data=json.dumps({
+                        "type": "deployment_success",
+                        "data": {
+                            "msg": f"Deployed machine to {env_id}",
+                        },
+                    })
+                )
 
 
 
