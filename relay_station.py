@@ -227,6 +227,24 @@ class Relay(
                 print("CREATE NODE CFG REQUEST RECEIVED")
                 self.world_creator.node_cfg_process(data)
 
+            elif data_type == "get_envs":
+                await self.send(
+                    text_data=json.dumps({
+                        "type": "env_ids",
+                        "data": self.db_manager.get_child(
+                            path=f"users/{self.user_id}/env/"
+                        ),
+                    })
+                )
+
+            elif data_type == "get_data":
+                await self.send(
+                    text_data=json.dumps({
+                        "type": "data",
+                        "data": self.db_manager.get_data(path=f"users/{self.user_id}/env/{data.get('env_id')}/datastore/"),
+                    })
+                )
+
             elif data_type == "start_sim":
                 await self.handle_sim_start(data)
 

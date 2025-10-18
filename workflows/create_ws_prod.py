@@ -116,6 +116,7 @@ class WorldCreationWf:
             # extend env_id
             wcfg['id'] = f"env_{self.user_id}{wcfg['id']}"
             env_cfg_path = f"users/{self.user_id}/env/{wcfg['id']}/cfg/"
+            env_cfg_path = f"users/{self.user_id}/env/{wcfg['id']}/user_info/"
             print("env_cfg_path", env_cfg_path)
             self.db_manager.upsert_data(
                 path=env_cfg_path,
@@ -124,6 +125,7 @@ class WorldCreationWf:
                     #"node": wcfg["node_cfg"]
                 },
             )
+
 
             env_id = wcfg["id"]
             content[env_id] = wcfg["cluster_dim"]
@@ -246,3 +248,18 @@ class WorldCreationWf:
             "nodes": nodes,
         }
         return env_content
+
+    def get_node_keys_rtdb(self, path):
+        # Get a reference to the specific node/structure
+        node_reference = self.database.child(path)
+
+        # Retrieve the data as a dictionary
+        data_dictionary = node_reference.get()
+
+        # Check if data exists
+        if data_dictionary and isinstance(data_dictionary, dict):
+            # Get and return the list of keys
+            return data_dictionary.keys()
+        else:
+            # Return an empty list or None
+            return []
