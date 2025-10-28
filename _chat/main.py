@@ -1,7 +1,4 @@
 import json
-import os
-
-from google import genai
 
 from utils.logger import LOGGER
 

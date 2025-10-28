@@ -1,3 +1,4 @@
+import base64
 import os
 import threading
 import time
@@ -9,11 +10,14 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 import asyncio
 from urllib.parse import parse_qs
 
+from firebase_admin import storage
+
 from create_env import EnvCreatorProcess
 from fb_core.real_time_database import FBRTDBMgr
 
 from _chat.log_sum import LogAIExplain
 from bm.settings import TEST_ENV_ID, TEST_USER_ID
+from openai_manager.ask import ask_chat
 from workflows.create_ws_prod import WorldCreationWf
 from workflows.data_distirbutor import DataDistributor
 from workflows.deploy_sim import GcpDockerVmDeployer
@@ -77,6 +81,9 @@ class Relay(
         self.chat_classifier = AIChatClassifier()
         #self.sim = SimCore()
         self.utils = Utils()
+
+        # save fiel names to apply to envs
+        self.file_store:list[str] = []
 
         self.instance = os.environ["FIREBASE_RTDB"]
         self.demo_g_in_front = False
@@ -204,9 +211,9 @@ class Relay(
             parent=self,
         )
 
-        # self.qf_utils = QFUtils(self.g)
-
         print("request accepted")
+
+
     async def receive(
             self,
             text_data=None,
@@ -214,7 +221,6 @@ class Relay(
     ):
         print(f"start receive: {text_data}")
         try:
-
             data = deserialize(text_data)
             data_type = data.get("type")  # assuming 'type' field for command
             print(f"Received message from frontend: {data}")
@@ -240,12 +246,46 @@ class Relay(
             elif data_type == "get_data":
                 await self.send(
                     text_data=json.dumps({
-                        "type": "data",
-                        "data": self.db_manager.get_data(path=f"users/{self.user_id}/env/{data.get('env_id')}/datastore/"),
+                        "type": "get_data",
+                        "data": self.db_manager.get_data(
+                            path=f"users/{self.user_id}/env/{data.get('env_id')}/datastore/"
+                        ),
+                    })
+                )
+
+            elif data_type == "message":
+                message = data.get("message")
+                print(f"Message received: {message}")
+                ### todo impl, cachiin (bq->byes + embed -> ss -> if exists: get id(name) -> save local; else: self.handle fiels incl embeds -> bq
+                self.handle_files(files=data.get("files", []))
+                await self.send(
+                    text_data=json.dumps({
+                        "type": "message",
+                        "data": "Messages processed successfully",
+                    })
+                )
+
+            elif data_type == "delete_env":
+                env_id = data.get("env_id")
+                self.db_manager.delete_data(
+                    path=f"users/{self.user_id}/env/{env_id}"
+                )
+                self.created_envs.remove(env_id)
+                await self.send(
+                    text_data=json.dumps({
+                        "type": "delete_env",
+                        "data": f"Deleted {env_id} succsssfully",
                     })
                 )
 
             elif data_type == "start_sim":
+                # APPLY COLLECTED FILE NAMES TO ENVS
+                for env_id in self.created_envs:
+                    path = f"users/{self.user_id}/env/{env_id}/cfg/world/"
+                    self.db_manager.upsert_data(
+                        path=path,
+                        data={"files": self.file_store},
+                    )
                 await self.handle_sim_start(data)
 
             else:
@@ -253,6 +293,26 @@ class Relay(
 
         except Exception as e:
             print(f">>Error processing received message: {e}")
+
+
+
+    def handle_files(self, files):
+        if len(files):
+            for f in files:
+                f_bytes = f.read()
+                name = ask_chat(
+                    prompt="Create a unique name for the provided file",
+                    base64_string=f_bytes
+                )
+
+                self.file_store.append(name)
+                self.db_manager.upsert_data(
+                    path=f"/files",
+                    data={
+                        name: base64.b64encode(f_bytes).decode("utf-8")
+                    }
+                )
+                print("Uploaded file:", name)
 
 
 
