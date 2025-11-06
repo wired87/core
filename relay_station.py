@@ -278,6 +278,34 @@ class Relay(
                     })
                 )
 
+            elif data_type == "extend_gnn":
+                # extend a gnn with
+                pass
+
+            elif data_type == "train_gnn":
+                """
+                get nv ids fetch data and train a gan e.g.
+                """
+
+
+            elif data_type == "create_visuals":
+                env_id = data.get("env_id")
+                """
+                Fetch ad create visuals for a single env.
+                The requested anmation gets returned in mp4 format (use visualizer)
+                """
+
+            elif data_type == "create_knowledge_graph_from_data_tables":
+                env_ids:list[str] = data.get("env_ids")
+                """
+                create nx from all envs
+                embed 
+                langchain grag
+                store local fro query 
+                """
+                pass
+
+                # todo
             elif data_type == "start_sim":
                 # APPLY COLLECTED FILE NAMES TO ENVS
                 for env_id in self.created_envs:

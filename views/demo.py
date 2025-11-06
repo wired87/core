@@ -5,8 +5,6 @@ from utils.logger import LOGGER
 
 LOAD_GRAPHP=r"C:\Users\wired\OneDrive\Desktop\Projects\Brainmaster\utils\simulator\local_graph"
 
-from django.http import FileResponse  # Dies ist ein Django-spezifischer Import!
-
 
 class RunDemo(APIView):
     #serializer_class = S
