@@ -1,10 +1,10 @@
 """
 Websocket logic around the creation process
 """
+
 import asyncio
 import json
 import os
-import pprint
 import threading
 
 from bm.settings import TEST_ENV_ID
@@ -83,8 +83,6 @@ class WorldCreationWf:
                 }
             )
         )
-
-
 
 
     def start_creation_thread(self):

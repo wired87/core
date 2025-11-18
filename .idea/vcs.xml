@@ -4,6 +4,7 @@
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/artifact_registry" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/fb_core" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/gem_core" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/utils" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/utils/file" vcs="Git" />
   </component>

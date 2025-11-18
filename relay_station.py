@@ -17,6 +17,7 @@ from fb_core.real_time_database import FBRTDBMgr
 
 from _chat.log_sum import LogAIExplain
 from bm.settings import TEST_ENV_ID, TEST_USER_ID
+from get_data import fetch_dataset_to_csv_list
 from openai_manager.ask import ask_chat
 from workflows.create_ws_prod import WorldCreationWf
 from workflows.data_distirbutor import DataDistributor
@@ -244,6 +245,12 @@ class Relay(
                 )
 
             elif data_type == "get_data":
+                env_id = data.get("env_id")
+                #todo bq data -> sheets -> public return list
+                """
+                
+                SEND DAT FIREBASE
+                
                 await self.send(
                     text_data=json.dumps({
                         "type": "get_data",
@@ -252,9 +259,36 @@ class Relay(
                         ),
                     })
                 )
+                
+                """
 
-            elif data_type == "message":
-                message = data.get("message")
+                #all_csv_data = []
+                MOCK_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "bigquery-public-data")
+                MOCK_CREDENTIALS_PATH = r"C:\Users\bestb\PycharmProjects\BestBrain\auth\credentials.json" if os.name == "nt" else "auth/credentials.json"
+
+
+
+                # Get Data from BQ
+                csv_data = fetch_dataset_to_csv_list(
+                    project_id=MOCK_PROJECT_ID,
+                    dataset_id=env_id,
+                    credentials_file=MOCK_CREDENTIALS_PATH
+                )
+
+                #all_csv_data.append(csv_data)
+
+                # send to front
+
+                await self.send(
+                    text_data=json.dumps({
+                        "type": "get_data",
+                        "data": csv_data
+                    })
+                )
+
+
+            elif data_type == "file":
+                message = data.get("files")
                 print(f"Message received: {message}")
                 ### todo impl, cachiin (bq->byes + embed -> ss -> if exists: get id(name) -> save local; else: self.handle fiels incl embeds -> bq
                 self.handle_files(files=data.get("files", []))
@@ -309,7 +343,7 @@ class Relay(
             elif data_type == "start_sim":
                 # APPLY COLLECTED FILE NAMES TO ENVS
                 for env_id in self.created_envs:
-                    path = f"users/{self.user_id}/env/{env_id}/cfg/world/"
+                    path = f"users/{self.user_id}/env/{env_id}"
                     self.db_manager.upsert_data(
                         path=path,
                         data={"files": self.file_store},
@@ -334,8 +368,9 @@ class Relay(
                 )
 
                 self.file_store.append(name)
+
                 self.db_manager.upsert_data(
-                    path=f"/files",
+                    path=f"{self.user_id}/files",
                     data={
                         name: base64.b64encode(f_bytes).decode("utf-8")
                     }
