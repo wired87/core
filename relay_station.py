@@ -19,6 +19,7 @@ from _chat.log_sum import LogAIExplain
 from bm.settings import TEST_ENV_ID, TEST_USER_ID
 from get_data import fetch_dataset_to_csv_list
 from openai_manager.ask import ask_chat
+from visualize import get_convert_bq_table
 from workflows.create_ws_prod import WorldCreationWf
 from workflows.data_distirbutor import DataDistributor
 from workflows.deploy_sim import GcpDockerVmDeployer
@@ -234,6 +235,11 @@ class Relay(
                 print("CREATE NODE CFG REQUEST RECEIVED")
                 self.world_creator.node_cfg_process(data)
 
+
+            elif data_type == "COMMAND":
+                await self.command_handler(data)
+
+
             elif data_type == "env_ids":
                 await self.send(
                     text_data=json.dumps({
@@ -246,7 +252,9 @@ class Relay(
 
             elif data_type == "get_data":
                 env_id = data.get("env_id")
+
                 #todo bq data -> sheets -> public return list
+
                 """
                 
                 SEND DAT FIREBASE
@@ -266,15 +274,14 @@ class Relay(
                 MOCK_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "bigquery-public-data")
                 MOCK_CREDENTIALS_PATH = r"C:\Users\bestb\PycharmProjects\BestBrain\auth\credentials.json" if os.name == "nt" else "auth/credentials.json"
 
-
-
                 # Get Data from BQ
-                csv_data = fetch_dataset_to_csv_list(
+                csv_data = get_convert_bq_table(
                     project_id=MOCK_PROJECT_ID,
-                    dataset_id=env_id,
+                    dataset_id="QCOMPS",
+                    table_id=env_id,
                     credentials_file=MOCK_CREDENTIALS_PATH
                 )
-
+                print("csv_data received:", csv_data)
                 #all_csv_data.append(csv_data)
 
                 # send to front
@@ -285,7 +292,6 @@ class Relay(
                         "data": csv_data
                     })
                 )
-
 
             elif data_type == "file":
                 message = data.get("files")
@@ -494,11 +500,9 @@ class Relay(
         )
 
 
-
-
-    async def comand_handler(
+    async def command_handler(
             self,
-            data:list[str],
+            data:dict,
     ):
         """
         Deploy a docker in created vm and executes
@@ -506,31 +510,18 @@ class Relay(
         classification = self.chat_classifier._classify_input(
             user_input=data.get("text")
         )
-        # jeder node horcht auf state changes (zb start = active etc) von globalem store
 
-        if classification in self.possible_states:
-            data: dict = {
-                "state": classification
-            }
-            if classification == "start":
-                if self.demo is True:
-                    await self.demo_workflow()
-                else:
-                    # send local docker start request
+        print("classification recieved:", classification)
 
-                    c_data = {  # InboundPayload
-                        "data": {
-                            "type": classification
-                        },
-                        "type": "state_change",
-                    }
-                    # START SIM
-                    for env_id in list(self.env_cfg.keys()):
-                        self.utils.apost_gather(
-                            url=f"{self.cluster_root}/{env_id.replace('_','-')}"
-                        )
-
-
+        if classification in self.chat_classifier.use_cases:
+            result = self.chat_classifier.use_cases[classification]
+            await self.send(
+                text_data=json.dumps({
+                    "type": "classification_success",
+                    "status": "success",
+                    "msg": result,
+                })
+            )
         else:
             await self.error_response()
 
@@ -684,7 +675,6 @@ class Relay(
                         "phase": []
                     }
         return cfg
-    #ihonicy
 
     async def create_frontend_env_content(self):
         nodes = []
@@ -982,7 +972,7 @@ class Relay(
                 await self.log_request_handler(data)
 
             elif data_type == "COMMAND":
-                await self.comand_handler(data)
+                await self.command_handler(data)
 
 
 

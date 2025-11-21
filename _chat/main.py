@@ -18,17 +18,11 @@ class AIChatClassifier:
             "load_state": self._handle_load_state,
             "plot_results": self._handle_plot_results,
             "stop_simulation": self._handle_stop_simulation,
-            "general_qfs_query": self._handle_general_qfs_query,  # Für allgemeine Fragen zur QFS
+            "question": self._handle_general_qfs_query,  # Für allgemeine Fragen zur QFS
             "set_fields": self._extract_fields,
         }
 
-        """genai.configure(
-            api_key=os.environ.get('GEMINI_API_KEY')
-        )
 
-        self.model = genai.GenerativeModel('gemini-pro')
-        self.simulation_state = {"running": False, "parameters": {}}
-        """
     def _extract_fields(self):
         prompt = f"""
         Given is a list of FIELDS.
@@ -173,8 +167,9 @@ class AIChatClassifier:
 
     def _handle_general_qfs_query(self, user_id, user_input):
         """Behandelt allgemeine Fragen zur Quantenfeld-Simulation mithilfe von Gemini."""
-        prompt = (f"Antworte auf die folgende allgemeine Frage zur Quantenfeld-Simulation: '{user_input}'."
-                  f"Berücksichtige die Benutzerhistorie (falls vorhanden): {self.user_history.get(user_id, [])}")
+        prompt = f"""Du bist ein asistent für eine quantensimulationssoftware unter folgendem url. Antworte auf die folgende allgemeine Frage zur Quantenfeld-Simulation: '{user_input}'."          
+        Berücksichtige die Benutzerhistorie (falls vorhanden): {self.user_history.get(user_id, [])}
+        """
         try:
             response = self.model.generate_content(prompt)
             return response.text
