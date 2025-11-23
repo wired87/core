@@ -2,7 +2,10 @@ import sys
 import os
 from typing import Union, List, Any
 
-from artifact_registry.artifact_admin import ArtifactAdmin
+from auth.set_gcp_auth_creds_path import set_gcp_auth_path
+from bob_builder.artifact_registry.artifact_admin import ArtifactAdmin
+from compute_engine import VMMaster
+from create_env import EnvCreatorProcess
 from utils.run_subprocess import exec_cmd
 
 
@@ -15,6 +18,7 @@ class CloudBatchMaster:
         self.project_id = project_id
         self.zone = zone
         self.image_uri = image_uri
+
 
     def gcloud_create_instance(
             self,
@@ -173,19 +177,48 @@ class CloudBatchMaster:
 
 
 
-class GcpDockerVmDeployer:
+class DeploymentHandler(VMMaster):
     """
     A class to deploy a local Docker image to a new GCP Compute Engine VM.
     All gcloud/docker commands are executed via a simple function.
     """
-    def __init__(self):
+    def __init__(self, user_id):
+        VMMaster.__init__(self)
         # --- Load and Assign Variables using os.getenv ---
         self.project_id = self._get_env("GCP_PROJECT_ID", "Project ID")
         self.region = self._get_env("GCP_REGION", "GCP Region")
         self.zone = self._get_env("GCP_ZONE", "Compute Engine Zone")
 
-        self.port = 8000
+        self.user_id=user_id
+        self.env_creator = EnvCreatorProcess(self.user_id)
         self.artifact_admin = ArtifactAdmin()
+        self.port = 8000
+
+        self.test_vm_cfg: dict[str, Any] = {
+            "instance_name": "test-vm-minimal-01",
+            "machine_type": "e2-micro",
+            "source_image": "projects/debian-cloud/global/images/family/debian-11",
+            "network": "global/networks/default",
+            "tags": ["test-vm", "ephemeral"],
+            "metadata": {
+                "owner": "benedikt_test",
+                "env": "dev"
+            },
+            #"service_account": os.getenv("SACC_NAME"),
+            "scopes": [
+                "https://www.googleapis.com/auth/devstorage.read_only",
+                "https://www.googleapis.com/auth/logging.write"
+            ],
+            "gpu_type": None,
+            "gpu_count": 0,
+            "container_image": "busybox:latest",
+            "container_env": {
+                "START_MODE": "TEST",
+                "TIMEOUT": "300"
+            },
+            "boot_disk_size_gb": 10,
+            "boot_disk_type": "pd-balanced",
+        }
 
 
 
@@ -202,26 +235,55 @@ class GcpDockerVmDeployer:
             self,
             testing,
             instance_name,
-            gpu_count,
-            env,
-            machine_type=None,
-            gpu_type=None
-    ):
+        ):
+        print(f"{testing} create_vm {instance_name}")
         try:
-            self.image_uri = self.artifact_admin.get_latest_image()
             if testing is True:
-                self.test_instance(env)
+                cfg = self.test_vm_cfg
             else:
-                self.create_gpu_vm(
-                    instance_name,
-                    env,
-                    gpu_count,
-                    machine_type,
-                    gpu_type
+                cfg = self.get_prod_vm_cfg(
+                    instance_name
                 )
+            self.create_instance(
+                **cfg
+            )
             print("Created vm")
         except Exception as e:
             print(f"Err creating vm: {e}")
+
+    def get_prod_vm_cfg(
+            self,
+            instance_name,
+    ) -> dict[str, Any]:
+        return {
+            "instance_name": instance_name,
+            "machine_type": "n1-standard-16",
+            "source_image": "projects/debian-cloud/global/images/family/debian-11",
+            "network": "global/networks/default",
+            "tags": ["production", "gpu-worker", "quantum-sim"],
+            "metadata": {
+                "owner": "production_team",
+                "env": "prod",
+                "project_id": "aixr-401704"
+            },
+            # IMPORTANT: Replace with your actual GSA that has Compute Instance Admin role
+            #"service_account": os.getenv("SACC_NAME"),
+            "scopes": [
+                "https://www.googleapis.com/auth/cloud-platform"
+            ],
+            # 2. GPU Configuration (1 GPU requested)
+            "gpu_type": "nvidia-tesla-t4",
+            "gpu_count": 1,
+            # 3. Custom Container Image
+            "container_image": self.artifact_admin.get_latest_image(),
+            "container_env": self.env_creator.create_env_variables(
+                env_id=instance_name
+            ),
+            "boot_disk_size_gb": 30,
+            "boot_disk_type": "pd-balanced",
+        }
+
+
 
     def create_gpu_vm(
             self,
@@ -261,6 +323,7 @@ class GcpDockerVmDeployer:
 
 
     def test_instance(self, env):
+        print("create test_instance:", env)
         gcloud_command = [
             "gcloud", "compute", "instances", "create-with-container",
             "instance-20251016-143139",
@@ -281,13 +344,13 @@ class GcpDockerVmDeployer:
             "--no-shielded-secure-boot",
             "--shielded-vtpm",
             "--shielded-integrity-monitoring",
-            "--labels=goog-ec-src=vm_add-gcloud,container-vm=cos-109-17800-570-50"
+            "--labels=goog-ec-src=vm_add-gcloud,container-vm=cos-109-17800-570-50",
+            "--container-image=memcached",
         ]
         if env:
             env_str = ",".join(f"{k}={v}" for k, v in env.items())
             gcloud_command.append(f"--container-env={env_str}")
         exec_cmd(gcloud_command)
-
 
 
     def gcloud_create_instance(
@@ -374,3 +437,11 @@ class GcpDockerVmDeployer:
 
         print("✅ Cleanup finished.")
 
+
+if __name__ == "__main__":
+    set_gcp_auth_path()
+    dhandler= DeploymentHandler("123")
+    dhandler.create_vm(
+        testing=True,
+        instance_name="999"
+    )

@@ -10,14 +10,11 @@ from channels.auth import AuthMiddlewareStack
 from channels.routing import ProtocolTypeRouter, URLRouter
 from django.core.asgi import get_asgi_application
 import os
+
+from auth.set_gcp_auth_creds_path import set_gcp_auth_path
 from bm import routing
 
-if os.name == "nt":
-    GOOGLE_APPLICATION_CREDENTIALS = r"C:\Users\wired\OneDrive\Desktop\BestBrain\_google\g_auth\aixr-401704-59fb7f12485c.json"
-else:
-    GOOGLE_APPLICATION_CREDENTIALS = "/home/derbenedikt_sterra/BestBrain/_google/g_auth/aixr-401704-59fb7f12485c.json"
-os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", GOOGLE_APPLICATION_CREDENTIALS)
-
+set_gcp_auth_path()
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'bm.settings')
 
 django_asgi_app = get_asgi_application()

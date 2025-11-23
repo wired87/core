@@ -2,7 +2,8 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/artifact_registry" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_google" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/bob_builder/gke_admin" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/fb_core" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/gem_core" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/utils" vcs="Git" />

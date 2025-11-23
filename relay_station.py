@@ -10,19 +10,17 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 import asyncio
 from urllib.parse import parse_qs
 
-from firebase_admin import storage
 
 from create_env import EnvCreatorProcess
 from fb_core.real_time_database import FBRTDBMgr
 
 from _chat.log_sum import LogAIExplain
 from bm.settings import TEST_ENV_ID, TEST_USER_ID
-from get_data import fetch_dataset_to_csv_list
 from openai_manager.ask import ask_chat
 from visualize import get_convert_bq_table
 from workflows.create_ws_prod import WorldCreationWf
 from workflows.data_distirbutor import DataDistributor
-from workflows.deploy_sim import GcpDockerVmDeployer
+from workflows.deploy_sim import DeploymentHandler
 from workflows.node_cfg_manager import NodeCfgManager
 from utils.deserialize import deserialize
 
@@ -81,7 +79,7 @@ class Relay(
 
         self.connection_manager = ConnectionManager()
         self.chat_classifier = AIChatClassifier()
-        #self.sim = SimCore()
+
         self.utils = Utils()
 
         # save fiel names to apply to envs
@@ -146,7 +144,6 @@ class Relay(
         self.cluster_url = f"{self.con_type}://{self.cluster_domain}/"
         print(f"Cluster domain set: {self.cluster_url}")
 
-        self.sim_deployer = GcpDockerVmDeployer()
 
 
         if self.testing is True:
@@ -213,6 +210,10 @@ class Relay(
             parent=self,
         )
 
+        self.deployment_handler = DeploymentHandler(
+            user_id
+        )
+
         print("request accepted")
 
 
@@ -255,21 +256,6 @@ class Relay(
 
                 #todo bq data -> sheets -> public return list
 
-                """
-                
-                SEND DAT FIREBASE
-                
-                await self.send(
-                    text_data=json.dumps({
-                        "type": "get_data",
-                        "data": self.db_manager.get_data(
-                            path=f"users/{self.user_id}/env/{data.get('env_id')}/datastore/"
-                        ),
-                    })
-                )
-                
-                """
-
                 #all_csv_data = []
                 MOCK_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "bigquery-public-data")
                 MOCK_CREDENTIALS_PATH = r"C:\Users\bestb\PycharmProjects\BestBrain\auth\credentials.json" if os.name == "nt" else "auth/credentials.json"
@@ -282,10 +268,8 @@ class Relay(
                     credentials_file=MOCK_CREDENTIALS_PATH
                 )
                 print("csv_data received:", csv_data)
-                #all_csv_data.append(csv_data)
 
                 # send to front
-
                 await self.send(
                     text_data=json.dumps({
                         "type": "get_data",
@@ -297,7 +281,9 @@ class Relay(
                 message = data.get("files")
                 print(f"Message received: {message}")
                 ### todo impl, cachiin (bq->byes + embed -> ss -> if exists: get id(name) -> save local; else: self.handle fiels incl embeds -> bq
-                self.handle_files(files=data.get("files", []))
+                self.handle_files(
+                    files=data.get("files", [])
+                )
                 await self.send(
                     text_data=json.dumps({
                         "type": "message",
@@ -329,7 +315,6 @@ class Relay(
 
 
             elif data_type == "create_visuals":
-                env_id = data.get("env_id")
                 """
                 Fetch ad create visuals for a single env.
                 The requested anmation gets returned in mp4 format (use visualizer)
@@ -354,6 +339,7 @@ class Relay(
                         path=path,
                         data={"files": self.file_store},
                     )
+
                 await self.handle_sim_start(data)
 
             else:
@@ -384,20 +370,15 @@ class Relay(
                 print("Uploaded file:", name)
 
 
-
     async def handle_sim_start(self, data):
         print("START SIM REQUEST RECEIVED")
-        self.env_creator = EnvCreatorProcess(self.user_id)
-
-        env_ids = data.get("data", {}).get("env_ids")
+        env_ids:list[str] = data.get("data", {}).get("env_ids")
         for env_id in env_ids:
             try:
                 if self.world_creator.env_id_map:
-                    self.sim_deployer.create_vm(
+                    self.deployment_handler.create_vm(
                         instance_name=env_id,
-                        gpu_count=1,
                         testing=self.testing,
-                        env=self.env_creator.create_env_variables(env_id),
                     )
                     await self.send(
                         text_data=json.dumps({

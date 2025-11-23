@@ -30,13 +30,8 @@ class EnvCreatorProcess:
     - Deploy len(cfg) Images to GKE cluster (-> give env cfg)
     - Return session ids
     """
-    # Get environment variable values
-
-
-    # Create an instance of the class by passing the values
 
     # todo env size & cfg implement in request
-    # todo save sim cfgs in db
     # spam init request
     def __init__(
             self,
@@ -112,7 +107,6 @@ class EnvCreatorProcess:
             self.gke_admin.connector.connect_all_pods_process(
                 env_ids
             ))
-
         # Extend env globs struct
         self.update_env_glob_state(authenticated_pods)
         print("finished connect_process")
@@ -152,11 +146,6 @@ class EnvCreatorProcess:
 
 
 
-
-
-
-
-
     def update_env_glob_state(self, authenticated_pods):
         if authenticated_pods:
             for env_id in authenticated_pods:
@@ -184,42 +173,6 @@ class EnvCreatorProcess:
                 pass
         else:
             await self.create_env_clusters(data)
-
-
-
-    def preprocess_world_cfg(self, world_cfgs) -> List[dict]:
-        """
-        First processor for world cfg after recieve
-        """
-
-        print("start preprocess_world_cfg")
-
-        # CHECK FALLBACK DEFAULT CFG
-        if world_cfgs is None:
-            world_cfg = self.cfg_creator.env_cfg_default
-            world_cfgs = [world_cfg]
-            print(f"Default world config obtained")
-
-        # CNOVERT TYPE
-        if isinstance(world_cfgs, dict):
-            world_cfgs = [world_cfgs]
-        if isinstance(world_cfgs, str):
-            world_cfgs = [world_cfgs]
-
-        elif isinstance(world_cfgs, list):
-            # frontend send multiple wcs
-            pass
-
-        # DESERIALIZE
-        dslzd = []
-        for wcfg in world_cfgs:
-            dslzd.append(
-                deserialize(wcfg)
-            )
-
-        # return : List[dict]
-        return dslzd
-
 
     def node_cfg_process(self, node_cfg, env_id):
         print("handle node cfg")
@@ -288,8 +241,7 @@ class EnvCreatorProcess:
 
     def create_env_variables(self, env_id) -> dict:
         env_vars_dict = {
-            "SESSION_ID": env_id,
-            "DOMAIN": "bestbrain.tech",
+            "DOMAIN": "www.bestbrain.tech",
             "GCP_ID": "aixr-401704",
             "DATASET_ID": "QCOMPS",
             "LOGGING_DIR": "tmp/ray",
@@ -298,7 +250,10 @@ class EnvCreatorProcess:
             "FIREBASE_RTDB": os.environ.get("FIREBASE_RTDB"),
             "FB_DB_ROOT": f"users/{self.user_id}/env/{env_id}",
             "DELETE_POD_ENDPOINT": "gke/delete-pod/",
-            "GKE_SIM_CLUSTER_NAME": os.environ.get("GKE_SIM_CLUSTER_NAME")
+            "GKE_SIM_CLUSTER_NAME": os.environ.get("GKE_SIM_CLUSTER_NAME"),
+            "SG_DB_ID": env_id,
+            "GEMINI_API_KEY": os.environ["GEMINI_API_KEY"],
+
         }
         return env_vars_dict
 
