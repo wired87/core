@@ -1,56 +1,52 @@
+from auth.set_gcp_auth_creds_path import set_gcp_auth_path
+from bob_builder._docker.docker_admin import DockerAdmin
 from bob_builder.artifact_registry.artifact_admin import ArtifactAdmin
-from bob_builder.kuberay.kube_operator import KubeRayWorkflowManager
+
 
 def build_and_deploy_workflow():
     """
-    Checks for the latest image in the Artifact Registry, and if it exists,
-    deploys it to GKE using the KubeRay logic.
+    Builds a Docker image, pushes it to Google Artifact Registry,
+    and deploys it to GKE using KubeRay.
     """
-    artifact_admin = ArtifactAdmin()
-    kuberay_manager = KubeRayWorkflowManager()
+    # --- 1. Configuration ---
+    artifact_admin = ArtifactAdmin(
+        image_name="cor",
+        repo="core",
+    )
+    docker_admin = DockerAdmin()
 
-    # Get the latest image from the artifact registry
-    latest_image = artifact_admin.get_latest_image()
+    # Construct the full image URI for Artifact Registry
+    image_uri = (
+        f"{artifact_admin.region}-docker.pkg.dev/"
+        f"{artifact_admin.project_id}/"
+        f"{artifact_admin.repo}/"
+        f"{artifact_admin.image_name}:{artifact_admin.tag}"
+    )
 
-    if not latest_image:
-        print(f"No image found in the artifact registry. Aborting workflow.")
-        return
+    docker_admin.build_docker_image(
+        image_name=image_uri,
+        dockerfile_path=r"C:\Users\bestb\Desktop\qfs"
+    )
 
-    print(f"Latest image from artifact registry: {latest_image}")
 
-    # Deploy the application using KubeRay
-    print("Deploying application to GKE using KubeRay...")
-    
-    # 1. Deploy RayCluster Custom Resource
-    success, message = kuberay_manager.deploy_ray_cluster_cr()
-    if not success:
-        print(f"Error deploying RayCluster CR: {message}")
-        return
-    print(message)
+    # --- 4. Push the Docker Image to Artifact Registry ---
+    print(f"Pushing image to Artifact Registry: {image_uri}")
+    artifact_admin.tag_local_image(image_uri)
+    artifact_admin.push_image(remote_path=image_uri)
 
-    # 2. Check RayCluster status
-    success, message = kuberay_manager.view_ray_clusters()
-    if not success:
-        print(f"Error checking RayCluster status: {message}")
-        return
-    print(message)
 
-    # 3. Check pods
-    success, message = kuberay_manager.view_ray_pods()
-    if not success:
-        print(f"Error checking pods: {message}")
-        return
-    print(message)
 
-    # 4. Get head pod name
-    success, head_pod_name = kuberay_manager.get_head_pod_name()
-    if not success:
-        print(f"Error getting head pod name: {head_pod_name}")
-        return
-    print(f"Head pod name: {head_pod_name}")
+    # --- OPTIONAL: Deploy to GKE with KubeRay ---
+    print("Deploying to GKE with KubeRay...")
+    latest_image_from_registry = artifact_admin.get_latest_image()
+    if latest_image_from_registry:
+        print(f"Deploying latest image: {latest_image_from_registry}")
+        # kuberay_manager.deploy(latest_image_from_registry) # Example call
+    else:
+        print("Could not retrieve the latest image from the registry. Deployment aborted.")
 
-    print("Application deployed successfully.")
 
 if __name__ == "__main__":
-    # Example usage
+    image_tag="cor"
+    set_gcp_auth_path()
     build_and_deploy_workflow()

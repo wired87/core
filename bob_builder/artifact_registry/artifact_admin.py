@@ -1,7 +1,7 @@
 import os
 import subprocess
 
-from utils.run_subprocess import exec_cmd
+from utils.run_subprocess import exec_cmd, pop_cmd
 
 import dotenv
 dotenv.load_dotenv()
@@ -11,10 +11,10 @@ class ArtifactAdmin:
         # IMAGE SETTINGS
         self.project_id = os.environ["GCP_PROJECT_ID"]
         self.region = os.environ["GCP_REGION"]
-        self.repo = 'qfs-repo'
+        self.repo = kwargs.get("repo")
 
         # RAY cluster image
-        self.image_name = 'qfs'
+        self.image_name = kwargs.get("image_name")
         self.tag = 'latest'
 
         self.source = kwargs.get('source', '')
@@ -22,6 +22,25 @@ class ArtifactAdmin:
         self.deployment_name = kwargs.get('deployment_name', 'cluster-deployment')
         self.container_port = int(os.environ["CLUSTER_PORT"])
         self.full_tag = None
+
+    def tag_local_image(
+            self,
+            image_uri:str
+    ) -> str:
+        """
+        Tags a local Docker image with the required Artifact Registry path.
+
+        Returns: The full remote destination path (e.g., us-central1-docker.pkg.dev/...)
+        """
+        exec_cmd(cmd = ["docker", "tag", self.image_name, image_uri])
+
+    def push_image(self, remote_path: str):
+        """
+        Pushes the tagged image to Artifact Registry.
+        This command performs the upsert (only uploads new layers).
+        """
+        print(f"3. Pushing image to Artifact Registry...")
+        pop_cmd(cmd = ["docker", "push", remote_path])
 
     def get_latest_image(
             self,

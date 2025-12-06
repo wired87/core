@@ -1,5 +1,6 @@
 import json
 
+from gem_core.gem import Gem
 from utils.logger import LOGGER
 
 class AIChatClassifier:
@@ -9,6 +10,7 @@ class AIChatClassifier:
     """
     def __init__(self, cfg_creator=None):
         self.cfg_creator = cfg_creator
+        self.gem = Gem()
         self.user_history = {}
         self.use_cases = {
             "start": self._handle_start_simulation,
@@ -37,9 +39,6 @@ class AIChatClassifier:
 
 
 
-
-
-
     def _update_history(self, user_id, message):
         """Aktualisiert die Historie für einen Benutzer."""
         if user_id not in self.user_history:
@@ -51,22 +50,21 @@ class AIChatClassifier:
         Klassifiziert die Benutzereingabe mithilfe der Gemini API für QFS-Befehle.
         Gibt den passenden Usecase-Schlüssel zurück oder 'general_qfs_query' als Standard.
         """
-        LOGGER.info("_classify_input")
-        prompt = (
-            f"Klassifiziere die folgende Benutzereingabe in einen der folgenden Usecases für die Steuerung einer Quantenfeld-Simulation: "
-            f"{', '.join(self.use_cases.keys())}. Gib nur den Usecase-Namen zurück. "
-            f"Eingabe: '{user_input}'")
-
+        print("_classify_input")
+        prompt = f"""Klassifiziere die folgende Benutzereingabe in einen der folgenden Usecases für die Steuerung einer Quantenfeld-Simulation: 
+            {', '.join(self.use_cases.keys())}. Gib nur den Usecase-Namen zurück. 
+            Eingabe: '{user_input}'")
+            """
         try:
-            classification = None#ask_gem(prompt)
+            classification = self.gem.ask(prompt)
             if classification and isinstance(classification, str):
                 classification = classification.strip().lower()
                 if classification in self.use_cases:
-                    LOGGER.info(f"Classification: {classification}")
+                    print(f"Classification: {classification}")
                     return classification
         except Exception as e:
             print(f"Fehler bei der Klassifizierung: {e}")
-        LOGGER.info(f"Classification not valid")
+        print(f"Classification not valid")
         return None
 
     def _give_info(self, user_input):

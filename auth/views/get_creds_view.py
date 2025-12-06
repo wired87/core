@@ -26,7 +26,7 @@ class GetCredsView(APIView):
             creds["fb_creds"] = json.dumps(open(local_fb_creds_path, "r"))
 
         if "g_creds" in req_types:
-            local_fb_creds_path = "_google/g_auth/aixr-401704-59fb7f12485c.json"
+            local_fb_creds_path = "_google/auth/credentials.json"
             creds["g_creds"] = json.dumps(open(local_fb_creds_path, "r"))
 
         if "gh" in req_types:

@@ -12,7 +12,8 @@ sudo nginx -t
 sudo systemctl reload nginx
 sudo systemctl restart gunicorn
 sudo systemctl restart fail2ban
-sudo journalctl -u gunicorn -f
+sudo journalctl -u gunicorn -f\
+
 """
 
 raw_init=r"""

@@ -10,12 +10,10 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 import asyncio
 from urllib.parse import parse_qs
 
-
-from create_env import EnvCreatorProcess
 from fb_core.real_time_database import FBRTDBMgr
 
 from _chat.log_sum import LogAIExplain
-from bm.settings import TEST_ENV_ID, TEST_USER_ID
+from bm.settings import TEST_ENV_ID
 from openai_manager.ask import ask_chat
 from visualize import get_convert_bq_table
 from workflows.create_ws_prod import WorldCreationWf
@@ -84,7 +82,7 @@ class Relay(
 
         # save fiel names to apply to envs
         self.file_store:list[str] = []
-
+        self.qc = False
         self.instance = os.environ["FIREBASE_RTDB"]
         self.demo_g_in_front = False
         self.start_up_path = "container/run.py"
@@ -230,6 +228,13 @@ class Relay(
 
             if data_type == "world_cfg":
                 print("CREATE WORLD REQUEST RECEIVED")
+                """
+                SIMULATE_ON_QC = os.getenv("SIMULATE_ON_QC")
+                if str(SIMULATE_ON_QC) == "0":
+                    SIMULATE_ON_QC = True
+                else:
+                    SIMULATE_ON_QC = False
+                """
                 await self.world_creator.world_cfg_process(data["world_cfg"])
 
             elif data_type == "node_cfg":
@@ -313,12 +318,16 @@ class Relay(
                 get nv ids fetch data and train a gan e.g.
                 """
 
-
             elif data_type == "create_visuals":
                 """
                 Fetch ad create visuals for a single env.
                 The requested anmation gets returned in mp4 format (use visualizer)
                 """
+
+                # create expensive id map
+                # -> fetch rows for each px t=0
+                # sleep.1
+                # restart ->
 
             elif data_type == "create_knowledge_graph_from_data_tables":
                 env_ids:list[str] = data.get("env_ids")
@@ -905,56 +914,3 @@ class Relay(
         return changes
 
 
-
-"""
-
- def _connect(self, target_ip):
-        connect_attempts = 0
-        max_attempts = 20
-
-        while not self.websocket_connection and connect_attempts < max_attempts:
-            try:
-                print(
-                    f"Versuche, WebSocket-Verbindung zu ws://{target_ip}:{self.ws_port} herzustellen... (Versuch {connect_attempts + 1})")
-                self.websocket_connection = websocket.create_connection(
-                    f"{self.ws_type}://{target_ip}:{self.ws_port}")
-                print(f"Verbindung zu {self.ws_type}://{target_ip}:{self.ws_port} hergestellt.")
-                self.websocket_connection.send(
-                    text_data=json.dumps(
-                        {
-                            "type": "init_hs_relay",
-                            "session_id": self.session_id,
-                            "key": self.env_id
-                        }
-                    )
-                )
-            except Exception as e:
-                print(f"Verbindungsfehler: {e}. Warte 5 Sekunden...")
-                time.sleep(5)
-                connect_attempts += 1
-
-
-
-
-
-            elif data_type == "env_data":
-                await self.data_distributor.send_data(data)
- 
-
-            elif data_type == "ai_log_sum":
-                await self.ai_log_sum_process(data)
-
-            elif data_type == "rcv_session_id":
-                # receive ids form already existing sessions.
-                # Init G
-                sessions:list[str] = data.get("session_ids")
-
-            elif data_type == "logs":
-                await self.log_request_handler(data)
-
-            elif data_type == "COMMAND":
-                await self.command_handler(data)
-
-
-
-"""

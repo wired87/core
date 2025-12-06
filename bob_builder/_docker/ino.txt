@@ -13,8 +13,8 @@ netstat -ano
 ipconfig /all
 
 artifact registry build & push
-docker build -t c:latest -f ./Dockerfile . && \
-docker push us-central1-docker.pkg.dev/aixr-401704/qfs-repo/qfs:latest
+docker build -t cor:latest C:\\Users\\bestb\\Desktop\\qfs && \
+docker push us-central1-docker.pkg.dev/aixr-401704/qfs-repo/cor:latest
 
 gcloud artifacts repositories create qfn \
    --repository-format=docker \
