@@ -224,8 +224,7 @@ class EnvCreatorProcess:
 
             # env vars
             env_variables:list[dict] = self.create_env_variables(
-                env_id=env_id,
-                world_cfg_item=world_cfg_item
+                env_id
             )
 
             new_struct[env_id] = {
@@ -239,7 +238,7 @@ class EnvCreatorProcess:
         return new_struct
 
 
-    def create_env_variables(self, env_id) -> dict:
+    def create_env_variables(self, env_id, cfg:dict) -> dict:
         env_vars_dict = {
             "DOMAIN": "www.bestbrain.tech",
             "GCP_ID": "aixr-401704",
@@ -253,7 +252,7 @@ class EnvCreatorProcess:
             "GKE_SIM_CLUSTER_NAME": os.environ.get("GKE_SIM_CLUSTER_NAME"),
             "SG_DB_ID": env_id,
             "GEMINI_API_KEY": os.environ["GEMINI_API_KEY"],
-
+            **cfg,
         }
         return env_vars_dict
 

@@ -40,6 +40,10 @@ class WorldCreationWf:
         self.db_manager.set_root_ref(self.database)
         self.testing = testing
 
+
+
+
+
     def node_cfg_process(self, data):
         node_cfg = data.get("node_cfg")
         env_id = data.get("env_id")
