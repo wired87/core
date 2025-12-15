@@ -22,6 +22,7 @@ class AIChatClassifier:
             "stop_simulation": self._handle_stop_simulation,
             "question": self._handle_general_qfs_query,  # Für allgemeine Fragen zur QFS
             "set_fields": self._extract_fields,
+            "upgrade": None, # Handled by Relay
         }
 
 

@@ -1,0 +1,218 @@
+y:
+  symbol: y
+  value: 2e-6
+  unit: dimensionless
+  description: "Yukawa Coupling: Describes the strength of the interaction between a fermion field and the Higgs field, which is responsible for generating the fermion's mass."
+  origin: calculated
+  dtype: float
+energy:
+  symbol: e
+  value: 0.000511
+  unit: null
+  description: "Fermion Energy: Represents the rest mass energy of the fermion or the local energy density contribution at a specific spacetime point."
+  origin: measured
+  dtype: float
+isospin:
+  symbol: null
+  value: -0.5
+  unit: null
+  description: "Weak Isospin: Represents the quantum number that determines how the fermion interacts via the weak nuclear force."
+  origin: measured
+  dtype: float
+charge:
+  symbol: null
+  value: -1
+  unit: null
+  description: "Electric Charge: Represents the electric charge of the particle in units of the elementary charge e."
+  origin: measured
+  dtype: int
+mass:
+  symbol: M
+  value: 5.11e-4
+  unit: GeV (varies)
+  description: "Rest Mass: Represents the invariant mass of the particle, typically provided in GeV or GeV/c2."
+  origin: measured
+  dtype: float
+velocity:
+  symbol: null
+  value: 0.0
+  unit: null
+  description: "Velocity (Uniform Psi): Represents the velocity component of the underlying universal \u03a8 field state."
+  origin: null
+  dtype: float
+angle:
+  symbol: null
+  value: 0.0
+  unit: null
+  description: "Angle (Uniform Psi): Represents the angular component of the underlying universal \u03a8 field state."
+  origin: null
+  dtype: float
+laplacian:
+  symbol: null
+  value: []
+  unit: null
+  description: "Laplacian (Uniform Psi): Placeholder for the spatial second derivative of the field amplitude."
+  origin: null
+  dtype: list
+prev:
+  symbol: null
+  value: null
+  unit: null
+  description: "Previous State: Placeholder for the field state in the previous time step, used for calculating derivatives or updates."
+  origin: null
+  dtype: NoneType
+vev:
+  symbol: phi
+  value: 246e9
+  unit: eV
+  description: "Higgs VEV: Represents the non-zero vacuum expectation value of the Higgs field, which is the mechanism that gives mass to other particles."
+  origin: measured
+  dtype: float
+potential_energy_H:
+  symbol: null
+  value: 0.0
+  unit: GeV
+  description: "Higgs Potential: Represents the energy density stored in the Higgs field's potential at a specific point in spacetime."
+  origin: measured
+  dtype: float
+total_energy_H:
+  symbol: null
+  value: 0.0
+  unit: null
+  description: "Total Higgs Energy: Represents the total energy of the Higgs field configuration, including kinetic and potential terms."
+  origin: null
+  dtype: float
+lambda_h:
+  symbol: lambda
+  value: 0.13
+  unit: dimensionless
+  description: "Higgs Self-Coupling (\u03bb): Determines the strength of the Higgs field's self-interaction and the shape of the Higgs potential."
+  origin: measured
+  dtype: float
+laplacian_h:
+  symbol: nabla2H
+  value: 0.0
+  unit: GeV^2
+  description: "Higgs Spatial Derivative (\u22072H): Represents the second spatial derivative of the Higgs field, controlling the propagation or 'spread' of the field's influence to neighboring points."
+  origin: calculated
+  dtype: float
+mu_squared_H:
+  symbol: lambda
+  value: 7865
+  unit: GeV^2
+  description: "Higgs Mass Term Coefficient (\u03bc2): Represents the coefficient of the quadratic piece of the Higgs potential, which, if negative, triggers spontaneous symmetry breaking."
+  origin: measured
+  dtype: float
+phi:
+  symbol: null
+  value:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+  unit: int
+  description: "Neighbor Phi Values: Represents a collection of Higgs field (\u03c6) values from adjacent points, used to calculate spatial derivatives."
+  origin: calculated
+  dtype: list
+parent:
+  symbol: null
+  value:
+    - PHI
+  unit: null
+  description: "Parent Field: Indicates the larger field or concept under which the current structure is categorized (e.g., PHI)."
+  origin: null
+  dtype: list
+g:
+  symbol: g
+  value: 0.653
+  unit: dimensionless
+  description: "Gauge Coupling (g): Represents the dimensionless coupling constant that defines the strength of a specific gauge interaction (like the weak force or electromagnetism)."
+  origin: measured
+  dtype: float
+gauge_group:
+  symbol: null
+  value: U(1)_Y
+  unit: null
+  description: "Gauge Symmetry Group: Specifies the mathematical symmetry group associated with the force carrier field (e.g., U(1)Y for hypercharge)."
+  origin: null
+  dtype: str
+field_value:
+  symbol: null
+  value:
+    - 1.0
+    - 0.0
+    - 0.0
+    - 0.0
+  unit: null
+  description: "Gauge Field Polarization Vector: Represents the 4-vector components (time and three spatial) of the gauge boson field, defining its excitation state at a point."
+  origin: null
+  dtype: list
+
+color_charge:
+  symbol: null
+  value:
+    - r
+    - g
+    - b
+  unit: null
+  description: "Color Charge States: Represents the set of possible color charge labels (e.g., red, green, blue) associated with the gluon field."
+  origin: null
+  dtype: list
+
+g_generator:
+  symbol: null
+  value:
+    -
+      - [ 0, 1 ]
+      - [ 1, 0 ]
+    -
+      - [ 0, -1j ]
+      - [ 1j, 0 ]
+    -
+      - [ 1, 0 ]
+      - [ 0, -1 ]
+  unit: null
+  description: ""
+  origin: null
+  dtype: list
+
+gamma_0:
+  symbol: null
+  value:
+    - [ 1, 0, 0, 0 ]
+    - [ 0, 1, 0, 0 ]
+    - [ 0, 0, -1, 0 ]
+    - [ 0, 0, 0, -1 ]
+  unit: null
+  description: ""
+  origin: null
+  dtype: list
+
+gamma:
+  symbol: null
+  value:
+    - # gamma_0
+      - [ 1, 0, 0, 0 ]
+      - [ 0, 1, 0, 0 ]
+      - [ 0, 0, -1, 0 ]
+      - [ 0, 0, 0, -1 ]
+    - # gamma_1
+      - [ 0, 0, 0, 1 ]
+      - [ 0, 0, 1, 0 ]
+      - [ 0, -1, 0, 0 ]
+      - [ -1, 0, 0, 0 ]
+    - # gamma_2
+      - [ 0, 0, 0, -1j ]
+      - [ 0, 0, 1j, 0 ]
+      - [ 0, 1j, 0, 0 ]
+      - [ -1j, 0, 0, 0 ]
+    - # gamma_3
+      - [ 0, 0, 1, 0 ]
+      - [ 0, 0, 0, -1 ]
+      - [ -1, 0, 0, 0 ]
+      - [ 0, 1, 0, 0 ]
+  unit: null
+  description: ""
+  origin: null
+  dtype: list
+

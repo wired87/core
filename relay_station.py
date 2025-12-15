@@ -1,15 +1,22 @@
-import base64
 import os
 import threading
 import time
+
+import ray
 import requests
 import json
 import dotenv
+import zipfile
+import io
+import pandas as pd
 from channels.generic.websocket import AsyncWebsocketConsumer
 
 import asyncio
 from urllib.parse import parse_qs
+import importlib
 
+from core.actors import deploy_guard
+from core.qf_utils.qf_utils import QFUtils
 from fb_core.real_time_database import FBRTDBMgr
 
 from _chat.log_sum import LogAIExplain
@@ -33,6 +40,16 @@ from utils.graph.local_graph_utils import GUtils
 from utils.id_gen import generate_id
 from utils.utils import Utils
 
+from fb_core.firestore_manager import FirestoreMgr
+import stripe
+from dataclasses import dataclass
+from typing import Callable, Any, Awaitable
+
+@dataclass
+class RelayCase:
+    case: str
+    description: str
+    callable: Callable[[Any], Awaitable[Any]]
 
 class Relay(
     AsyncWebsocketConsumer
@@ -108,10 +125,10 @@ class Relay(
         self.sim_start_puffer = 10  # seconds to wait when rcv start trigger
         self.demo = True
 
-
         self.required_steps = {
             "node_cfg": False,
             "world_cfg": False,
+            "injection_cfg": False,
         }
 
         self.active_envs = {}
@@ -150,6 +167,15 @@ class Relay(
             self.cluster_root = "cluster.botworld.cloud"
 
         self.auth_data = None
+        
+        self.firestore = FirestoreMgr()
+        self.active_sim_task = None
+        # Stripe API Key - should be in env vars
+        stripe.api_key = os.environ.get("STRIPE_API_KEY")
+
+        self.relay_cases: list[RelayCase] = []
+        self._register_cases()
+        threading.Thread(target=self._scan_dynamic_cases, daemon=True).start()
 
     async def connect(self):
         print(f"Connection attempt registered")
@@ -182,6 +208,9 @@ class Relay(
             g_from_path=None,
             user_id=self.user_id,
         )
+        self.qfu = QFUtils(
+            g=self.g
+        )
 
         self.world_creator = WorldCreationWf(
             user_id=self.user_id,
@@ -208,12 +237,178 @@ class Relay(
             parent=self,
         )
 
+        # Create Guard for each new user
+        name = f"GUARD_{self.user_id}"
+        guard = deploy_guard(
+            self.g,
+            self.qfu,
+            name=name,
+        )
+
+        # SAVE GUARD ref
+        self.g.add_node(
+            {
+                "nid": name,
+                "type": "NODE",
+                "ref": guard
+            }
+        )
+
+
         self.deployment_handler = DeploymentHandler(
             user_id
         )
 
         print("request accepted")
 
+    async def validate_action(self, action_type, data):
+        if not self.user_id:
+            return False
+            
+        user_doc = self.firestore.get_user_doc(self.user_id)
+        if not user_doc:
+            user_doc = self.firestore.create_default_user(self.user_id)
+            
+        plan = user_doc.get("plan", "free")
+        permissions = user_doc.get("permissions", {})
+        wallet = user_doc.get("wallet", {})
+        
+        if action_type == "world_cfg":
+            if not permissions.get("cfg_editable", False):
+                await self.send(text_data=json.dumps({
+                    "type": "error",
+                    "data": "Upgrade to Magician or Wizard to edit config."
+                }))
+                return False
+                
+        elif action_type == "start_sim":
+            balance = wallet.get("compute_balance", 0)
+            # Check if user has enough balance for at least a minute
+            if balance <= 0 and plan != "free":
+                 await self.send(text_data=json.dumps({
+                    "type": "upgrade_required",
+                    "data": "Insufficient compute balance."
+                }))
+                 return False
+                 
+        return True
+
+    async def monitor_resources(self, cpu_hours=1, gpu_hours=0):
+        # Rates per second (in hours unit)
+        # 1 real second = 1/3600 simulation hours consumed * intensity
+        # Let's assume balance is in "Standard Compute Hours"
+        # CPU rate = 1.0, GPU rate = 5.0
+        rate = (cpu_hours * 1.0 + gpu_hours * 5.0) / 3600.0
+        
+        try:
+            while True:
+                await asyncio.sleep(1)
+                self.firestore.update_user_wallet(self.user_id, -rate)
+                
+                user_doc = self.firestore.get_user_doc(self.user_id)
+                plan = user_doc.get("plan", "free")
+                
+                if plan == "free":
+                    await self.send(text_data=json.dumps({
+                        "type": "sim_terminated", 
+                        "data": "Free tier cannot run simulations. Upgrade to continue."
+                    }))
+                    if hasattr(self, 'current_sim_env_ids'):
+                        for env_id in self.current_sim_env_ids:
+                            self.deployment_handler.stop_vm(env_id)
+                    break
+
+                if user_doc and user_doc.get("wallet", {}).get("compute_balance", 0) <= 0:
+                    await self.send(text_data=json.dumps({
+                        "type": "sim_terminated", 
+                        "data": "Battery empty. Simulation stopped."
+                    }))
+                    # Trigger stop logic here
+                    if hasattr(self, 'current_sim_env_ids'):
+                        for env_id in self.current_sim_env_ids:
+                            self.deployment_handler.stop_vm(env_id)
+                    break
+        except asyncio.CancelledError:
+            pass
+
+    async def create_stripe_session(self, price_id, user_id=None):
+        uid = user_id if user_id else self.user_id
+        try:
+            checkout_session = stripe.checkout.Session.create(
+                client_reference_id=uid,
+                line_items=[
+                    {
+                        'price': price_id,
+                        'quantity': 1,
+                    },
+                ],
+                mode='subscription',
+                success_url=self.domain + '/success',
+                cancel_url=self.domain + '/cancel',
+                metadata={
+                    'user_id': uid
+                }
+            )
+            return checkout_session.url
+        except Exception as e:
+            print(f"Stripe error: {e}")
+            return None
+
+
+    def _register_cases(self):
+        cases = [
+            ("payment", "Handle payment requests", self._handle_payment),
+            ("world_cfg", "Process world configuration", self._handle_world_cfg),
+            ("node_cfg", "Process node configuration", self._handle_node_cfg),
+            ("env_ids", "Retrieve environment IDs", self._handle_env_ids),
+            ("get_data", "Fetch and zip data from BigQuery", self._handle_get_data),
+            ("file", "Handle file uploads", self._handle_files),
+            ("delete_env", "Delete an environment", self._handle_delete_env),
+            ("extend_gnn", "Extend GNN", self._handle_extend_gnn),
+            # train is performed in each sim
+            #("train_gnn", "Train GNN", self._handle_train_gnn),
+
+            ("create_visuals", "Create visuals", self._handle_create_visuals),
+            ("create_knowledge_graph_from_data_tables", "Create KG from data tables", self._handle_create_kg),
+            ("start_sim", "Start simulation", self._handle_start_sim_wrapper),
+        ]
+        
+        for case, desc, func in cases:
+            self.relay_cases.append(RelayCase(case=case, description=desc, callable=func))
+
+    def _scan_dynamic_cases(self):
+        """
+        Scans environment variables starting with 'RELAY' for paths to dictionaries
+        mapping case names to callables.
+        Format of env var value: 'module.path.variable_name'
+        """
+        for key, value in os.environ.items():
+            if key.startswith("RELAY"):
+                try:
+                    # Assume value is "module.path.dict_name"
+                    if "." in value:
+                        module_name, dict_name = value.rsplit(".", 1)
+                        module = importlib.import_module(module_name)
+                        case_dict = getattr(module, dict_name)
+                        
+                        if isinstance(case_dict, dict):
+                            print(f"Loading dynamic cases from {key} -> {value}")
+                            for case_name, handler in case_dict.items():
+                                if callable(handler):
+                                    # Check if case already exists to avoid duplicates/overwrites if desired, 
+                                    # but typically dynamic overwrites static or appends.
+                                    # Here we append.
+                                    self.relay_cases.append(
+                                        RelayCase(
+                                            case=case_name,
+                                            description=f"Dynamic case from {key}",
+                                            callable=handler
+                                        )
+                                    )
+                                else:
+                                    print(f"Skipping non-callable handler for case {case_name} in {key}")
+                except Exception as e:
+                    print(f"Failed to load dynamic cases from {key} ({value}): {e}")
 
     async def receive(
             self,
@@ -226,136 +421,274 @@ class Relay(
             data_type = data.get("type")  # assuming 'type' field for command
             print(f"Received message from frontend: {data}")
 
-            if data_type == "world_cfg":
-                print("CREATE WORLD REQUEST RECEIVED")
-                """
-                SIMULATE_ON_QC = os.getenv("SIMULATE_ON_QC")
-                if str(SIMULATE_ON_QC) == "0":
-                    SIMULATE_ON_QC = True
-                else:
-                    SIMULATE_ON_QC = False
-                """
-                await self.world_creator.world_cfg_process(data["world_cfg"])
+            # Middleware Guard
+            if data_type in ["world_cfg", "start_sim"]:
+                if not await self.validate_action(data_type, data):
+                    return
 
-            elif data_type == "node_cfg":
-                print("CREATE NODE CFG REQUEST RECEIVED")
-                self.world_creator.node_cfg_process(data)
-
-
-            elif data_type == "COMMAND":
-                await self.command_handler(data)
-
-
-            elif data_type == "env_ids":
-                await self.send(
-                    text_data=json.dumps({
-                        "type": "env_ids",
-                        "data": self.db_manager.get_child(
-                            path=f"users/{self.user_id}/env/"
-                        ),
-                    })
-                )
-
-            elif data_type == "get_data":
-                env_id = data.get("env_id")
-
-                #todo bq data -> sheets -> public return list
-
-                #all_csv_data = []
-                MOCK_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "bigquery-public-data")
-                MOCK_CREDENTIALS_PATH = r"C:\Users\bestb\PycharmProjects\BestBrain\auth\credentials.json" if os.name == "nt" else "auth/credentials.json"
-
-                # Get Data from BQ
-                csv_data = get_convert_bq_table(
-                    project_id=MOCK_PROJECT_ID,
-                    dataset_id="QCOMPS",
-                    table_id=env_id,
-                    credentials_file=MOCK_CREDENTIALS_PATH
-                )
-                print("csv_data received:", csv_data)
-
-                # send to front
-                await self.send(
-                    text_data=json.dumps({
-                        "type": "get_data",
-                        "data": csv_data
-                    })
-                )
-
-            elif data_type == "file":
-                message = data.get("files")
-                print(f"Message received: {message}")
-                ### todo impl, cachiin (bq->byes + embed -> ss -> if exists: get id(name) -> save local; else: self.handle fiels incl embeds -> bq
-                self.handle_files(
-                    files=data.get("files", [])
-                )
-                await self.send(
-                    text_data=json.dumps({
-                        "type": "message",
-                        "data": "Messages processed successfully",
-                    })
-                )
-
-            elif data_type == "delete_env":
-                env_id = data.get("env_id")
-                self.db_manager.delete_data(
-                    path=f"users/{self.user_id}/env/{env_id}"
-                )
-                self.created_envs.remove(env_id)
-                await self.send(
-                    text_data=json.dumps({
-                        "type": "delete_env",
-                        "data": f"Deleted {env_id} succsssfully",
-                    })
-                )
-
-            elif data_type == "extend_gnn":
-                # extend a gnn with
-                pass
-
-            elif data_type == "train_gnn":
-                """
-                get nv ids fetch data and train a gan e.g.
-                """
-
-            elif data_type == "create_visuals":
-                """
-                Fetch ad create visuals for a single env.
-                The requested anmation gets returned in mp4 format (use visualizer)
-                """
-
-                # create expensive id map
-                # -> fetch rows for each px t=0
-                # sleep.1
-                # restart ->
-
-            elif data_type == "create_knowledge_graph_from_data_tables":
-                env_ids:list[str] = data.get("env_ids")
-                """
-                create nx from all envs
-                embed 
-                langchain grag
-                store local fro query 
-                """
-                pass
-
-                # todo
-            elif data_type == "start_sim":
-                # APPLY COLLECTED FILE NAMES TO ENVS
-                for env_id in self.created_envs:
-                    path = f"users/{self.user_id}/env/{env_id}"
-                    self.db_manager.upsert_data(
-                        path=path,
-                        data={"files": self.file_store},
-                    )
-
-                await self.handle_sim_start(data)
-
-            else:
+            # Dynamic Dispatch
+            handled = False
+            # Iterate over a copy to ensure thread safety if cases are added at runtime
+            for relay_case in list(self.relay_cases):
+                if relay_case.case == data_type:
+                    await relay_case.callable(data)
+                    handled = True
+                    break
+            
+            if not handled:
                 print(f"Unknown command type received: {data_type}")
 
         except Exception as e:
             print(f">>Error processing received message: {e}")
+            import traceback
+            traceback.print_exc()
+
+
+    # --- Handler Methods ---
+
+    async def _handle_payment(self, data: dict):
+        target_uid = data.get("user_id", self.user_id)
+        state_change = int(data.get("state", 0))
+        
+        # Plan Hierarchy
+        PLANS = ["free", "magician", "wizard"]
+        PLAN_PRICES = {
+            "free": None,
+            "magician": os.environ.get("PRICE_MAGICIAN", "price_1Qj..."), 
+            "wizard": os.environ.get("PRICE_WIZARD", "price_1Qk...")
+        }
+
+        # Fetch User
+        user_doc = self.firestore.get_user_doc(target_uid)
+        if not user_doc:
+            # If user doesn't exist, assume free
+            current_plan = "free"
+        else:
+            current_plan = user_doc.get("plan", "free")
+
+        # Calculate New Plan
+        try:
+            current_idx = PLANS.index(current_plan)
+        except ValueError:
+            current_idx = 0 # Default to free if unknown
+        
+        new_idx = max(0, min(len(PLANS) - 1, current_idx + state_change))
+        new_plan = PLANS[new_idx]
+
+        if new_plan == current_plan:
+            await self.send(text_data=json.dumps({
+                "type": "payment_info",
+                "data": f"You are already on the {new_plan} plan."
+            }))
+            return
+
+        # Handle Free Tier Downgrade directly (no payment)
+        if new_plan == "free":
+            # In a real app, we might need to cancel Stripe sub here
+            # For now, just update DB
+            # self.firestore.update_user_plan(target_uid, "free") 
+            await self.send(text_data=json.dumps({
+                "type": "payment_info",
+                "data": "Downgrade to Free tier processed."
+            }))
+            return
+
+        # Generate Payment Link for Paid Plans
+        price_id = PLAN_PRICES.get(new_plan)
+        if price_id:
+            url = await self.create_stripe_session(price_id, user_id=target_uid)
+            if url:
+                await self.send(text_data=json.dumps({
+                    "type": "payment_url",
+                    "data": url,
+                    "plan": new_plan
+                }))
+            else:
+                await self.send(text_data=json.dumps({
+                    "type": "error",
+                    "data": "Could not create payment session"
+                }))
+        else:
+                await self.send(text_data=json.dumps({
+                "type": "error",
+                "data": f"Price not configured for {new_plan}"
+            }))
+
+    async def _handle_world_cfg(self, data: dict):
+        print("CREATE WORLD REQUEST RECEIVED")
+        """
+        SIMULATE_ON_QC = os.getenv("SIMULATE_ON_QC")
+        if str(SIMULATE_ON_QC) == "0":
+            SIMULATE_ON_QC = True
+        else:
+            SIMULATE_ON_QC = False
+        """
+        # get guard of user
+        name = f"GUARD_{self.user_id}"
+        ref = self.g.G.nodes[name]
+        ray.get(ref.set_wcfg.remote(
+            data["world_cfg"]
+        ))
+        print("world cfg set")
+
+
+
+    async def _handle_node_cfg(self, data: dict):
+        print("CREATE NODE CFG REQUEST RECEIVED")
+        self.world_creator.node_cfg_process(data)
+
+    async def _handle_env_ids(self, data: dict):
+        await self.send(
+            text_data=json.dumps({
+                "type": "env_ids",
+                "data": self.db_manager.get_child(
+                    path=f"users/{self.user_id}/env/"
+                ),
+            })
+        )
+
+
+    def inj_cfg_process(self, data):
+        print("inj_cfg_process start")
+        # get guard of user
+        name = f"GUARD_{self.user_id}"
+        ref = self.g.G.nodes[name]
+        ray.get(ref.set_inj_pattern.remote(
+            data["inj_patttern"]
+        ))
+        print("inj_cfg_process cfg set")
+
+
+
+    async def _handle_get_data(self, data: dict):
+        env_id = data.get("env_id")
+
+        MOCK_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "bigquery-public-data")
+        MOCK_CREDENTIALS_PATH = r"C:\Users\bestb\PycharmProjects\BestBrain\auth\credentials.json" if os.name == "nt" else "auth/credentials.json"
+
+        # Get Data from BQ
+        csv_data = get_convert_bq_table(
+            project_id=MOCK_PROJECT_ID,
+            dataset_id="QCOMPS",
+            table_id=env_id,
+            credentials_file=MOCK_CREDENTIALS_PATH
+        )
+        
+        if isinstance(csv_data, pd.DataFrame):
+            # Clean up double header if present (visualize.py artifact)
+            if not csv_data.empty and csv_data.iloc[0].tolist() == csv_data.columns.tolist():
+                csv_data = csv_data.iloc[1:]
+
+            # Create ZIP
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                chunk_size = 10000
+                total_rows = len(csv_data)
+                
+                if total_rows == 0:
+                        zip_file.writestr("data_empty.csv", "")
+                else:
+                    for i in range(0, total_rows, chunk_size):
+                        chunk = csv_data.iloc[i:i+chunk_size]
+                        csv_string = chunk.to_csv(index=False)
+                        zip_file.writestr(f"data_part_{i//chunk_size}.csv", csv_string)
+            
+            zip_buffer.seek(0)
+            print(f"Sending zip file of size: {len(zip_buffer.getvalue())} bytes")
+            await self.send(bytes_data=zip_buffer.getvalue())
+
+        else:
+            print(f"csv_data received (error): {csv_data}")
+            # send error to front
+            await self.send(
+                text_data=json.dumps({
+                    "type": "get_data_error",
+                    "data": str(csv_data)
+                })
+            )
+
+    async def _handle_files(self, data: dict):
+        message = data.get("files")
+        print(f"Message received: {message}")
+        ### todo impl, cachiin (bq->byes + embed -> ss -> if exists: get id(name) -> save local; else: self.handle fiels incl embeds -> bq
+        files = data.get("files", [])
+        self.handle_files(
+            files=files
+        )
+
+        # get guard of user
+        name = f"GUARD_{self.user_id}"
+        ref = self.g.G.nodes[name]
+        ray.get(ref.handle_mod_stack.remote(
+            files
+        ))
+
+        await self.send(
+            text_data=json.dumps({
+                "type": "message",
+                "data": "Messages processed successfully",
+            })
+        )
+
+    async def _handle_delete_env(self, data: dict):
+        env_id = data.get("env_id")
+        self.db_manager.delete_data(
+            path=f"users/{self.user_id}/env/{env_id}"
+        )
+        try:
+            self.created_envs.remove(env_id)
+        except ValueError:
+            pass
+        await self.send(
+            text_data=json.dumps({
+                "type": "delete_env",
+                "data": f"Deleted {env_id} succsssfully",
+            })
+        )
+
+    async def _handle_extend_gnn(self, data: dict):
+        # extend a gnn with
+        pass
+
+    async def _handle_train_gnn(self, data: dict):
+        """
+        get nv ids fetch data and train a gan e.g.
+        """
+        pass
+
+    async def _handle_create_visuals(self, data: dict):
+        """
+        Fetch ad create visuals for a single env.
+        The requested anmation gets returned in mp4 format (use visualizer)
+        """
+        # create expensive id map
+        # -> fetch rows for each px t=0
+        # sleep.1
+        # restart ->
+        pass
+
+    async def _handle_create_kg(self, data: dict):
+        env_ids:list[str] = data.get("env_ids")
+        """
+        create nx from all envs
+        embed 
+        langchain grag
+        store local fro query 
+        """
+        pass
+
+    async def _handle_start_sim_wrapper(self, data: dict):
+        # APPLY COLLECTED FILE NAMES TO ENVS
+        """
+        for env_id in self.created_envs:
+            path = f"users/{self.user_id}/env/{env_id}"
+            self.db_manager.upsert_data(
+                path=path,
+                data={"files": self.file_store},
+            )
+        """
+        # todo distribute to corrrect files
+        await self.handle_sim_start(data)
 
 
 
@@ -368,27 +701,39 @@ class Relay(
                     base64_string=f_bytes
                 )
 
-                self.file_store.append(name)
+                #
 
+                #self.file_store.append(name)
+
+                """
                 self.db_manager.upsert_data(
                     path=f"{self.user_id}/files",
                     data={
                         name: base64.b64encode(f_bytes).decode("utf-8")
                     }
                 )
+                """
                 print("Uploaded file:", name)
 
 
     async def handle_sim_start(self, data):
         print("START SIM REQUEST RECEIVED")
+        # Start metering
+        if self.active_sim_task:
+            self.active_sim_task.cancel()
+        self.active_sim_task = asyncio.create_task(self.monitor_resources())
+        
         env_ids:list[str] = data.get("data", {}).get("env_ids")
+        self.current_sim_env_ids = env_ids
         for env_id in env_ids:
             try:
                 if self.world_creator.env_id_map:
+
                     self.deployment_handler.create_vm(
                         instance_name=env_id,
                         testing=self.testing,
                     )
+
                     await self.send(
                         text_data=json.dumps({
                             "type": "deployment_success",
@@ -502,6 +847,44 @@ class Relay(
         )
 
         print("classification recieved:", classification)
+
+        if classification == "upgrade":
+             # Default to +1 upgrade
+             PLANS = ["free", "magician", "wizard"]
+             PLAN_PRICES = {
+                "free": None,
+                "magician": os.environ.get("PRICE_MAGICIAN", "price_1Qj..."), 
+                "wizard": os.environ.get("PRICE_WIZARD", "price_1Qk...")
+             }
+             
+             user_doc = self.firestore.get_user_doc(self.user_id)
+             current_plan = user_doc.get("plan", "free") if user_doc else "free"
+             
+             try:
+                current_idx = PLANS.index(current_plan)
+             except ValueError:
+                current_idx = 0
+             
+             new_idx = min(len(PLANS) - 1, current_idx + 1)
+             new_plan = PLANS[new_idx]
+             
+             if new_plan == current_plan:
+                 await self.send(text_data=json.dumps({
+                     "type": "payment_info",
+                     "data": "You are already on the highest plan."
+                 }))
+                 return
+
+             price_id = PLAN_PRICES.get(new_plan)
+             if price_id:
+                 url = await self.create_stripe_session(price_id)
+                 if url:
+                     await self.send(text_data=json.dumps({
+                         "type": "payment_url",
+                         "data": url,
+                         "plan": new_plan
+                     }))
+             return
 
         if classification in self.chat_classifier.use_cases:
             result = self.chat_classifier.use_cases[classification]

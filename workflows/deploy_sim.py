@@ -191,7 +191,6 @@ class DeploymentHandler(VMMaster):
 
         self.user_id=user_id
         self.env_creator = EnvCreatorProcess(self.user_id)
-        self.artifact_admin = ArtifactAdmin()
         self.port = 8000
 
         self.test_vm_cfg: dict[str, Any] = {
@@ -235,6 +234,8 @@ class DeploymentHandler(VMMaster):
             self,
             testing,
             instance_name,
+            image,
+            container_env,
         ):
         print(f"{testing} create_vm {instance_name}")
         try:
@@ -242,7 +243,9 @@ class DeploymentHandler(VMMaster):
                 cfg = self.test_vm_cfg
             else:
                 cfg = self.get_prod_vm_cfg(
-                    instance_name
+                    instance_name,
+                    image,
+                    container_env,
                 )
             self.create_instance(
                 **cfg
@@ -254,6 +257,8 @@ class DeploymentHandler(VMMaster):
     def get_prod_vm_cfg(
             self,
             instance_name,
+            conainer_image,
+            container_env,
     ) -> dict[str, Any]:
         return {
             "instance_name": instance_name,
@@ -275,10 +280,8 @@ class DeploymentHandler(VMMaster):
             "gpu_type": "nvidia-tesla-t4",
             "gpu_count": 1,
             # 3. Custom Container Image
-            "container_image": self.artifact_admin.get_latest_image(),
-            "container_env": self.env_creator.create_env_variables(
-                env_id=instance_name
-            ),
+            "container_image": conainer_image,
+            "container_env": container_env,
             "boot_disk_size_gb": 30,
             "boot_disk_type": "pd-balanced",
         }
@@ -417,6 +420,11 @@ class DeploymentHandler(VMMaster):
                 cmd.append(f"--{key}={value}")
 
         return cmd
+
+    def stop_vm(self, instance_name):
+        print(f"Stopping VM: {instance_name}")
+        cmd = ["gcloud", "compute", "instances", "delete", instance_name, f"--zone={self.zone}", "--quiet"]
+        exec_cmd(cmd)
 
     def cleanup(self):
         """

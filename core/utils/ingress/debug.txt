@@ -1,0 +1,7 @@
+kubectl get ingress -A
+kubectl describe ingress <ingress-name>
+
+
+# DELETE
+kubectl delete ingress --all -n default
+kubectl delete svc --all -n default

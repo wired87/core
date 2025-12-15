@@ -1,0 +1,7 @@
+cd fb_core && \
+git init && \
+git add . && \
+git commit -m "hi" && \
+git remote add fb https://github.com/wired87/fb_core && \
+git push fb master && \
+cd ..

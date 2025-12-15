@@ -1,0 +1,6 @@
+rm -rf qf_core_base  && \\
+rm -rf _ray_core && \\
+rm -rf fb_core && \\
+git clone https://github.com/wired87/qf_core_base && \\
+git clone https://github.com/wired87/_ray_core && \\
+git clone https://github.com/wired87/fb_core
