@@ -1,6 +1,7 @@
 import asyncio
 import os
 import pprint
+import json
 from tempfile import TemporaryDirectory
 from typing import List
 
@@ -162,7 +163,7 @@ class EnvCreatorProcess:
     async def world_creator(self, world_cfgs:dict , local=True):
         # todo need to outsource creation logic to new pod
         data = self.create_creation_payload(world_cfgs)
-        # mark: need this data pckg for postrequest
+        # mark: need this admin_data pckg for postrequest
         if local is True:
             for cfg in data:
                 """create_process(
@@ -186,7 +187,7 @@ class EnvCreatorProcess:
 
     def upsert_node_cfg(self, node_cfg: NodeCFGType):
         # todo drf view for async gathering -> o direkt in bq schon aufgesetzt
-        print("Starting Firebase upsert for config data...")
+        print("Starting Firebase upsert for config admin_data...")
 
         for ferm_id, upsert_content in node_cfg["node_cfg"].items():
             # upsert_content = value, phase
@@ -238,7 +239,8 @@ class EnvCreatorProcess:
         return new_struct
 
 
-    def create_env_variables(self, env_id, cfg:dict) -> dict:
+    def create_env_variables(self, env_id, cfg:dict=None) -> dict:
+        cfg = cfg or {}
         env_vars_dict = {
             "DOMAIN": "www.bestbrain.tech",
             "GCP_ID": "aixr-401704",
@@ -252,7 +254,10 @@ class EnvCreatorProcess:
             "GKE_SIM_CLUSTER_NAME": os.environ.get("GKE_SIM_CLUSTER_NAME"),
             "SG_DB_ID": env_id,
             "GEMINI_API_KEY": os.environ["GEMINI_API_KEY"],
-            **cfg,
+            **{
+                k: (json.dumps(v) if not isinstance(v, str) else v)
+                for k, v in cfg.items()
+            },
         }
         return env_vars_dict
 
@@ -300,7 +305,8 @@ class EnvCreatorProcess:
 
 
 
-ec = EnvCreatorProcess(
+if __name__ == "__main__":
+    ec = EnvCreatorProcess(
         user_id=TEST_USER_ID,
     )
 

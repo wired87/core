@@ -39,7 +39,7 @@ class DataProducer:
         self.writer = broker_writer
 
     async def send(self, payload):
-        # Use ray.put for large data
+        # Use ray.put for large admin_data
         await self.writer.write(payload)
 
 
@@ -51,7 +51,7 @@ class DataCollector:
     async def run(self):
         """Continuously consume and clear messages in time order."""
         async for msg in self.reader:
-            timestamp, data = msg["ts"], msg["data"]
+            timestamp, data = msg["ts"], msg["admin_data"]
             # Process message
             print(f"[Collector] {timestamp}: {data}")
             # After processing, the message is auto-removed from buffer
@@ -78,7 +78,7 @@ async def main():
     # 4. Send messages
     import time
     for i in range(10):
-        payload = {"ts": time.time(), "data": f"msg-{i}"}
+        payload = {"ts": time.time(), "admin_data": f"msg-{i}"}
         [await p.send.remote(payload) for p in producers]
         await asyncio.sleep(0.1)
 

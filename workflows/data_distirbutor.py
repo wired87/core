@@ -29,7 +29,7 @@ class DataDistributor:
     async def send_data(self, data={}):
         env_id = data.get("env_id")
         if self.testing is False:
-            # generate data
+            # generate admin_data
             if env_id is not None:
                 db_root = f"users/{self.user_id}/env/{env_id}/datastore/"
                 raw_data:dict = self.db_manager.get_data(db_root)
@@ -45,6 +45,6 @@ class DataDistributor:
             text_data=json.dumps({
                 "type": self.send_type,
                 "message": "success",
-                "data": data
+                "admin_data": data
         }))
         print("Data sidtributed to foront")

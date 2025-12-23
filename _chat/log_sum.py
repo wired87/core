@@ -1,6 +1,6 @@
 import json
 
-from app_utils import USER_ID, ENV_ID
+from core.app_utils import USER_ID, ENV_ID
 
 
 class LogAIExplain:

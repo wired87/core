@@ -1,39 +1,66 @@
 import base64
+import pprint
 import time
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any
 
-# import ray
-import ray
-from ray import get_actor
-
-
 from _god.create_world import God
-from _ray_core.globacs.state_handler.main import StateHandler
+from core._ray_core.globacs.state_handler.main import StateHandler
 
 from bob_builder.artifact_registry.artifact_admin import ArtifactAdmin
-from core.app_utils import ENVC
+from core.app_utils import SCHEMA_GRID
 
 from gnn_master.pattern_store import GStore
-from module_manager.mcreator import ModuleCreator
+from core.module_manager.mcreator import ModuleCreator
 from qf_utils.all_subs import ALL_SUBS
+from qf_utils.field_utils import FieldUtils
+from workflows.deploy_sim import DeploymentHandler
+
+class PatternMaster:
+
+    def __init__(self, g):
+        self.g=g
+        self.modules_struct=[]
+
+
+    def get_empty_field_structure(self):
+        modules = self.g.get_nodes(
+            filter_key="type",
+            filter_value="MODULE",
+        )
+
+        self.modules_struct = [[] for _ in range(len(modules))]
+
+        for i, (mid, m) in enumerate(modules):
+            # get module fields
+            fields = self.g.get_neighbor_list(
+                node=mid,
+                target_type="FIELD",
+            )
+            field_struct = [[] for _ in range(len(fields))]
+
+            # SET EMPTY DIMS FOR EACH FIELD
+            self.modules_struct[i] = field_struct
+        return self.modules_struct
+
+
 
 class Guard(
     StateHandler,
-    #DataUtils,
     God,
+    FieldUtils,
+PatternMaster,
 ):
     # todo answer caching
     # todo cross module param edge map
     """
-    nodes -> guard: extedn data
+    nodes -> guard: extedn admin_data
     """
 
     def __init__(
         self,
         qfu,
         g,
+        user_id,
     ):
         print("Initializing Guard...")
         super().__init__()
@@ -42,26 +69,32 @@ class Guard(
             g,
             qfu,
         )
-
+        PatternMaster.__init__(
+            self,
+            g,
+        )
+        self.user_id=user_id
+        self.deployment_handler = DeploymentHandler(
+            user_id
+        )
         self.world_cfg=None
-        self.inj_pattern=None
         self.artifact_admin = ArtifactAdmin()
 
-        self.gpu = get_actor("UPDATOR")
         self.time = 0
 
         self.qfu = qfu
         self.g = g
-
         self.ready_map = {
             k: False
             for k in ALL_SUBS
         }
 
-        self.mcreator = ModuleCreator()
+        self.mcreator = ModuleCreator(
+            self.g.G,
+            self.qfu,
+            self.world_cfg,
+        )
         self.modules = self.mcreator.load_sm()
-
-        self.updator_name = "UPDATOR"
 
         self.pattern_arsenal = GStore
 
@@ -71,42 +104,143 @@ class Guard(
         self.fnished_modules = False
 
         self.fields = []
-        self.store = [
-            []
-            for _ in range(self.amount_nodes)
-        ]
+
         print("Guard Initialized!")
+
+
+    def main(self, env_ids:list[str]):
+        """
+        CREATE/COLLECT PATTERNS FOR ALL ENVS AND CREATE VM
+        """
+
+        # all modules are ready build?
+        finished_modules = False
+        while not finished_modules:
+            print("check modules ready")
+            all_modules = [nid for nid, _ in self.g.get_nodes(filter_key="type", filter_value="MODULE")]
+            finished_modules = self.all_nodes_ready(all_modules)
+            time.sleep(1)
+
+        # pattern extractor -> include all fields
+        # need
+        # inj
+        # wcfg
+        self.compile_pattern()
+        self.create_db()
+        self.set_param_pathway()
+
+        for env in env_ids:
+            inj_pattern = self.g.get_neighbor_list(
+                node=env,
+                target_type="INJECTION_PATTERN",
+            )
+
+            # CREATE VM PAYLOAD
+            docker_payload = {
+                "UPDATOR_PATTERN": self.module_pattern_collector,
+                "DB": self.db,
+                "AMOUNT_NODES": self.amount_nodes,
+                "INJECTION_PATTERN": inj_pattern,
+                "TIME": self.world_cfg,
+                "ENERGY_MAP": self.module_map_entry
+            }
+            print(f"DOCKER ENV VARS CREATED FOR {env}:")
+            pprint.pp(docker_payload)
+
+            # PUBLISH VM
+            self.deploy_sim(
+                env,
+                env_var_cfg=docker_payload
+            )
+
+        print(f"Deployment of {env_ids} Finished!")
+
+
+    def get_inj_pattern_data(self):
+        return {
+            "amount_nodes": self.amount_nodes,
+            "fields": self.fields,
+        }
+
+
+    def get_state(self):
+        return len(self.fields) and self.world_cfg
+
 
     def set_inj_pattern(
             self,
             inj_pattern:dict[
                 str, dict[tuple, list[list, list]]
-            ] # pos:time,val -> entire sim len captured
+            ], # pos:time,val -> entire sim len captured
+            env_id:str
     ):
-        self.inj_pattern = [[] for _ in range(
-            len(self.schema_grid)
-        )]
-        for ipos, item in inj_pattern:
-            self.inj_pattern[
-                self.schema_grid.index(ipos)
-            ]:list[list, list] = item
-        print("set_inj_pattern finished")
+        """
+        frontend -> relay-> inj_pattern
+        self.inj_pattern = [
+            [pos, [[t],[e]]],
+        ]
+        """
+        # retrieve empty struct based on all fieds and modules creatde
+        inj_struct = self.get_empty_field_structure()
 
+        for ntype, pos_inj_struct in inj_pattern.items():
+            fattrs = self.g.G.nodes[ntype]
+            module_index: int = fattrs["module_index"]
+            field_index:int = fattrs["field_index"]
+            for pos, inj_pattern in pos_inj_struct:
+                inj_struct[
+                    module_index
+                ][
+                    field_index
+                ][
+                    SCHEMA_GRID.index(pos)
+                ] = inj_pattern
+
+        # INJECTION_STRUCT -> G
+        inj_id = f"inj_{env_id}"
+        self.g.add_node(
+            dict(
+                nid=inj_id,
+                pattern=inj_struct,
+                type="INJECTION_PATTERN",
+            )
+        )
+
+        # ENV -> INJECTION_STRUCT
+        self.g.add_edge(
+            src=env_id,
+            trgt=inj_id,
+            attrs=dict(
+                src_layer="ENV",
+                trgt_layer="INJECTION_PATTERN",
+                rel="has_injection_pattern",
+                # **edge_yaml_cache[edge_key],
+            )
+        )
+        print("set_inj_pattern finished")
 
 
     def set_wcfg(self, world_cfg):
         self.world_cfg = world_cfg
+
         self.amount_nodes = world_cfg["amount_nodes"]
+
         self.schema_grid = [
             (i, i, i)
-            for i in range(len(self.amount_nodes))
+            for i in range(self.amount_nodes)
         ]
 
+        node = {
+            "nid": world_cfg["env_id"],
+            "cfg": world_cfg,
+            "params": self.create_env(),
+            "type": "ENV",
+        }
 
-    def xtend_store(self, obj_ref, index:int):
-        self.store[index] = ray.get(obj_ref)
-        print("All data placed for", index)
-        return
+        self.g.add_node(node)
+        return node
+
+
 
 
     def handle_module_ready(
@@ -120,39 +254,57 @@ class Guard(
         """
         try:
             self.g.G.nodes[mid]["ready"] = True
+            self.g.G.nodes[mid]["field_keys"] = field_ids
         except Exception as e:
             print("Err receive_ready", mid, e)
 
 
-    def deploy_sim(self, user_id, env_id):
-        from workflows.deploy_sim import DeploymentHandler
-        self.deployment_handler = DeploymentHandler(
-            user_id
+    def set_param_pathway(
+            self,
+            trgt_key="energy"
+    ) -> list[list[int]]:
+        # exact same format
+        print("set_param_pathway started")
+        modules = self.g.get_nodes(
+            filter_key="type",
+            filter_value="MODULE",
         )
 
-        # all modules are ready build?
-        finished_modules=False
-        while not finished_modules:
-            finished_modules = self.all_nodes_ready(self.modules)
-            time.sleep(1)
+        self.module_map_entry = [
+            [] for _ in range(len(modules))
+        ]
 
-        # pattern extractor -> include all fields
-        self.compile_pattern()
-        self.create_db()
-        docker_payload = {
-            "UPDATOR_PATTERN":self.module_pattern_collector,
-            "DB": self.db,
-            "AMOUNT_NODES": self.amount_nodes,
-            "INJECTION_PATTERN": self.inj_pattern,
-            "TIME": self.world_cfg,
-        }
+        for mid, mattrs in modules:
+            # get param (method) neighbors
+            # get params
+            # extract index
+            mindex = mattrs["module_index"]
+            fields:list[tuple] = self.g.get_neighbor_list(
+                node=mattrs["nid"],
+                target_type="FIELD"
+            )
+            energy_param_map=[
+                None
+                for _ in range(len(fields))
+            ]
+            for fid, fattrs in fields:
+                try:
+                    energy_param_map[fattrs["field_index"]
+                    ] = fattrs["field_keys"].index(
+                        trgt_key
+                    )
+                except Exception as e:
+                    print(f"Err map pathway to param:{trgt_key}: {e}")
+            self.module_map_entry[mindex] = energy_param_map
+        print(f"param map to {trgt_key} build")
 
+
+    def deploy_sim(self, env_id, env_var_cfg):
         # DEPLOY
-        container_env = self.env_creator.create_env_variables(
+        container_env = self.deployment_handler.env_creator.create_env_variables(
             env_id=env_id,
-            cfg=docker_payload
+            cfg=env_var_cfg
         )
-
         self.deployment_handler.create_vm(
             instance_name=env_id,
             testing=self.testing,
@@ -163,6 +315,7 @@ class Guard(
 
 
     def set_param_edge_pattern(self):
+            
         modules = self.g.get_nodes(
             filter_key="type",
             filter_value="MODULE",
@@ -234,6 +387,7 @@ class Guard(
 
 
     def create_injector(self):
+
         from injector import Injector
         self.injector = Injector.options(
             name="INJECTOR",
@@ -258,7 +412,7 @@ class Guard(
 
     def create_and_distribute_data(self):
         """
-        Loop modules -> fields -> data(params)
+        Loop modules -> fields -> admin_data(params)
         write param to nnx.Module
         """
 
@@ -276,14 +430,14 @@ class Guard(
             )
 
             for fid, fattrs in fields:
-                params:dict[str, Any] = fattrs["data"]
+                params:dict[str, Any] = fattrs["admin_data"]
 
                 for i, (k, v) in enumerate(params.items()):
                     # get param module
                     param = self.g.G.nodes[k]
                     module = param["module"]
 
-                    # add data
+                    # add admin_data
                     module.add_data(
                         v,
                         self.amount_nodes
@@ -302,84 +456,66 @@ class Guard(
             )
         )
 
-    def handle_mod_stack(self, files:list[Any]):
+    def handle_mod_stack(
+            self,
+            files:list[Any],
+            root
+    ):
         """
         receive files
         write to temp
         load in ModuleCreator -> create modules
         """
-
-        tmp = TemporaryDirectory()
-        root = Path(tmp.name)
-
+        print("handle_mod_stack")
         for f in files:
             # Pflichtfelder
             fname = f["name"]
             rel_path = f.get("path", fname)
-            raw = base64.b64decode(f["data"])
-
+            raw = base64.b64decode(f["admin_data"])
             target = root / rel_path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(raw)
 
-        self.modules.append(self.mcreator.main(
+        # create modules form files -> save converted in G
+        self.mcreator.main(
             temp_path=root
-        ))
-
-        print("modules created successfully")
-
-
-
-
-
-
-
-    def module_creator_worker(self):
-        # Create Lexi -> load arsenal
-        ref = ModuleCreator.options(
-            lifetime="detached",
-            name="MODULE_CREATOR"
-        ).remote()
-        self.modules = ray.get(ref.main.remote())
+        )
+        print("handle_mod_stack finished successfully")
 
 
     def create_db(self):
         """
-        collect all nodes values and stack
+        collect all nodes values and stack with axis def
+        -> uniform for all envs
         """
-        self.db = []
+        self.db = self.get_empty_field_structure()
 
         modules = self.g.get_nodes(
             filter_key="type",
             filter_value="MODULE",
         )
+
         for mid, m in modules:
-            mod_db = []
             fields = self.g.get_neighbor_list(
                 node=mid,
                 target_type="FIELD",
             )
 
-
-            for fid, fattrs in fields:
-                node = self.g.get_node(nid=fid)
-                mod_db.append(
-                    [
-                        node["value"],
-                        node["axis_def"]
+            if len(fields) > 0:
+                #print(f"Fields for {mid} : {fields}")
+                for fid, fattrs in fields.items():
+                    self.db[m["module_index"]][fattrs["field_index"]] = [
+                        fattrs["value"],
+                        fattrs["axis_def"]
                     ]
-                )
-            self.db.append(mod_db)
-
+            else:
+                print(f"NO fields for {mid}: {fields}")
 
 
     def compile_pattern(self):
-        def get_param(*args):
-            return [
-                *args,
-            ]
-
         try:
+            compiler_struct = self.get_empty_field_structure()
+
             # GET MODULE todo filter for Guard
             modules = self.g.get_nodes(
                 filter_key="type",
@@ -408,7 +544,7 @@ class Guard(
                     for _ in range(len(meq))
                 ]
 
-                for fid, fattrs in fields:
+                for fid, fattrs in fields.items():
                     field_index = fattrs["field_index"]
 
                     for mindex, (eqid, eqattrs) in enumerate(meq):
@@ -426,26 +562,27 @@ class Guard(
                             target_type="PARAM",
                         )
 
-                        for pid, pattrs in params:
+                        for pid, pattrs in params.items():
                             pval = pattrs["value"]
 
-                            #
+                            # SELF PARAM
                             if pid in keys:
                                 pindex = keys.index(pid)
 
                                 axis_def.append(faxis_def[pindex])
                                 method_param_collector.append(
-                                    get_param(
-                                        [j,
-                                        pindex,
-                                        nfield_index,]
-                                    )
+                                        [
+                                            j,
+                                            pindex,
+                                            nfield_index,
+                                        ]
+
                                 )
 
                             # ENV ATTR
-                            elif pid in ENVC:
+                            elif pid in self.env:
 
-                                pindex = list(ENVC.keys()).index(pid)
+                                pindex = list(self.env.keys()).index(pid)
                                 # add axis def
                                 axis_def.append(None)
 
@@ -457,14 +594,13 @@ class Guard(
                                     ]
                                 )
                             else:
-                                # check
+                                # NEIGHBOR VALUE
                                 for j, module in enumerate(modules):
                                     nmkeys: list[str] = module["keys"]
                                     if pid in nmkeys:
                                         pindex = nmkeys.index(pid)
 
-                                        # loop fields of module
-
+                                        # loop neighbors of field
                                         fneighbors = self.g.get_neighbor_list(
                                             node=fid,
                                             target_type="has_finteractant",
@@ -473,20 +609,22 @@ class Guard(
                                         # get neighbors from field
                                         # mark: nfield-index represents row
                                         # of GT
-                                        for nfid, nfattrs in fneighbors:
+                                        for nfid, nfattrs in fneighbors.items():
                                             nfield_index = nfattrs["field_index"]
                                             nfaxis_def: list[str] = module["axis_def"]
 
                                             # add axis def
-                                            axis_def.append(nfaxis_def[nfield_index])
+                                            axis_def.append(
+                                                nfaxis_def[nfield_index]
+                                            )
 
                                             # append method to
                                             method_param_collector.append(
-                                                get_param(
+                                                [
                                                     j,
                                                     pindex,
                                                     nfield_index,
-                                                )
+                                                ]
                                             )
 
                         return_index_map = [
@@ -495,6 +633,7 @@ class Guard(
                             field_index,
                         ]
 
+                        # save equation interaction pattern
                         modules_param_map[i].append(
                             [
                                 eqattrs["callable"],
@@ -523,7 +662,7 @@ class Guard(
                             method_modules=modules_param_map
                         )
                     """
-                    print(f"EQ pattern for written")
+                    print(f"EQ interaction pattern set up", self.module_pattern_collector)
         except Exception as e:
             print(f"Err compile_pattern: {e}")
 
@@ -540,23 +679,27 @@ class Guard(
         )
 
         # bring to exec order
-        meq = sorted(meq, key=lambda x: x["method_index"], reverse=True)
+        meq = sorted(meq.values(), key=lambda x: x["method_index"], reverse=True)
         return meq
 
-@ray.remote
-class GuardWorker(Guard):
-    def __init__(
-        self,
-        world_cfg,
-        qfu,
-        g,
-    ):
-        Guard.__init__(
+try:
+    import ray
+    from ray import get_actor
+    @ray.remote
+    class GuardWorker(Guard):
+        def __init__(
             self,
-            world_cfg,
             qfu,
             g,
-        )
-
+            user_id
+        ):
+            Guard.__init__(
+                self,
+                qfu,
+                g,
+                user_id
+            )
+except Exception as e:
+    print("Ray not accessible:", e)
 
 

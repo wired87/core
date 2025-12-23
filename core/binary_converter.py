@@ -55,7 +55,7 @@ class CompilerEngine:
             "--onefile",
             f"--output-dir={self.output_dir}",
             f"--output-filename={OUTPUT_EXECUTABLE_NAME}",
-            f"--include-data-dir={self.root_dir}=.",  # Include the whole source tree as data (if needed)
+            f"--include-data-dir={self.root_dir}=.",  # Include the whole source tree as admin_data (if needed)
             str(self.main_file_path)
         ]
 

@@ -2,13 +2,12 @@ import os
 import ray
 from ray import get_actor
 
-from _ray_core.base.admin_base import RayAdminBase
-from _ray_core.globacs.state_handler.main import StateHandler
+from core._ray_core.base.admin_base import RayAdminBase
+from core._ray_core.globacs.state_handler.main import StateHandler
 from fb_core.real_time_database import FBRTDBMgr
 
-from app_utils import DOMAIN, USER_ID, TESTING, ENVC
+from core.app_utils import DOMAIN, TESTING
 from gnn_master.node_refactored import Node
-from guard import GuardWorker
 
 from qf_utils.all_subs import ALL_SUBS
 from qf_utils.field_utils import FieldUtils
@@ -37,7 +36,7 @@ class Relay(
     design it like
     indem ich auf zeitsprünge überschpringen kann, kann cih mich überall in ruamund zeit bewegen
 
-    Get data from change stream
+    Get admin_data from change stream
 
     filter table type
 
@@ -60,6 +59,7 @@ class Relay(
 
         self.utils = get_actor("UTILS_WORKER")
         self.sh = StateHandler()
+        self.fu = FieldUtils()
 
         self.interactive_field_neighbors = None
         self.id = "relay"
@@ -84,12 +84,12 @@ class Relay(
         self.db_swat_set = False
 
         self.world_cfg=world_cfg
-        self.sim_time_s = self.world_cfg["sim_time_s"]
+        self.sim_time = self.world_cfg["sim_time"]
         self.time = 0
         self.cluster_ncfg = None
         self.modules = {}
 
-        self.g = GUtils(USER_ID, G=self.get_G())
+        self.g = GUtils(G=self.get_G())
         self.finished_fworkers = False
         self.finished_mworkers = False
         self.ready_map = {sub: False for sub in ALL_SUBS}
@@ -97,14 +97,14 @@ class Relay(
         print("RELAY INITIALIZED")
 
 
-    def prepare(self):
+    def prepare(self, ):
         print("======== RELAY PREPARE ========")
         try:
             self.g = GUtils(
-                user_id=USER_ID,
                 G=self.get_G()
             )
-            self.qfu = QFUtils(self.g)
+            self.qfu = QFUtils(
+                g=self.g)
             self.main()
         except Exception as e:
             print("Err prepare relay:", e)
@@ -119,7 +119,6 @@ class Relay(
             # todo relay ahndles cration
 
             # deploy GUARD
-            self.deploy_guard()
 
             self.create_gpu_updator()
 
@@ -137,8 +136,8 @@ class Relay(
 s    ):
         try:
             # todo before ups filter attrs
-            # todo make data avaialble shets connect bq
-            # l todo visualizie just when requested -> create programatic data shematic
+            # todo make admin_data avaialble shets connect bq
+            # l todo visualizie just when requested -> create programatic admin_data shematic
             # l todo apply ml -> host vertex
             print(f"RELAY FINISHED: {gid}")
 
@@ -162,7 +161,7 @@ s    ):
         self.sh.await_alive(["UTILS_WORKER"])
 
         # Increment time if simulation is still running
-        if self.time < self.world_cfg["sim_time_s"]:
+        if self.time < self.world_cfg["sim_time"]:
             self.time += 1
             print("GLOBAC_STORE")
             # Print global store for debugging
@@ -188,7 +187,7 @@ s    ):
                     lifetime="detached",
                     name=f"UPDATOR",
                 ).remote(
-                    env=ENVC,
+                    env=self.fu.env,
                     device=self.device,
                     max_index=len(ALL_SUBS),
                     amount_nodes=self.world_cfg["amount_nodes"],
@@ -198,7 +197,7 @@ s    ):
         self.sh.await_alive(["UPDATOR"])
         print("finished module_updaes")
 
-
+    # wa macht Gine in ihrer Freizeit abgesehen von arbeii?
 
     def get_px_and_subs(self, id_map):
         """
@@ -219,60 +218,3 @@ s    ):
         return px_changed_node_struct
 
 
-
-
-
-"""
-    def trigger_module_creation(
-            self
-    ) -> Callable:
-        try:
-            print("start RELAY._process_and_trigger_pathway")
-
-            # await mworkers alive
-            self.sh.await_alive(
-                list(self.modules.keys())
-            )
-
-            # await fworkers alive
-            self.sh.await_alive(ALL_SUBS)
-
-            # fworkers finished init?
-            all_fw_finished = self.all_nodes_ready(
-                ALL_SUBS
-            )
-
-
-            # bring them to exec orderd format
-            ordered_methods = self.get_execution_order(
-                arsenal_methods
-            )
-
-            # extract pattern
-            for ntype in ALL_SUBS:
-                parent = self.parent_ntype(ntype)
-                for item in self.couplings[parent].items():
-
-            ntype_index_pattern_map = []
-            for ntype in ALL_SUBS:
-                print("module", ntype)
-                try:
-                    field_index_map = []
-                    for nntype in self.coupling_partners[ntype]:
-                        field_index_map.append(ALL_SUBS.index(nntype))
-
-                    ntype_index_pattern_map.append(field_index_map)
-
-                except Exception as e:
-                    print(f"Err RELAY._process_and_trigger_pathway: {e}")
-            print("end RELAY._process_and_trigger_pathway")
-
-            get_actor("UPDATOR").main.remote(
-            )
-
-        except Exception as e:
-            print("Err RELAY._process_and_trigger_pathway: ", e)
-
-
-
-"""

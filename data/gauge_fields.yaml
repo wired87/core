@@ -1,0 +1,26 @@
+photon:
+  charge: 0.0
+  mass: 0.0
+  g: 1.0
+  spin: 1
+w_plus:
+  charge: 1
+  mass: 80.379
+  g: 0.653
+  spin: 1
+w_minus:
+  charge: -1
+  mass: 80.379
+  g: 0.653
+  spin: 1
+z_boson:
+  charge: 0
+  mass: 91.1876
+  g: 0.743
+  spin: 1
+
+gluon:
+  charge: 0.0
+  mass: 0.0
+  g: 1.22
+  spin: 1

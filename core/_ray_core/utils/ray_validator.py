@@ -1,13 +1,13 @@
 import ray
-from app_utils import GLOBAC_STORE
+from core.app_utils import GLOBAC_STORE
 
 
 class RayValidator:
     def __init__(self, host=None, g_utils=None, g=None):
         self.host = host
         if self.host is None:
-            from qf_utils.calculator.calculator import Calculator
-            from qf_utils.qf_utils import QFUtils
+            from core.qf_utils.calculator.calculator import Calculator
+            from core.qf_utils.qf_utils import QFUtils
             self.g_utils = g or g_utils
             self.qfu = QFUtils(
                 self.g_utils,

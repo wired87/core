@@ -4,9 +4,9 @@ import time
 
 import ray
 
-from _ray_core.base._ray_utils import RayUtils
-from app_utils import LOGGING_DIR, FB_DB_ROOT, GLOBAC_STORE
-from _ray_core.base.base import BaseActor
+from core._ray_core.base._ray_utils import RayUtils
+from core.app_utils import LOGGING_DIR, FB_DB_ROOT, GLOBAC_STORE
+from core._ray_core.base.base import BaseActor
 from utils.last_folder_from_dir import get_last_modified_folder
 from utils.logger import get_log_id
 

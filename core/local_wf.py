@@ -4,9 +4,8 @@ import ray
 from tempfile import TemporaryDirectory
 
 
-from _ray_core.base.base import BaseActor
-from app_utils import USER_ID
-from qf_utils.qf_utils import QFUtils
+from core._ray_core import BaseActor
+from core.qf_utils.qf_utils import QFUtils
 from utils.file._csv import dict_2_csv_buffer, collect_keys
 from utils.graph.local_graph_utils import GUtils
 
@@ -25,7 +24,7 @@ class DataStoreWorker(BaseActor):
 
     def store_data(self, data_ref):
         data:list[dict] =  ray.get(data_ref)
-        # format id:tid:data
+        # format id:tid:admin_data
         for attrs in data:
             nid = attrs["nid"]
             if nid not in self.datastore:
@@ -50,13 +49,13 @@ class StateDataWorker(BaseActor, QFUtils):
     """
 
     def __init__(self, G):
-        self.g = GUtils(user_id=USER_ID, G=G)
+        self.g = GUtils(G=G)
 
         BaseActor.__init__(self)
         QFUtils.__init__(self, g=self.g)
 
     def initialize_data_structures(self):
-        # Set up the main data containers for classified nodes and edges
+        # Set up the main admin_data containers for classified nodes and edges
 
         # Keep track of all created/processed node and neighbor IDs
         self.id_map = set()

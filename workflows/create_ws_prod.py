@@ -83,7 +83,7 @@ class WorldCreationWf:
             text_data=json.dumps(
                 {
                     "type": "world_cfg",
-                    "data": "Started creation successfully",
+                    "admin_data": "Started creation successfully",
                 }
             )
         )
@@ -99,7 +99,8 @@ class WorldCreationWf:
         print("start creation thread")
 
         def run():
-            asyncio.run(self.create_process(self.world_cfg_struct))
+            from asgiref.sync import async_to_sync
+            async_to_sync(self.create_process)(self.world_cfg_struct)
 
         self.data_thread = threading.Thread(
             target=run,
@@ -140,7 +141,7 @@ class WorldCreationWf:
         await self.parent.send(
             text_data=json.dumps({
                 "type": "world_content",
-                "data": data
+                "admin_data": data
             }
             ))
 
@@ -156,7 +157,7 @@ class WorldCreationWf:
                 db_root=self.database
             )
 
-            # Build a G from init data and load in self.g
+            # Build a G from init admin_data and load in self.g
             self.g.build_G_from_data(initial_data,)
 
         # EXTEND WITH METADATA
@@ -176,7 +177,7 @@ class WorldCreationWf:
 
         print("metadata received:", data.keys())
         if data:
-            # print("data[metadata]", data["metadata"])
+            # print("admin_data[metadata]", admin_data["metadata"])
             for node_id, metadata in data["metadata"].items():
                 meta_of_interst = {k: v for k, v in metadata.items() if k not in ["id"]}
                 print(f"add {meta_of_interst} to {node_id}")
@@ -208,7 +209,7 @@ class WorldCreationWf:
         await self.parent.send(text_data=json.dumps({
             "type": "creds",
             "message": "success",
-            "data": {
+            "admin_data": {
                 "creds": self.db_manager.fb_auth_payload,
                 "db_path": os.environ.get("FIREBASE_RTDB"),
                 "listener_paths": listener_paths
@@ -254,10 +255,10 @@ class WorldCreationWf:
         # Get a reference to the specific node/structure
         node_reference = self.database.child(path)
 
-        # Retrieve the data as a dictionary
+        # Retrieve the admin_data as a dictionary
         data_dictionary = node_reference.get()
 
-        # Check if data exists
+        # Check if admin_data exists
         if data_dictionary and isinstance(data_dictionary, dict):
             # Get and return the list of keys
             return data_dictionary.keys()

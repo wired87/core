@@ -2,9 +2,9 @@ import jax.numpy as jnp
 from jax import jit, vmap
 from typing import List, Dict, Any, Tuple
 
-from sm.higgs.phi_utils import HiggsUtils
+from core.sm.higgs.phi_utils import HiggsUtils
 from qf_utils.field_utils import FieldUtils
-from _ray_core.utils.ray_validator import RayValidator
+from core._ray_core.utils.ray_validator import RayValidator
 from utils._np.serialize_complex import check_serialize_dict
 
 
@@ -66,7 +66,7 @@ def _single_point_update(
     lambda_h = (mass ** 2) / (2 * vev ** 2)
     mu = compute_mu_jax(vev, lambda_h)
 
-    # 3. Calculate Laplacian (Requires neighbor data)
+    # 3. Calculate Laplacian (Requires neighbor admin_data)
     laplacian_h = 0.0
     # NOTE: The loop over neighbor_data MUST be handled using JAX array operations
     # (e.g., jnp.sum on pre-structured arrays) for true JAX/GPU parallelism.
@@ -127,7 +127,7 @@ class HiggsBase(
 ):
     """
     HiggsBase class optimized for GPU parallel processing using JAX vmap/jit.
-    All stateful data is managed in the 'attrs' list of dicts.
+    All stateful admin_data is managed in the 'attrs' list of dicts.
     """
 
     def __init__(self, env):
@@ -157,16 +157,16 @@ class HiggsBase(
 
 
         # NOTE: This JAX setup is highly dependent on the input format of neighbor_pm_val_same_type.
-        # It assumes the neighbor data is also pre-batched and aligned with the attrs batch.
+        # It assumes the neighbor admin_data is also pre-batched and aligned with the attrs batch.
 
     def main(
             self,
-            attrs: List[dict],  # Input data is now a list of field point dictionaries
+            attrs: List[dict],  # Input admin_data is now a list of field point dictionaries
             all_subs: dict,
             neighbor_pm_val_same_type,  # Also batched, typically struct-of-arrays
     ) -> dict:
         """
-        The main method orchestrates data flow, triggering the parallel JAX update.
+        The main method orchestrates admin_data flow, triggering the parallel JAX update.
         """
         # 1. Data Conversion and Preparation (Non-JAX Python/Ray scope)
         # Scale list horizontal
@@ -178,7 +178,7 @@ class HiggsBase(
         d_params = {key: self.d[key] for key in self.d}
 
         # 3. Parallel GPU Execution (JIT and VMAP)
-        # Call the pre-compiled, vectorized function on the batched data
+        # Call the pre-compiled, vectorized function on the batched admin_data
         updated_attrs_soa = self._jitted_vmapped_update(
             current_attrs_soa,
             neighbor_pm_val_same_type,  # Assumed to be SOA

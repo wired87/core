@@ -14,7 +14,6 @@ from utils.file._yaml import load_yaml
     g = GUtils(
         nx_only=True,
         g_from_path=None,
-        user_id=user_id,
         enable_data_store=True
     )
 
@@ -72,7 +71,7 @@ def upsert_env(user_id, env_id, world_cfg):
     """print("Upsert Empty Datastor")
     db_manager.firebase.upsert_data(
         path=datastore_dest,
-        data={},
+        admin_data={},
         list_entry=False
     )"""
 

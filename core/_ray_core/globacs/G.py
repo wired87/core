@@ -7,12 +7,12 @@ from ray import get_actor, ObjectRef
 
 from ray.util.state.common import ActorState, WorkerState
 
-from _ray_core.base._ray_utils import RayUtils
-from _ray_core.base.base import BaseActor
-from _ray_core.globacs.state_handler.main import StateHandler
-from app_utils import FB_DB_ROOT, SESSION_ID, USER_ID, ARSENAL_PATH
+from core._ray_core.base._ray_utils import RayUtils
+from core._ray_core.base.base import BaseActor
+from core._ray_core.globacs.state_handler.main import StateHandler
+from core.app_utils import FB_DB_ROOT, SESSION_ID, USER_ID, ARSENAL_PATH
 from qf_utils.all_subs import ALL_SUBS
-from qf_utils.qf_utils import QFUtils
+from core.qf_utils.qf_utils import QFUtils
 
 from utils.graph.local_graph_utils import GUtils
 
@@ -27,12 +27,12 @@ class UtilsWorker(
 
     """
 
-    ToDo do not return whole g, create wrapper to return just data needed
+    ToDo do not return whole g, create wrapper to return just admin_data needed
 
     """
 
     def __init__(self, world_cfg):
-        GUtils.__init__(self, USER_ID)
+        GUtils.__init__(self)
         BaseActor.__init__(self)
         self.env_cfg = None
         self.state_handler = None
@@ -90,7 +90,6 @@ class UtilsWorker(
     def interactionG(self):
         print("get_data_state_G")
         state_G = GUtils(
-            USER_ID,
             G=nx.Graph()
         )
         try:
@@ -306,13 +305,12 @@ class UtilsWorker(
 
     
     def set_G(self, G):
-        print(f"Set G in UtilsWorker {self.user_id}")
+        print(f"Set G in UtilsWorker {USER_ID}")
         self.G=G
 
     def get_data_state_G(self):
         print("get_data_state_G")
         state_G = GUtils(
-            USER_ID,
             G=nx.Graph()
         )
         try:

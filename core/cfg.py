@@ -3,7 +3,7 @@ from typing import Callable
 
 
 def case_handling() -> dict[str, Callable]:
-    from module_manager.converter import Converter
+    from core.module_manager.converter import Converter
     return {
         "convert_modules": Converter,
     }
@@ -19,8 +19,8 @@ RELAY_CONFIG = {
 
     },
     "start_sim": {
-        "description": "Process of starting and converting all module files specified in arsenal dir."
-        "action": create_guard
+        "description": "Process of starting and converting all module files specified in arsenal dir.",
+        "action": "create_guard"
     }
 }
 

@@ -2,7 +2,7 @@ import os
 
 import requests
 
-from app_utils import ENV_ID, FB_DB_ROOT
+from core.app_utils import ENV_ID, FB_DB_ROOT
 
 from fb_core.real_time_database import FBRTDBMgr
 from utils.file._yaml import load_yaml
@@ -33,20 +33,20 @@ vars_dict = {
 
 auth_payload = {
     "type": "auth",
-    "data": {
+    "admin_data": {
         "key": ENV_ID
     }
 }
 
 deploy_payload = {
     "type": "deploy",
-    "data": {
+    "admin_data": {
         "stim_cfg": {}
     }
 }
 
 state_payload = {  # InboundPayload
-    "data": {
+    "admin_data": {
         "type": "start",
     },
     "type": "state_change",

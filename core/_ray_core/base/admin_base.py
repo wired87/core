@@ -11,8 +11,8 @@ from ray.exceptions import RayActorError
 from ray.util.state import list_actors
 from ray.util.state.common import ActorState
 
-from app_utils import TESTING, ENV_ID
-from _ray_core.base.base import BaseActor
+from core.app_utils import TESTING, ENV_ID
+from core._ray_core.base.base import BaseActor
 from utils.run_subprocess import exec_cmd
 
 OS_NAME = os.name

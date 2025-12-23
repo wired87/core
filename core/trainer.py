@@ -14,7 +14,7 @@ from utils.graph.local_graph_utils import GUtils
 class LiveTrainer:
 
     """
-    Live data trainer auf pixel basis
+    Live admin_data trainer auf pixel basis
     """
 
     def __init__(self, G):
@@ -36,7 +36,6 @@ class LiveTrainer:
             nx_only=False,
             G=self.G,
             g_from_path=None,
-            user_id=self.user_id,
         )  # -> DataManager -> local
 
         print("[LiveTrainer] Initialisiert.")

@@ -70,7 +70,7 @@ class FermionFieldVisualizer(ThreeDScene):
         self.add(axes)
         self.add_labels(axes) # Optional: Add axis labels
 
-        # Create simulated fermion nodes (replace with actual data from your simulator)
+        # Create simulated fermion nodes (replace with actual admin_data from your simulator)
         # We will create a small grid of nodes
         fermion_nodes = []
         grid_step = 2.0

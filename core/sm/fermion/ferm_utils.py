@@ -1,6 +1,4 @@
 import numpy as np
-from jax import lax, jit
-import jax.numpy as jnp
 from qf_utils.field_utils import FieldUtils
 
 
@@ -91,7 +89,7 @@ class FermUtils(
         #print("self_nid", self_nid)
 
         # alltimes 3,4
-        total_down_psi_sum = jnp.zeros_like(psi, dtype=complex)
+        total_down_psi_sum = np.zeros_like(psi, dtype=complex)
 
         ckm_struct = self.ckm[self.short_lower_type]  # e.g. {"d": 0.974, "s": 0.225, "b": 0.004}
         for quark_type, ckm_val in ckm_struct.items():
@@ -123,7 +121,7 @@ class FermUtils(
 
         #print(f"psi_self: {psi_self}-{psi_self.shape}")
         #print(f"total_down_psi_sum: {total_down_psi_sum}")
-        doublet = jnp.stack([psi, total_down_psi_sum], axis=1)
+        doublet = np.stack([psi, total_down_psi_sum], axis=1)
         #print(f"Quark doublet extracted: {doublet, doublet.shape}")
 
         return doublet
@@ -136,7 +134,7 @@ class FermUtils(
     def _init_psi(self, ntype, s=False, stim=True):
         random_stim = 1 if stim else 0
         if ntype.lower() in self.leptons:
-            psi = jnp.array([
+            psi = np.array([
                 [0.0 + 0.0j],
                 [random_stim + 0.0j],
                 [0.0 + 0.0j],
@@ -145,7 +143,7 @@ class FermUtils(
 
         elif ntype.lower() in self.quarks:
             # Beispiel: Dirac-Spinor für einen up-Quark (Farbraum + Spinor → 3x4 Matrix)
-            psi = jnp.array([
+            psi = np.array([
                 [1.0 + 0.0j, random_stim + 0.0j, random_stim + 0.0j, 0.0 + 0.0j],  # Rot
                 [0.0 + 0.0j, 1.0 + 0.0j, 0.0 + 0.0j, random_stim + 0.0j],  # Grün
                 [random_stim + 0.0j, random_stim + 0.0j, 1.0 + 0.0j, random_stim + 0.0j],  # Blau
@@ -186,21 +184,20 @@ class FermUtils(
             #print("gluon T", T)
 
         elif ntype == "w_plus":
-            T = jnp.array([[0, 1], [0, 0]], dtype=complex)
+            T = np.array([[0, 1], [0, 0]], dtype=complex)
             #print("w+ T", T)
 
         elif ntype == "w_minus":
-            T = jnp.array([[0, 0], [1, 0]], dtype=complex)
+            T = np.array([[0, 0], [1, 0]], dtype=complex)
             #print("w- T", T)
         return T
 
-    @jit
     def _get_gauge_generator_kernel(
             self,
-            attrs: dict[str, jnp.ndarray],  # Batched data is unused, but required by vmap pattern
+            attrs: dict[str, np.ndarray],  # Batched admin_data is unused, but required by vmap pattern
             static_data: dict,  # Holds constants and matrices
             gauge_index: int,  # STATIC argument (0:Photon, 1:Z, 2:Gluon, 3:W+, 4:W-)
-    ) -> jnp.ndarray:
+    ) -> np.ndarray:
         """
         Calculates the gauge group generator T using JAX-compatible conditional logic.
 
@@ -221,14 +218,14 @@ class FermUtils(
         # Case 0: Photon
         def photon_case(args):
             Q, len_psi = args
-            return Q * jnp.identity(len_psi, dtype=jnp.complex64)
+            return Q * np.identity(len_psi, dtype=np.complex64)
 
         # Case 1: Z_Boson
         def z_boson_case(args):
             theta_w, su2_generators = args
             T3 = su2_generators[2]  # Third Pauli matrix
-            Y = 0.5 * jnp.identity(T3.shape[0], dtype=jnp.complex64)  # Identity matrix for weak hypercharge
-            return jnp.cos(theta_w) * T3 - jnp.sin(theta_w) * Y
+            Y = 0.5 * np.identity(T3.shape[0], dtype=np.complex64)  # Identity matrix for weak hypercharge
+            return np.cos(theta_w) * T3 - np.sin(theta_w) * Y
 
         # Case 2: Gluon
         def gluon_case(args):
@@ -237,11 +234,11 @@ class FermUtils(
 
         # Case 3: W_Plus
         def w_plus_case(args):
-            return jnp.array([[0, 1], [0, 0]], dtype=jnp.complex64)
+            return np.array([[0, 1], [0, 0]], dtype=np.complex64)
 
         # Case 4: W_Minus
         def w_minus_case(args):
-            return jnp.array([[0, 0], [1, 0]], dtype=jnp.complex64)
+            return np.array([[0, 0], [1, 0]], dtype=np.complex64)
 
         # --- Use jax.lax.switch to select the correct kernel based on the static index ---
 
@@ -283,7 +280,7 @@ class FermUtils(
         Ja. W⁺/W⁻ koppeln ausschließlich an linkshändige Fermionen.
         """
 
-        term = jnp.zeros_like(psi, dtype=complex)
+        term = np.zeros_like(psi, dtype=complex)
         """
         T = self._get_gauge_generator_kernel(
             ntype,

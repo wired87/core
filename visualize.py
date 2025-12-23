@@ -25,9 +25,9 @@ def _process_single_table(
     except Exception as e:
         return f"BigQuery Extraction Failed for {table_id}: {e}"
 
-    # Format data: Header followed by rows
+    # Format admin_data: Header followed by rows
     if not rows:
-        data = [["No data found for table."]]
+        data = [["No admin_data found for table."]]
     else:
         header = [field.name for field in query_job.result().schema]
         data = [header] + [list(row.values()) for row in rows]
@@ -46,7 +46,7 @@ def get_convert_bq_table(
         credentials_file: Optional[str] = None
 ) -> List[str]:
     """
-    Retrieves all tables from a BigQuery dataset, extracts data from each,
+    Retrieves all tables from a BigQuery dataset, extracts admin_data from each,
     loads them into new, public Google Sheets, and returns a list of URLs.
     """
 

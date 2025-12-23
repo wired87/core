@@ -9,8 +9,8 @@ import base64
 from io import BytesIO
 
 from qf_core_base import USER_ID
-from sm import FermUtils
-from sm.gauge.gauge_utils import GaugeUtils
+from core.sm import FermUtils
+from core.sm.gauge.gauge_utils import GaugeUtils
 from qf_utils.all_subs import ALL_SUBS, FERMIONS, G_FIELDS
 from qf_utils.field_utils import FieldUtils
 
@@ -189,7 +189,7 @@ class Visualizer(
             # Get all nodes for current timestep
             current_step_data = []
             for k, v in field_data.items():
-                current_step_data.append(v["data"][frame_idx])
+                current_step_data.append(v["admin_data"][frame_idx])
 
             # Node positions (you must have "pos" attribute)
             positions = [item["pos"] for item in current_step_data]
@@ -306,7 +306,7 @@ class Visualizer(
             self.frames.append(field_data)
 
     def _create_frame_bytes(self, field_data, ntype):
-        """Create a static image from field data and return it as bytes b64"""
+        """Create a static image from field admin_data and return it as bytes b64"""
 
        #print("_create_frame_bytes", field_data)
         ax = plt.axes(projection="3d")

@@ -1,14 +1,13 @@
 import ray
-from _ray_core.base._ray_utils import RayUtils
-from app_utils import FB_DB_ROOT, GLOBAC_STORE
+from core._ray_core.base._ray_utils import RayUtils
 
 
 class StateHandlerUtils(RayUtils):
 
-    def __init__(self, run):
+    def __init__(self, run,fb_user_root=None):
         super().__init__()
         self.run = run
-        self.database=FB_DB_ROOT
+        self.database=fb_user_root
 
         self.upsert_endpoint= "/metadata"
 
@@ -23,11 +22,11 @@ class StateHandlerUtils(RayUtils):
         }
 
         # ALL PXs
-        all_px = ray.get(GLOBAC_STORE["UTILS_WORKER"].call.remote(
+        """all_px = ray.get(GLOBAC_STORE["UTILS_WORKER"].call.remote(
             method_name="get_nodes",
             filter_key="type",
             filter_value=["PIXEL"]
-        ))
+        ))"""
 
         # CREATE STRUCT
         activate_struct = {

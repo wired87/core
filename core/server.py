@@ -4,7 +4,7 @@ import ray
 import uvicorn
 from fastapi import Body
 
-from app_utils import APP, FB_DB_ROOT, GLOBAC_STORE
+from core.app_utils import APP, FB_DB_ROOT, GLOBAC_STORE
 from fb_core.real_time_database import FBRTDBMgr
 
 
@@ -28,10 +28,10 @@ async def root_cluster(payload: dict = Body(...)):
             resp = ray.get(
                 GLOBAC_STORE["HEAD"].handle_extern_message.remote(payload, gloal_state)
             )
-            return {"status": "success", "data": resp}
+            return {"status": "success", "admin_data": resp}
         else:
             print("Request failed")
-            return {"status": "success", "data": {"message": "Sim not ready now"}}
+            return {"status": "success", "admin_data": {"message": "Sim not ready now"}}
     except Exception as e:
         print(f"Error while forwarding to Head: {e}")
         return {"status": "error", "msg": str(e)}

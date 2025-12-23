@@ -1,11 +1,11 @@
 import ray
 
-from _ray_core.base.base import BaseActor
-from _ray_core.globacs.G import UtilsWorker
-from _ray_core.globacs.logger_worker import LoggerWorker
-from _ray_core.globacs.head import Head
-from _ray_core.globacs.state_handler.main import StateHandler
-from _ray_core.globacs.state_handler.state_handler import StateHandlerWorker
+from core._ray_core.base.base import BaseActor
+from core._ray_core.globacs.G import UtilsWorker
+from core._ray_core.globacs.logger_worker import LoggerWorker
+from core._ray_core.globacs.head import Head
+from core._ray_core.globacs.state_handler.main import StateHandler
+from core._ray_core.globacs.state_handler.state_handler import StateHandlerWorker
 
 
 @ray.remote

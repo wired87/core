@@ -1,7 +1,7 @@
 import ray
 from ray import get_actor
 
-from _ray_core.base._ray_utils import RayUtils
+from core._ray_core.base._ray_utils import RayUtils
 
 
 class BaseActor(RayUtils):

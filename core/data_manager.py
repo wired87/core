@@ -1,6 +1,6 @@
 import ray
 
-from app_utils import USER_ID, ENV_ID
+from core.app_utils import USER_ID, ENV_ID
 from fb_core.fb_to_table import TimeSeriesFBConverter
 from fb_core.real_time_database import FBRTDBMgr
 
@@ -30,7 +30,7 @@ class DataManager:
         )
 
         for nid, entries in data.items():
-            # convert and save ts data csv
+            # convert and save ts admin_data csv
             file_name = f"{nid}.csv"
             self.data_converter.convert_to_tables(
                 entries,

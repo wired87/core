@@ -4,8 +4,8 @@ import ray
 import dotenv
 dotenv.load_dotenv()
 
-from app_utils import ENV_ID, GLOBAC_STORE
-from _ray_core.base.base import BaseActor
+from core.app_utils import ENV_ID, GLOBAC_STORE
+from core._ray_core.base.base import BaseActor
 from qf_utils.all_subs import ALL_SUBS
 
 
@@ -268,7 +268,7 @@ class Head(BaseActor):
         """
         Handle external messages forwarded by the server.
         
-        Example data package to be sent (returned) for payment:
+        Example admin_data package to be sent (returned) for payment:
         {
             "type": "payment",
             "state": 1, # 1 for upgrade, -1 for downgrade
@@ -321,7 +321,7 @@ class Head(BaseActor):
                     # Encode to JPEG
                     _, buffer = cv2.imencode('.jpg', frame)
                     jpg_as_text = base64.b64encode(buffer).decode('utf-8')
-                    image_data = f"data:image/jpeg;base64,{jpg_as_text}"
+                    image_data = f"admin_data:image/jpeg;base64,{jpg_as_text}"
                     
                     return {
                         "type": "camera_capture",

@@ -1,9 +1,9 @@
-import jax
+import numpy as np
 
 from data import FERM_PARAMS
-from sm.fermion.ferm_utils import FermUtils
+from core.sm.fermion.ferm_utils import FermUtils
 
-import jax.numpy as jnp
+
 
 class FermCreator(FermUtils):
 
@@ -83,6 +83,7 @@ class FermCreator(FermUtils):
         return attr_struct
 
     def create_f_core(self, pos, item, just_v=False, just_k=False):
+        # just get shape of the structure
         psi = self.field_value(pos)
         field = dict(
             gterm=0,
@@ -102,44 +103,48 @@ class FermCreator(FermUtils):
             return field.values()
         if just_k:
             return field.keys()
-        return jax.device_put(field)
+        return field
 
     def create_f_core_batch(
             self,
             ntype,
-            amount_nodes,
-            dim,
+            dim:int = 4,
             just_v=False,
             just_k=False,
     ):
-        psi = self.field_values(amount_nodes, dim)
-        item = FERM_PARAMS[ntype]
-        field = dict(
-            gterm=self.field_value(dim),
-            yterm=self.field_value(dim),
+        try:
+            psi = self.field_value(dim=dim)
+            item = FERM_PARAMS[
+                ntype
+            ]
 
-            gf_coupling=psi,
-            gg_coupling=psi,
+            field = dict(
+                gterm=psi,
+                yterm=psi,
+                gf_coupling=psi,
+                gg_coupling=psi,
+                dmu_psi= self.dmu(dim),
+                psi=psi,
+                dirac=psi,
+                psi_bar=psi,
+                prev=psi,
+                velocity=psi,
+                **item,
+            )
 
-            dmu_psi=jnp.stack([self.dmu(amount_nodes, dim) for _ in range(len(amount_nodes))]),
+            if just_v:
+                return field.values()
 
-            psi=psi,
-            dirac=psi,
-            psi_bar=psi,
-            prev=psi,
+            if just_k:
+                return field.keys()
 
-            velocity=self.field_value(dim),
+            return field
+        except Exception as e:
+            print(f"Err create_f_core_batch: {e}")
 
-            **item,
-        )
 
-        if just_v:
-            return field.values()
-        if just_k:
-            return field.keys()
-        return jax.device_put(field)
 
-    def build_
+
 
 
     def create_quark(self, pos, item, just_v=False):

@@ -2,16 +2,22 @@ import random
 
 import ray
 
-from _ray_core.base.base import BaseActor
-from app_utils import FB_DB_ROOT, TESTING, USER_ID, DIM
+from core._ray_core.base.base import BaseActor
+from core.app_utils import FB_DB_ROOT, TESTING
 from fb_core.real_time_database import FBRTDBMgr
 from qf_utils.all_subs import ALL_SUBS
+
+from qf_utils.field_utils import FieldUtils
 from qf_utils.qf_utils import QFUtils
 from utils.graph.local_graph_utils import GUtils
 
 
 @ray.remote
-class Injector(BaseActor):
+class Injector(
+    BaseActor,
+    FieldUtils,
+):
+
     """
     fetch and save ncfg
     Todo later come back to blcoks and phase. for now keep jus blocks
@@ -21,15 +27,18 @@ class Injector(BaseActor):
             world_cfg
     ):
         BaseActor.__init__(self)
+        FieldUtils.__init__(self)
         self.ncfg = {}
         self.world_cfg = world_cfg
         self.amount_nodes = world_cfg["amount_nodes"]
         self.firebase = FBRTDBMgr()
 
-        self.sim_time = world_cfg["sim_time_s"]
+        self.sim_time = world_cfg["sim_time"]
+
         self.cluster_schema = []
+
         self.schema = [
-            (0 for _ in DIM)
+            (0 for _ in self.dim)
             for _ in range(self.amount_nodes)
         ]
         self.injector_schema:dict[str, dict] = self.christmas_tree()
@@ -137,7 +146,6 @@ class Injector(BaseActor):
     ):
 
         self.g = GUtils(
-            user_id=USER_ID,
             G=self.get_G(),
         )
 

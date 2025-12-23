@@ -15,7 +15,7 @@ sudo systemctl restart fail2ban
 sudo journalctl -u gunicorn -f
 
 """
-
+# on win source .venv/Scripts/activate
 raw_init=r"""
 sudo apt update && sudo apt install python3.11-venv git tmux -y && \
 python3 -m venv workenv && git clone https://github.com/wired87/BestBrain.git && \

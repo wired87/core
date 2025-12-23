@@ -4,7 +4,7 @@ import os
 import ray
 from fastapi import Body
 from ray import serve
-from app_utils import APP, FB_DB_ROOT
+from core.app_utils import APP, FB_DB_ROOT
 from utils.id_gen import generate_id
 
 
@@ -55,11 +55,11 @@ class Guard:
         self.logger.info(f"Guard: post message registered:{payload}")
         try:
             response = await self.handle_extern_message(payload)
-            return {"status": "success", "data": response}
+            return {"status": "success", "admin_data": response}
         except Exception as e:
             self.logger.error(f"Error while processing: {e}")
             data = e
-        return {"status": "error", "data": data}
+        return {"status": "error", "admin_data": data}
 
 
     async def handle_extern_message(self, payload):
@@ -69,7 +69,7 @@ class Guard:
         try:
             self.logger.info(f"MSG FROM EXTERM RECEIVED: {payload}")
             payload_type = payload["type"]
-            data = payload.get("data")
+            data = payload.get("admin_data")
             if payload_type == "auth":
                 return self._init_hs_relay(data)
 
@@ -88,7 +88,7 @@ class Guard:
 
         self.logger.info("Guard: Init request received")
 
-        if "realy_id" in data and "key" in data:  # and "env_vars" in data
+        if "realy_id" in data and "key" in data:  # and "env_vars" in admin_data
             # Handshake - Key to save
             self.extern_key = data["key"]
             realy_id = data["realy_id"]
@@ -104,9 +104,9 @@ class Guard:
                 "message": "Invalid request"
             }
 
-    """def deploy_single_namespace(self, data):
+    """def deploy_single_namespace(self, admin_data):
         # node_cfg : pixel_utils, node_utils : list[id] : attrs, env_content.
-        node_cfg = data["node_utils"]
+        node_cfg = admin_data["node_utils"]
         env_content = node_cfg["env_content"]
 
         self.deploy_workers(

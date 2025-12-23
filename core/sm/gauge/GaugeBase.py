@@ -1,12 +1,12 @@
 from jax import jit
 
-from _ray_core.utils.ray_validator import RayValidator
+from core._ray_core.utils.ray_validator import RayValidator
 
 from itertools import product
 
 import jax.numpy as jnp
 
-from sm.gauge.gauge_utils import GaugeUtils
+from core.sm.gauge.gauge_utils import GaugeUtils
 
 """
 #Vertex
@@ -347,7 +347,7 @@ def _gluon_interaction(self, field_key):
                 node=nid,
                 target_type="PHI",
             )
-            hattrs = self.restore_selfdict(data=hattrs)
+            hattrs = self.restore_selfdict(admin_data=hattrs)
 
             if hid is not None:
                 new_j_nu += self.j_nu_higgs(

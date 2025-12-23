@@ -2,9 +2,9 @@ import jax.numpy as jnp
 from jax import jit, vmap
 from typing import Tuple, List, Dict, Any  # Used for type hints, as requested
 
-from arsenal.FERMION import dmu_psi, psi_bar, gterm, yterm, dirac, psi
-from arsenal.GAUGE import dmuG, dmu_fmunu, fmunu, gg_coupling, gf_coupling, j_nu, field_value
-from arsenal.HIGGS import dmu_h, lambda_H, dV_dh, h
+from core.arsenal.FERMION import dmu_psi, psi_bar, gterm, yterm, dirac, psi
+from core.arsenal.GAUGE import dmuG, dmu_fmunu, fmunu, gg_coupling, gf_coupling, j_nu, field_value
+from core.arsenal.HIGGS import dmu_h, lambda_H, dV_dh, h
 
 
 # Assume all helper functions (dmu_h, dirac, h, fmunu, etc.)
@@ -63,7 +63,7 @@ def sm(
     gg_current = gg_coupling(g_c, gauge_grid, gauge_neighbors_gg)
 
     # Placeholder for Fermion current calculation (needs psi_bar, gamma, T-matrices, etc.)
-    # Note: gf_coupling expects a tuple/list of neighbor data (psi, psi_bar, etc.)
+    # Note: gf_coupling expects a tuple/list of neighbor admin_data (psi, psi_bar, etc.)
     # We use psi_bar here for the current calculation
     psi_bar_res = psi_bar(psi_grid, gamma_matrices)
 

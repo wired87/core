@@ -2,6 +2,7 @@ import os
 from google.cloud import compute_v1
 from typing import List, Dict, Optional
 
+from auth.load_sa_creds import load_service_account_credentials
 from auth.set_gcp_auth_creds_path import set_gcp_auth_path
 
 import dotenv
@@ -23,7 +24,9 @@ class VMMaster:
                                         GCP_PROJECT_ID environment variable.
             zone (str, optional): The GCP zone. Defaults to "us-central1-a".
         """
-        self.client = compute_v1.InstancesClient()
+        self.client = compute_v1.InstancesClient(
+            credentials=load_service_account_credentials()
+        )
         self.project_id = project_id or os.environ.get("GCP_PROJECT_ID")
         self.zone = zone
 

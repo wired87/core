@@ -1,9 +1,6 @@
 from typing import Union
-
 import numpy as np
-
 from qf_utils.field_utils import FieldUtils
-import jax.numpy as jnp
 
 class HiggsUtils(FieldUtils):
 
@@ -45,7 +42,7 @@ class HiggsUtils(FieldUtils):
         """
         #if a_ssb is True:
         # Nach SSB: 2 komplexe Komponenten (Beispielwerte)
-        d_phi = jnp.zeros((4,2), dtype=complex)
+        d_phi = np.zeros((4,2), dtype=complex)
         return d_phi
 
     ###############
@@ -59,7 +56,7 @@ class HiggsUtils(FieldUtils):
         warum ein 4,2 shape
         jede Raumzeit-Komponente kompletten Dublett-Vektor
         """
-        terms = jnp.zeros((4, 2), dtype=complex)
+        terms = np.zeros((4, 2), dtype=complex)
         for mu in range(4):
             terms[mu] = 1j * g * field_value[mu] * phi
         return terms

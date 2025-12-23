@@ -5,11 +5,25 @@ import os
 from datetime import timedelta
 import logging
 
+import dotenv
 import matplotlib
 from django.utils.module_loading import import_string
 
 from bm.logging_custom import cpr
-import dotenv
+
+import numpy as np
+try:
+    import jax
+    import jax.numpy as jnp
+except ImportError:
+    from unittest.mock import MagicMock
+    mock_jax = MagicMock()
+    mock_jax.numpy = np
+    sys.modules["jax"] = mock_jax
+    sys.modules["jax.numpy"] = np
+    jnp = np
+
+dotenv.load_dotenv()
 
 
 OS_NAME = os.name
@@ -22,7 +36,6 @@ else:
     GOOGLE_APPLICATION_CREDENTIALS = "/home/derbenedikt_sterra/BestBrain/_google/g_auth/aixr-401704-59fb7f12485c.json"
 
 
-dotenv.load_dotenv()
 
 # Set absolute path to pythonpath
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -41,7 +54,7 @@ if os.name == "nt":
     TEST_USER_ID = "rajtigesomnlhfyqzbvx"
     REQUEST_URL = "http://127.0.0.1:8000/"
     GCP_TOKEN =r"C:\Users\wired\OneDrive\Desktop\Projects\bm\ggoogle\g_auth\token.json"
-    matplotlib.use("TkAgg")
+    matplotlib.use("Agg")
     TEST_ENV_ID="env_rajtigesomnlhfyqzbvx_zddioeaduhvnyphluwvu"# one dim for demo_G
     ALLOWED_HOSTS = ["*"]
     WS_URL = "ws://127.0.0.1:8000/"
@@ -217,7 +230,7 @@ CELERYD_CONCURRENCY = 1
 CELERY_WORKER_REDIRECT_STDOUTS = True
 CELERY_WORKER_REDIRECT_STDOUTS_LEVEL = 'INFO'
 
-# REDIS
+"""# REDIS
 REDIS_PUBLIC_ENDPOINT = os.getenv('REDIS_PUBLIC_ENDPOINT')
 REDIS_PORT = os.getenv('REDIS_PORT')
 REDIS_DB_PASSWORD = os.getenv("REDIS_DB_PASSWORD")
@@ -246,6 +259,21 @@ Q_CLUSTER = {
         'socket_timeout': None,
     }
 }
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [f"redis://:{REDIS_DB_PASSWORD}@{REDIS_PUBLIC_ENDPOINT}:{REDIS_PORT or 6379}/0"],
+        },
+    },
+}
+"""
+
+
+
+
+
 
 
 

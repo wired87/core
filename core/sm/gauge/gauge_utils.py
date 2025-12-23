@@ -1,12 +1,8 @@
 import itertools
-import numpy as np
 
-from app_utils import ENVC
 from qf_utils.field_utils import FieldUtils
-from utils._np.serialize_complex import serialize_complex
 
-
-import jax.numpy as jnp
+import numpy as np
 
 class GaugeHiggsCoupling:
 
@@ -63,7 +59,6 @@ class GaugeUtils(FieldUtils):
     def __init__(self):
         super().__init__()
         self.fabc = self.get_fabc()
-        self.env=ENVC
 
     def get_fabc(self):
         """
@@ -86,7 +81,7 @@ class GaugeUtils(FieldUtils):
                     # Für SU(N) üblich normiert auf 2*i
                     f_abc[a, b, c] = (1 / (2j)) * trace_val
 
-        return jnp.imag(f_abc)
+        return np.imag(f_abc)
 
 
 
@@ -173,10 +168,10 @@ class GaugeUtils(FieldUtils):
             T = np.cos(theta_w) * T3 - np.sin(theta_w) * Y
         elif ntype == "w_plus":
             # Ladder operator T+
-            T = jnp.array([[0, 1], [0, 0]], dtype=complex)
+            T = np.array([[0, 1], [0, 0]], dtype=complex)
         elif ntype == "w_minus":
             # Ladder operator T-
-            T = jnp.array([[0, 0], [1, 0]], dtype=complex)
+            T = np.array([[0, 0], [1, 0]], dtype=complex)
         else:
             T = None
         return T
@@ -197,7 +192,7 @@ class GaugeUtils(FieldUtils):
         Returns: j_nu shape (4,)
         """
         import numpy as np
-        j_nu = jnp.zeros(4, dtype=complex)
+        j_nu = np.zeros(4, dtype=complex)
         for nu in range(4):
             sum1 = 0.0
             sum2 = 0.0
@@ -216,7 +211,7 @@ class GaugeUtils(FieldUtils):
         WWZ-Kopplung nach SSB, Strom für das Z-Feld.
         """
         import numpy as np
-        j_nu = jnp.zeros(4, dtype=complex)
+        j_nu = np.zeros(4, dtype=complex)
         cos_theta = np.cos(theta_w)
 
         for nu in range(4):
@@ -248,7 +243,7 @@ class GaugeUtils(FieldUtils):
        #print("=================")
 
         import numpy as np
-        j_nu = jnp.zeros(4, dtype=complex)
+        j_nu = np.zeros(4, dtype=complex)
         for nu in range(4):
             term1 = 0.0
             term2 = 0.0
@@ -340,7 +335,7 @@ class GaugeUtils(FieldUtils):
 
 """
 
-def calculate_f_mu_nu_final_wrapper(self, attrs) -> jnp.ndarray:
+def calculate_f_mu_nu_final_wrapper(self, attrs) -> np.ndarray:
 
     The outer function handling the static string conversion and exception,
     then calling the JAX-optimized core function.
@@ -352,11 +347,11 @@ def calculate_f_mu_nu_final_wrapper(self, attrs) -> jnp.ndarray:
         is_non_abelian_switch = 1.0
         # Initialize self_i if not present (assuming it comes from self in the original class)
         if 'self_i' not in attrs:
-            attrs['self_i'] = jnp.complex64(0.0 + 1.0j)
+            attrs['self_i'] = np.complex64(0.0 + 1.0j)
     elif ntype_str in ["photon", "z_boson", "gluon"]:
         is_non_abelian_switch = 0.0
         if 'self_i' not in attrs:
-            attrs['self_i'] = jnp.complex64(0.0 + 1.0j)
+            attrs['self_i'] = np.complex64(0.0 + 1.0j)
     else:
         # Cannot be avoided in Python for correctness if 'ntype' is unknown
         raise ValueError(f"Unbekanntes ntype: {ntype_str}")
@@ -390,7 +385,7 @@ def calculate_f_mu_nu_final_wrapper(self, attrs) -> jnp.ndarray:
 
 """
 def fmunu_wpm(self, field_value, d_field_value, g):
-    F = jnp.zeros((4, 4, 2, 2), dtype=complex)
+    F = np.zeros((4, 4, 2, 2), dtype=complex)
     for mu in range(4):
         for nu in range(4):
             comm = field_value[mu] @ field_value[nu] - field_value[nu] @ field_value[mu]

@@ -2,11 +2,8 @@ import jax.numpy as jnp
 from jax import jit, vmap
 from typing import List, Dict, Any, Tuple
 
-from sm.fermion.ferm_utils import FermUtils
-from _ray_core.utils.ray_validator import RayValidator
-
-from utils._np.serialize_complex import deserialize_complex
-
+from core.sm.fermion.ferm_utils import FermUtils
+from core._ray_core.utils.ray_validator import RayValidator
 
 
 @jit
@@ -80,7 +77,7 @@ def _single_point_update(
     # NOTE: In a true JAX implementation, dpsi (spatial derivatives) are
     # typically calculated using jnp.roll/convolve on the whole grid,
     # not within the single-point vmap.
-    # Placeholder: assume dpsi is retrieved from pre-calculated data
+    # Placeholder: assume dpsi is retrieved from pre-calculated admin_data
     dpsi = attrs.get('dpsi_kin', jnp.zeros_like(psi))
 
     # 4. Perform Dirac Update (Time Evolution)
@@ -108,7 +105,7 @@ class FermionBase(
 ):
     """
     FermionBase class optimized for GPU parallel processing using JAX vmap/jit.
-    All stateful data is managed via the 'attrs' list of dicts.
+    All stateful admin_data is managed via the 'attrs' list of dicts.
     """
 
     def __init__(self, env):
@@ -130,13 +127,13 @@ class FermionBase(
 
     def main(
             self,
-            attrs: List[dict],  # Input data is now a list of field point dictionaries
-            all_subs: dict,  # Assumed to contain structured neighbor data, converted externally
+            attrs: List[dict],  # Input admin_data is now a list of field point dictionaries
+            all_subs: dict,  # Assumed to contain structured neighbor admin_data, converted externally
             neighbor_pm_val_same_type,
             **kwargs
     ) -> dict:
         """
-        The main method orchestrates data flow, triggering the parallel JAX update.
+        The main method orchestrates admin_data flow, triggering the parallel JAX update.
         """
 
         # 1. Data Conversion (Non-JAX Python/Ray scope)
@@ -190,7 +187,7 @@ class FermionBase(
     def _convert_subscribers_to_soa(self, all_subs: dict) -> Dict[str, jnp.ndarray]:
         """
         PLACEHOLDER: Must implement logic to extract critical gauge/higgs neighbor
-        data from the complex 'all_subs' dictionary and convert it into a
+        admin_data from the complex 'all_subs' dictionary and convert it into a
         simple SOA array structure that aligns with the field point batch.
         """
         # For demonstration, returning a placeholder dictionary of zero arrays

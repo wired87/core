@@ -31,7 +31,7 @@ def start_relay(world_cfg):
 
 
 def create_db_swat(world_cfg):
-    from a_b_c._creators.cloud_creator import CloudMaster
+    from a_b_c import CloudMaster
     ref = CloudMaster.options(
         lifetime="detached",
         name="CLOUD_MASTER"

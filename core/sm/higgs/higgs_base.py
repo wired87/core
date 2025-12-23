@@ -1,11 +1,7 @@
 import numpy as np
-import jax.numpy as jnp
-from jax import jit
-
-from app_utils import ENVC
-from sm.higgs.phi_utils import HiggsUtils
+from core.sm.higgs.phi_utils import HiggsUtils
 from qf_utils.field_utils import FieldUtils
-from _ray_core.utils.ray_validator import RayValidator
+from core._ray_core.utils.ray_validator import RayValidator
 
 class HiggsBase(
     FieldUtils,
@@ -64,7 +60,7 @@ class HiggsBase(
         h = attrs["h"]
         vev = attrs["vev"]
         symbol = "Φ"
-        phi = (1/np.sqrt(2)) * jnp.array([0, vev + h])
+        phi = (1/np.sqrt(2)) * np.array([0, vev + h])
         print(f"{symbol}: {phi}")
         #attrs[""] = new_phi
         return phi
@@ -92,7 +88,7 @@ class HiggsBase(
         vev=attrs["vev"]
         lambda_h=attrs["lambda_h"]
         h=attrs["h"]
-        mu = vev * jnp.sqrt(lambda_h)
+        mu = vev * np.sqrt(lambda_h)
         dV_dh = -mu ** 2 * (vev + h) + lambda_h * (vev + h) ** 3
         print(f"∂V/∂h = {dV_dh}")
         #attrs["dV_dh"] = dV_dh
@@ -127,7 +123,7 @@ class HiggsBase(
 
         s_gradient = np.abs(gradient)
 
-        energy = jnp.array(kinetic + s_gradient + higgs_potential).tolist()
+        energy = np.array(kinetic + s_gradient + higgs_potential).tolist()
         print(f"E = {energy}")
         #attrs["energy"]=energy
         return energy
@@ -168,7 +164,7 @@ class HiggsBase(
         self.neighbor_pm_val_same_type = neighbor_pm_val_same_type
 
         # attrs
-        self.attrs = self.restore_selfdict(data=attrs)
+        self.attrs = self.restore_selfdict(admin_data=attrs)
         for k, v in self.attrs.items():
             setattr(self, k, v)
 
@@ -199,11 +195,9 @@ class HiggsBase(
     def __init__(self):
         HiggsUtils.__init__(self)
         FieldUtils.__init__(self)
-        self.env = ENVC.copy()
         self.d = self.env["d"]  # distance
         self.symbol = "Φ"
 
-    @jit
     def main(
             self,
             attrs,
@@ -217,7 +211,7 @@ class HiggsBase(
         self.h(attrs)
         self.energy_density(attrs)
 
-    @jit
+    
     def d_phi(self, attrs, neighbor_pm_val_same_type):
         d_phi = self._dX(
             attrs=attrs,
@@ -228,21 +222,21 @@ class HiggsBase(
         print(f"∂μh(x):{d_phi}")
         return d_phi
 
-    @jit
+    
     def phi(self, h, vev):
         """
         h = attrs["h"]
         vev = attrs["vev"]
         """
-        new_phi = (1/np.sqrt(2)) * jnp.array([0, vev + h])
+        new_phi = (1/np.sqrt(2)) * np.array([0, vev + h])
         print(f"{self.symbol}: {new_phi}")
         return new_phi
 
-    @jit
+    
     def _mass_term(self, h, mass):
         return -mass ** 2 * h
 
-    @jit
+    
     def h(self, h, mass, h_prev, laplacian_h, dV_dh):
         # Klein-Gordon-Update (explizit)
         """
@@ -258,7 +252,7 @@ class HiggsBase(
         print(f"h(x): {h}")
         return h
 
-    @jit
+    
     def higgs_potential_derivative(
             self,
             vev,
@@ -270,12 +264,12 @@ class HiggsBase(
         lambda_h=attrs["lambda_h"]
         h=attrs["h"]
         """
-        mu = vev * jnp.sqrt(lambda_h)
+        mu = vev * np.sqrt(lambda_h)
         dV_dh = -mu ** 2 * (vev + h) + lambda_h * (vev + h) ** 3
         print(f"∂V/∂h = {dV_dh}")
         return dV_dh
 
-    @jit
+    
     def lambda_H(self, mass,vev):
         """
         Higgs-Selbstkopplung
@@ -288,7 +282,7 @@ class HiggsBase(
         print(f"λ_H = {lambda_h}")
         return lambda_h
 
-    @jit
+    
     def energy_density(self, d_phi, mass,h,vev,laplacian_h):
         """
         Lokale Energiedichte des Feldpunktes:
@@ -301,12 +295,12 @@ class HiggsBase(
 
         s_gradient = np.abs(gradient)
 
-        energy = jnp.array(kinetic + s_gradient + potential).tolist()
+        energy = np.array(kinetic + s_gradient + potential).tolist()
         # LOGGER.info("self.energy updated", self.energy, type(self.energy))
         print(f"E = {energy}")
         return energy
 
-    @jit
+    
     def _higgs_potential(self, mass,h,vev,laplacian_h):
         """
         V(h) = 0.5 m^2 h^2 + λ v h^3 + 0.25 λ h^4
@@ -325,7 +319,7 @@ class HiggsBase(
         )
         return h_potential
 
-    @jit
+    
     def laplacian_h(
             self,
             h,

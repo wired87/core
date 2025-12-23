@@ -2,9 +2,9 @@ import ast
 import inspect
 import os
 
-from ray import get_actor
+#from ray import get_actor
 
-from app_utils import TESTING, USER_ID
+from core.app_utils import TESTING, USER_ID, ARSENAL_PATH
 from fb_core.real_time_database import FBRTDBMgr
 from graph_visualizer.pyvis_visual import create_g_visual
 from code_manipulation.graph_creator import StructInspector
@@ -30,7 +30,7 @@ class ModuleLoader(
         self.id=nid
         self.fields=fields
 
-        self.g = GUtils(USER_ID, G=G)
+        self.g = GUtils(G=G)
         self.qfu=QFUtils(g=self.g)
 
         StructInspector.__init__(self, self.g.G)
@@ -39,10 +39,9 @@ class ModuleLoader(
 
         self.modules = {}
         self.device = "gpu" if TESTING is False else "cpu"
-        self.module_g_save_path = rf"C:\Users\bestb\Desktop\qfs\outputs\module_{self.id}_G.html" if os.name == "nt" else "outputs/module_{self.id}_G.html"
+        self.module_g_save_path = rf"C:\Users\bestb\PycharmProjects\BestBrain\outputs\module_{self.id}_G.html" if os.name == "nt" else f"outputs/module_{self.id}_G.html"
         self.firebase = FBRTDBMgr()
         self.finished=False
-        self.relay = get_actor("RELAY")
 
 
     def finished(self):
@@ -51,19 +50,26 @@ class ModuleLoader(
 
     def load_local_module_codebase(self):
         """
-        RECOGNIZE ALL CREATED MODULES
+        LOAD CONVERTED CODE FROM ARSENAL_PATH
         """
         print("====== load_local_module_codebase ======")
         # tdo use Converter to convert files
         try:
 
-            with open(self.module_file_path, "r", encoding="latin-1") as file_handle: #latin-1
+            print(f"load codebase for {self.id}")
+            attrs = self.g.G.nodes[self.id]
+            if attrs.get("content", None):
+                print(f"code for already saved in G -> continue")
+                return
+
+            print(f"start code xtraction for {self.id}")
+            file_name = os.path.join(ARSENAL_PATH, f"{self.id}.py")
+            with open(file_name, "r", encoding="latin-1") as file_handle: #latin-1
                 # Use the file_name as the key
                 print("create module name")
                 module_name = self.id.split(".")[0]
-
-                print("load modules with module:", module_name)
-                mcontent = file_handle.read() # base64.b64encode().decode('utf-8')
+                print("CREATE MODULE:", module_name)
+                mcontent = file_handle.read()
                 self.g.update_node(
                     dict(
                         nid=module_name,
@@ -75,29 +81,39 @@ class ModuleLoader(
 
         except Exception as e:
             print("Err load_local_module_codebase:", e)
+            print(f"  Module ID: {self.id}")
+            print(f"  Attempted path: {self.module_file_path}")
         print("finished load_local_module_codebase")
 
 
 
     def create_code_G(self, mid):
         print("====== create_code_G ======")
-        #GET MDULE ATTRS
-        mattrs = self.g.G.nodes[mid]
+        try:
+            #GET MDULE ATTRS
+            mattrs = self.g.G.nodes[mid]
+            
+            # Check if content exists
+            if "content" not in mattrs:
+                raise KeyError(f"Module '{mid}' does not have 'content' attribute. Available attributes: {list(mattrs.keys())}")
+            
+            # CREATE G FROM IT
+            self.convert_module_to_graph(
+                code_content=mattrs["content"],
+                module_name=mid
+            )
 
-        # CREATE G FROM IT
-        self.convert_module_to_graph(
-            code_content=mattrs["content"],
-            module_name=mid
-        )
+            self.g.print_status_G()
 
-        self.g.print_status_G(nid="CODE G")
-
-        # todo dest_path?=None -> return html -> upload firebase -> fetch and visualizelive frontend
-        create_g_visual(
-            self.g.G,
-            dest_path=self.module_g_save_path
-        )
-        print("create_code_G finished")
+            # todo dest_path?=None -> return html -> upload firebase -> fetch and visualizelive frontend
+            create_g_visual(
+                self.g.G,
+                dest_path=self.module_g_save_path
+            )
+            print("create_code_G finished")
+        except Exception as e:
+            print(f"Error in create_code_G for module '{mid}':", e)
+            raise
 
 
     def extract_module_classes(self):
@@ -180,7 +196,7 @@ class ModuleLoader(
                 target_type="PARAM",
             )
 
-            print("defs found:", methods.keys())
+            print(f"defs found {self.id}:", methods.keys())
 
             if methods:
                 for i, (mid, attrs) in enumerate(methods.items()):
@@ -231,7 +247,7 @@ class ModuleLoader(
             method_definitions: list[dict]
     ) -> list[dict]:
         """
-        Determines the correct execution order of methods based on data dependencies.
+        Determines the correct execution order of methods based on admin_data dependencies.
 
         Args:
             method_definitions: List of dictionaries, each describing a method:

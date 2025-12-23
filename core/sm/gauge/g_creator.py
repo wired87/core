@@ -1,7 +1,7 @@
+import numpy as np
 
 from data import GAUGE_FIELDS
-from sm.gauge.gauge_utils import GaugeUtils
-import jax.numpy as jnp
+from core.sm.gauge.gauge_utils import GaugeUtils
 
 class GaugeCreator(GaugeUtils):
     def __init__(self, g_utils):
@@ -97,18 +97,23 @@ class GaugeCreator(GaugeUtils):
             parent=["GAUGE"],
             type=ntype,
             field_key=field_key,
-            **self.gfield(pos, item_index)
+            **self.gfield(pos, item_index),
         )
         return attrs
 
     def gfield(
-            self, ntype, dim, amount_nodes
+            self,
+            ntype,
+            dim
     ):
-        field_value=self.field_values(amount_nodes, dim)
-        const={
+        print("gfield")
+        field_value=self.field_value(dim=dim)
+
+        const = {
             k: v
             for k, v in GAUGE_FIELDS[ntype].items()
         }
+
         field = {
             "gg_coupling": field_value,
             "gf_coupling": field_value,
@@ -117,12 +122,13 @@ class GaugeCreator(GaugeUtils):
 
             "j_nu": field_value,
 
-            "dmuG": jnp.stack([self.dmu(amount_nodes, dim) for _ in range(len(amount_nodes))]),
-            "fmunu": jnp.stack([self.fmunu() for _ in range(len(amount_nodes))]),
-            "prev_fmunu": jnp.stack([self.fmunu() for _ in range(len(amount_nodes))]),
-            "dmu_fmunu": jnp.stack([self.dmu_fmunu() for _ in range(len(amount_nodes))]),
-            **const
+            "dmuG": self.dmu(dim),
+            "fmunu": self.fmunu(dim),
+            "prev_fmunu": self.fmunu(dim),
+            "dmu_fmunu": self.dmu_fmunu(dim),
+            **const,
         }
+
         return field
 
 

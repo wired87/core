@@ -124,8 +124,8 @@ class CloudBatchMaster:
         if container_restart_policy:
             cmd.append(f"--container-restart-policy={container_restart_policy}")
         if env:
-            env_str = ",".join(f"{k}={v}" for k, v in env.items())
-            cmd.append(f"--container-env={env_str}")
+            for k, v in env.items():
+                cmd.append(f"--container-env={k}={v}")
 
         # --- Network Configuration ---
         if network or subnet or network_tier or stack_type:
@@ -215,7 +215,7 @@ class DeploymentHandler(VMMaster):
                 "START_MODE": "TEST",
                 "TIMEOUT": "300"
             },
-            "boot_disk_size_gb": 10,
+            "boot_disk_size_gb": 1,
             "boot_disk_type": "pd-balanced",
         }
 
@@ -234,8 +234,8 @@ class DeploymentHandler(VMMaster):
             self,
             testing,
             instance_name,
-            image,
-            container_env,
+            image=None,
+            container_env=None,
         ):
         print(f"{testing} create_vm {instance_name}")
         try:
@@ -257,7 +257,7 @@ class DeploymentHandler(VMMaster):
     def get_prod_vm_cfg(
             self,
             instance_name,
-            conainer_image,
+            container_image,
             container_env,
     ) -> dict[str, Any]:
         return {
@@ -267,7 +267,7 @@ class DeploymentHandler(VMMaster):
             "network": "global/networks/default",
             "tags": ["production", "gpu-worker", "quantum-sim"],
             "metadata": {
-                "owner": "production_team",
+                "owner": instance_name,
                 "env": "prod",
                 "project_id": "aixr-401704"
             },
@@ -320,8 +320,8 @@ class DeploymentHandler(VMMaster):
             "--labels=goog-ec-src=vm_add-gcloud,container-vm=cos-109-17800-570-50"
         ]
         if env:
-            env_str = ",".join(f"{k}={v}" for k, v in env.items())
-            gcloud_command.append(f"--container-env={env_str}")
+            for k, v in env.items():
+                gcloud_command.append(f"--container-env={k}={v}")
         exec_cmd(gcloud_command)
 
 
@@ -351,8 +351,8 @@ class DeploymentHandler(VMMaster):
             "--container-image=memcached",
         ]
         if env:
-            env_str = ",".join(f"{k}={v}" for k, v in env.items())
-            gcloud_command.append(f"--container-env={env_str}")
+            for k, v in env.items():
+                gcloud_command.append(f"--container-env={k}={v}")
         exec_cmd(gcloud_command)
 
 
@@ -384,8 +384,8 @@ class DeploymentHandler(VMMaster):
         if container_image:
             cmd.append(f"--container-image={container_image}")
         if env:
-            env_str = ",".join(f"{k}={v}" for k, v in env.items())
-            cmd.append(f"--container-env={env_str}")
+            for k, v in env.items():
+                cmd.append(f"--container-env={k}={v}")
         if machine_type:
             cmd.append(f"--machine-type={machine_type}")
         if zone:

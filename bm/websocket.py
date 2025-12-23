@@ -18,7 +18,7 @@ class ChatConsumer(AsyncWebsocketConsumer): #WebsocketConsumer
         await self.accept()
 
     def get_initial_data(self, user):
-        # Your existing logic to fetch initial data
+        # Your existing logic to fetch initial admin_data
         user_bot = user.bots.get(name=data)
 
         # ... rest of your logic ...

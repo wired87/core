@@ -3,12 +3,14 @@ from ray._private.custom_types import ACTOR_STATUS
 from ray.util.state import list_actors
 from ray.util.state.common import ActorState, WorkerState
 
-from app_utils import FB_DB_ROOT, GLOBAC_STORE, extend_globs
 
 import dotenv
+
+from core._ray_core.globacs.state_handler.sh_utils import StateHandlerUtils
+from core.app_utils import FB_DB_ROOT
+
 dotenv.load_dotenv()
 
-from _ray_core.globacs.state_handler.sh_utils import StateHandlerUtils
 
 
 class StateHandler(
@@ -114,11 +116,7 @@ class StateHandler(
 
     async def distribute_worker_stim_cfg(self):
         # Distribute Stim Cfg
-        all_subs = ray.get(
-            GLOBAC_STORE["UTILS_WORKER"].get_all_refs.remote(
-                just_subs=True,
-            )
-        )
+        all_subs = ray.get()
         for nid in list(all_subs.keys()):
             if nid in self.stim_cfg:
                 print(f"Distributing stim cfg to {nid}")
@@ -155,10 +153,12 @@ class StateHandler(
             }
 
             # Upsert name
-            GLOBAC_STORE["DB_WORKER"].iter_upsert.remote(
+            """
+            #GLOBAC_STORE["DB_WORKER"].iter_upsert.remote(
                 attrs=meta,
                 path=f"{self.database}/metadata/{name}/"
             )
+            """
             #print(f"Metadata state for {name} sent")
         except Exception as e:
             print(f"Err handling DEAD state: {e}")
@@ -216,11 +216,6 @@ class StateHandler(
         }
         print(f"Worker {name} is {state}")
 
-        # Upsdrt name
-        GLOBAC_STORE["DB_WORKER"].iter_upsert.remote(
-            attrs=meta,
-            path=f"{self.database}{self.upsert_endpoint}/{name}"
-        )
         print(f"Meta for {name} upserted")
 
     def await_alive(

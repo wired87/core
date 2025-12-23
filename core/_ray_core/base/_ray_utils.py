@@ -4,8 +4,6 @@ import ray
 from ray.actor import ActorHandle
 from ray.util.state import list_actors, list_workers
 
-from app_utils import HEAD_SERVER_NAME
-
 
 class RayUtils:
 
@@ -63,7 +61,7 @@ class RayUtils:
                     if id_map is not None and len(id_map):
                         aname = actor.name
                         # check name
-                        if aname in id_map or HEAD_SERVER_NAME in aname:
+                        if aname in id_map or "HEAD" in aname:
                             #print(f"Include {actor.name}")
                             struct[actor.name] = {
                                 "actor": actor,

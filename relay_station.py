@@ -1,8 +1,19 @@
 import os
 import threading
 import time
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
-import ray
+from core.guard import Guard
+
+"""
+
+[2025-12-19 15:55:39,521 E 3044 30260] rpc_client.h:203: Failed to connect to GCS within 60 seconds. GCS may have been killed. It's either GCS is terminated by `ray stop` or is killed unexpectedly. If it is killed unexpectedly, see the log file gcs_server.out. https://docs.ray.io/en/master/ray-observability/user-guides/configure-logging.html#logging-directory-structure. The program will terminate.
+Windows fatal exception: access violation
+
+"""
+
+
 import requests
 import json
 import dotenv
@@ -16,7 +27,7 @@ from urllib.parse import parse_qs
 import importlib
 
 from core.actors import deploy_guard
-from core.qf_utils.qf_utils import QFUtils
+from qf_utils.qf_utils import QFUtils
 from fb_core.real_time_database import FBRTDBMgr
 
 from _chat.log_sum import LogAIExplain
@@ -29,8 +40,6 @@ from workflows.deploy_sim import DeploymentHandler
 from workflows.node_cfg_manager import NodeCfgManager
 from utils.deserialize import deserialize
 
-dotenv.load_dotenv()
-
 from _chat.main import AIChatClassifier
 
 from utils.dj_websocket.handler import ConnectionManager
@@ -41,7 +50,6 @@ from utils.id_gen import generate_id
 from utils.utils import Utils
 
 from fb_core.firestore_manager import FirestoreMgr
-import stripe
 from dataclasses import dataclass
 from typing import Callable, Any, Awaitable
 
@@ -50,6 +58,8 @@ class RelayCase:
     case: str
     description: str
     callable: Callable[[Any], Awaitable[Any]]
+
+dotenv.load_dotenv()
 
 class Relay(
     AsyncWebsocketConsumer
@@ -119,6 +129,8 @@ class Relay(
         self.env_store = []
         self.data_request_endpoint = f"{self.domain}/bq/auth"
 
+        self.fields = []
+
         self.ws_handler = None
         self.external_vm = False
         self.sim_ready = False
@@ -132,6 +144,8 @@ class Relay(
         }
 
         self.active_envs = {}
+        self.tmp = TemporaryDirectory()
+        self.root = Path(self.tmp.name)
 
         self.worker_states = {
             "unknown": [],
@@ -159,23 +173,20 @@ class Relay(
         self.cluster_url = f"{self.con_type}://{self.cluster_domain}/"
         print(f"Cluster domain set: {self.cluster_url}")
 
-
-
         if self.testing is True:
             self.cluster_root = "http://127.0.0.1:8001"
+
         else:
             self.cluster_root = "cluster.botworld.cloud"
 
         self.auth_data = None
         
         self.firestore = FirestoreMgr()
-        self.active_sim_task = None
-        # Stripe API Key - should be in env vars
-        stripe.api_key = os.environ.get("STRIPE_API_KEY")
 
         self.relay_cases: list[RelayCase] = []
         self._register_cases()
         threading.Thread(target=self._scan_dynamic_cases, daemon=True).start()
+
 
     async def connect(self):
         print(f"Connection attempt registered")
@@ -193,7 +204,7 @@ class Relay(
 
         print("self.user_id", self.user_id)
 
-        # todo collect more sim data like len, elements, ...
+        # todo collect more sim admin_data like len, elements, ...
         # todo improve auth
         if not self.user_id:
             print(f"Connection attempt declined")
@@ -206,7 +217,6 @@ class Relay(
             nx_only=False,
             G=None,
             g_from_path=None,
-            user_id=self.user_id,
         )
         self.qfu = QFUtils(
             g=self.g
@@ -238,22 +248,11 @@ class Relay(
         )
 
         # Create Guard for each new user
-        name = f"GUARD_{self.user_id}"
-        guard = deploy_guard(
-            self.g,
+        self.guard = Guard(
             self.qfu,
-            name=name,
+            self.g,
+            self.user_id,
         )
-
-        # SAVE GUARD ref
-        self.g.add_node(
-            {
-                "nid": name,
-                "type": "NODE",
-                "ref": guard
-            }
-        )
-
 
         self.deployment_handler = DeploymentHandler(
             user_id
@@ -262,119 +261,47 @@ class Relay(
         print("request accepted")
 
     async def validate_action(self, action_type, data):
-        if not self.user_id:
-            return False
-            
-        user_doc = self.firestore.get_user_doc(self.user_id)
-        if not user_doc:
-            user_doc = self.firestore.create_default_user(self.user_id)
-            
-        plan = user_doc.get("plan", "free")
-        permissions = user_doc.get("permissions", {})
-        wallet = user_doc.get("wallet", {})
-        
-        if action_type == "world_cfg":
-            if not permissions.get("cfg_editable", False):
-                await self.send(text_data=json.dumps({
-                    "type": "error",
-                    "data": "Upgrade to Magician or Wizard to edit config."
-                }))
-                return False
-                
-        elif action_type == "start_sim":
-            balance = wallet.get("compute_balance", 0)
-            # Check if user has enough balance for at least a minute
-            if balance <= 0 and plan != "free":
-                 await self.send(text_data=json.dumps({
-                    "type": "upgrade_required",
-                    "data": "Insufficient compute balance."
-                }))
-                 return False
-                 
+        # Validation logic removed, all actions are now permitted
         return True
 
-    async def monitor_resources(self, cpu_hours=1, gpu_hours=0):
-        # Rates per second (in hours unit)
-        # 1 real second = 1/3600 simulation hours consumed * intensity
-        # Let's assume balance is in "Standard Compute Hours"
-        # CPU rate = 1.0, GPU rate = 5.0
-        rate = (cpu_hours * 1.0 + gpu_hours * 5.0) / 3600.0
-        
-        try:
-            while True:
-                await asyncio.sleep(1)
-                self.firestore.update_user_wallet(self.user_id, -rate)
-                
-                user_doc = self.firestore.get_user_doc(self.user_id)
-                plan = user_doc.get("plan", "free")
-                
-                if plan == "free":
-                    await self.send(text_data=json.dumps({
-                        "type": "sim_terminated", 
-                        "data": "Free tier cannot run simulations. Upgrade to continue."
-                    }))
-                    if hasattr(self, 'current_sim_env_ids'):
-                        for env_id in self.current_sim_env_ids:
-                            self.deployment_handler.stop_vm(env_id)
-                    break
 
-                if user_doc and user_doc.get("wallet", {}).get("compute_balance", 0) <= 0:
-                    await self.send(text_data=json.dumps({
-                        "type": "sim_terminated", 
-                        "data": "Battery empty. Simulation stopped."
-                    }))
-                    # Trigger stop logic here
-                    if hasattr(self, 'current_sim_env_ids'):
-                        for env_id in self.current_sim_env_ids:
-                            self.deployment_handler.stop_vm(env_id)
-                    break
-        except asyncio.CancelledError:
-            pass
 
-    async def create_stripe_session(self, price_id, user_id=None):
-        uid = user_id if user_id else self.user_id
-        try:
-            checkout_session = stripe.checkout.Session.create(
-                client_reference_id=uid,
-                line_items=[
-                    {
-                        'price': price_id,
-                        'quantity': 1,
-                    },
-                ],
-                mode='subscription',
-                success_url=self.domain + '/success',
-                cancel_url=self.domain + '/cancel',
-                metadata={
-                    'user_id': uid
-                }
-            )
-            return checkout_session.url
-        except Exception as e:
-            print(f"Stripe error: {e}")
-            return None
+
 
 
     def _register_cases(self):
         cases = [
-            ("payment", "Handle payment requests", self._handle_payment),
             ("world_cfg", "Process world configuration", self._handle_world_cfg),
+
+            # INJECTION HANDLER
             ("node_cfg", "Process node configuration", self._handle_node_cfg),
-            ("env_ids", "Retrieve environment IDs", self._handle_env_ids),
-            ("get_data", "Fetch and zip data from BigQuery", self._handle_get_data),
+
+            # module handler -> include in bar receive
             ("file", "Handle file uploads", self._handle_files),
+
+            ("request_inj_screen", "Requesting admin_data relavant for inj setup (fields, grid conc etc)",
+             self.request_inj_process_start),
+
+            ("start_sim", "Start simulation", self._handle_start_sim_wrapper),
+
+            ("set_inj_pattern", "Set ncfg injection pattern", self.set_cfg_process),
+
+            ("env_ids", "Retrieve environment IDs", self._handle_env_ids),
+            ("get_data", "Fetch and zip admin_data from BigQuery", self._handle_get_data),
             ("delete_env", "Delete an environment", self._handle_delete_env),
             ("extend_gnn", "Extend GNN", self._handle_extend_gnn),
             # train is performed in each sim
             #("train_gnn", "Train GNN", self._handle_train_gnn),
 
             ("create_visuals", "Create visuals", self._handle_create_visuals),
-            ("create_knowledge_graph_from_data_tables", "Create KG from data tables", self._handle_create_kg),
-            ("start_sim", "Start simulation", self._handle_start_sim_wrapper),
+            ("create_knowledge_graph_from_data_tables", "Create KG from admin_data tables", self._handle_create_kg),
         ]
         
         for case, desc, func in cases:
             self.relay_cases.append(RelayCase(case=case, description=desc, callable=func))
+
+
+
 
     def _scan_dynamic_cases(self):
         """
@@ -422,12 +349,15 @@ class Relay(
             print(f"Received message from frontend: {data}")
 
             # Middleware Guard
-            if data_type in ["world_cfg", "start_sim"]:
+            if data_type in [
+                "world_cfg", "start_sim"
+            ] and not self.testing:
                 if not await self.validate_action(data_type, data):
                     return
 
             # Dynamic Dispatch
             handled = False
+
             # Iterate over a copy to ensure thread safety if cases are added at runtime
             for relay_case in list(self.relay_cases):
                 if relay_case.case == data_type:
@@ -444,118 +374,84 @@ class Relay(
             traceback.print_exc()
 
 
-    # --- Handler Methods ---
-
-    async def _handle_payment(self, data: dict):
-        target_uid = data.get("user_id", self.user_id)
-        state_change = int(data.get("state", 0))
-        
-        # Plan Hierarchy
-        PLANS = ["free", "magician", "wizard"]
-        PLAN_PRICES = {
-            "free": None,
-            "magician": os.environ.get("PRICE_MAGICIAN", "price_1Qj..."), 
-            "wizard": os.environ.get("PRICE_WIZARD", "price_1Qk...")
-        }
-
-        # Fetch User
-        user_doc = self.firestore.get_user_doc(target_uid)
-        if not user_doc:
-            # If user doesn't exist, assume free
-            current_plan = "free"
-        else:
-            current_plan = user_doc.get("plan", "free")
-
-        # Calculate New Plan
-        try:
-            current_idx = PLANS.index(current_plan)
-        except ValueError:
-            current_idx = 0 # Default to free if unknown
-        
-        new_idx = max(0, min(len(PLANS) - 1, current_idx + state_change))
-        new_plan = PLANS[new_idx]
-
-        if new_plan == current_plan:
-            await self.send(text_data=json.dumps({
-                "type": "payment_info",
-                "data": f"You are already on the {new_plan} plan."
-            }))
-            return
-
-        # Handle Free Tier Downgrade directly (no payment)
-        if new_plan == "free":
-            # In a real app, we might need to cancel Stripe sub here
-            # For now, just update DB
-            # self.firestore.update_user_plan(target_uid, "free") 
-            await self.send(text_data=json.dumps({
-                "type": "payment_info",
-                "data": "Downgrade to Free tier processed."
-            }))
-            return
-
-        # Generate Payment Link for Paid Plans
-        price_id = PLAN_PRICES.get(new_plan)
-        if price_id:
-            url = await self.create_stripe_session(price_id, user_id=target_uid)
-            if url:
-                await self.send(text_data=json.dumps({
-                    "type": "payment_url",
-                    "data": url,
-                    "plan": new_plan
-                }))
-            else:
-                await self.send(text_data=json.dumps({
-                    "type": "error",
-                    "data": "Could not create payment session"
-                }))
-        else:
-                await self.send(text_data=json.dumps({
-                "type": "error",
-                "data": f"Price not configured for {new_plan}"
-            }))
-
     async def _handle_world_cfg(self, data: dict):
-        print("CREATE WORLD REQUEST RECEIVED")
-        """
-        SIMULATE_ON_QC = os.getenv("SIMULATE_ON_QC")
-        if str(SIMULATE_ON_QC) == "0":
-            SIMULATE_ON_QC = True
-        else:
-            SIMULATE_ON_QC = False
-        """
-        # get guard of user
-        name = f"GUARD_{self.user_id}"
-        ref = self.g.G.nodes[name]
-        ray.get(ref.set_wcfg.remote(
-            data["world_cfg"]
-        ))
-        print("world cfg set")
-
+        try:
+            print("CREATE WORLD REQUEST RECEIVED", data)
+            world_cfg = data["world_cfg"]
+            # Frontend sends world_cfg as a list, extract first element
+            if isinstance(world_cfg, list) and len(world_cfg) > 0:
+                world_cfg = world_cfg[0]
+            
+            # Normalize field names: frontend uses 'amount_of_nodes', Guard expects 'amount_nodes'
+            if "amount_of_nodes" in world_cfg and "amount_nodes" not in world_cfg:
+                world_cfg["amount_nodes"] = world_cfg["amount_of_nodes"]
+            
+            # Ensure env_id is present (frontend sends 'id')
+            if "env_id" not in world_cfg and "id" in world_cfg:
+                world_cfg["env_id"] = world_cfg["id"]
+            
+            node = self.guard.set_wcfg(world_cfg)
+            self.required_steps["world_cfg"] = True
+            await self.send(
+                text_data=json.dumps({
+                    "type": "world_cfg",
+                    "world_cfg": node,
+                })
+            )
+            print("world cfg set")
+        except Exception as e:
+            print(f"Err _handle_world_cfg: {e}")
 
 
     async def _handle_node_cfg(self, data: dict):
         print("CREATE NODE CFG REQUEST RECEIVED")
         self.world_creator.node_cfg_process(data)
 
-    async def _handle_env_ids(self, data: dict):
+
+
+    async def _handle_env_ids(self):
         await self.send(
             text_data=json.dumps({
                 "type": "env_ids",
-                "data": self.db_manager.get_child(
+                "admin_data": self.db_manager.get_child(
                     path=f"users/{self.user_id}/env/"
                 ),
             })
         )
 
 
-    def inj_cfg_process(self, data):
+    async def request_inj_process_start(self, data):
+        env_id=data["env_id"]
+        # todo return admin_data for the interactive 3d cube
+        if not await self.guard.get_state():
+            await self.send(
+                text_data=json.dumps({
+                    "type": "inj_pattern_struct_err",
+                    "admin_data": "You must set world cfg and node cfg fields before set patterns for them... ",
+                    "env_id": env_id,
+                })
+            )
+        else:
+            data_struct = await self.guard.get_inj_pattern_data()
+            print("admin_data for inj init set")
+            await self.send(
+                text_data=json.dumps({
+                    "type": "inj_pattern_struct",
+                    "admin_data": data_struct,
+                    "env_id": env_id,
+                })
+            )
+
+
+    async def set_cfg_process(self, data):
         print("inj_cfg_process start")
         # get guard of user
-        name = f"GUARD_{self.user_id}"
-        ref = self.g.G.nodes[name]
-        ray.get(ref.set_inj_pattern.remote(
-            data["inj_patttern"]
-        ))
+        env_id = data.get("env_id")
+        if env_id:
+            self.guard.set_inj_pattern(
+                data.get("inj_pattern") or data.get("inj_pattern"),
+                env_id
+            )
         print("inj_cfg_process cfg set")
 
 
@@ -563,7 +459,7 @@ class Relay(
     async def _handle_get_data(self, data: dict):
         env_id = data.get("env_id")
 
-        MOCK_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "bigquery-public-data")
+        MOCK_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "bigquery-public-admin_data")
         MOCK_CREDENTIALS_PATH = r"C:\Users\bestb\PycharmProjects\BestBrain\auth\credentials.json" if os.name == "nt" else "auth/credentials.json"
 
         # Get Data from BQ
@@ -603,30 +499,31 @@ class Relay(
             await self.send(
                 text_data=json.dumps({
                     "type": "get_data_error",
-                    "data": str(csv_data)
+                    "admin_data": str(csv_data)
                 })
             )
 
-    async def _handle_files(self, data: dict):
-        message = data.get("files")
-        print(f"Message received: {message}")
-        ### todo impl, cachiin (bq->byes + embed -> ss -> if exists: get id(name) -> save local; else: self.handle fiels incl embeds -> bq
-        files = data.get("files", [])
-        self.handle_files(
-            files=files
-        )
+    async def _handle_files(self, data):
 
-        # get guard of user
-        name = f"GUARD_{self.user_id}"
-        ref = self.g.G.nodes[name]
-        ray.get(ref.handle_mod_stack.remote(
-            files
-        ))
+        ### todo impl, cachiin (bq->byes + embed -> ss -> if exists: get id(name) -> save local; else: self.handle fiels incl embeds -> bq
+
+        # HANDLE FILES
+        files = data.get("files")
+        if files:
+            # hande files -> save G
+            await self._handle_files(files)
+
+        # todo upser files
+
+        self.guard.handle_mod_stack(
+            files,
+            self.root
+        )
 
         await self.send(
             text_data=json.dumps({
                 "type": "message",
-                "data": "Messages processed successfully",
+                "admin_data": "Messages processed successfully",
             })
         )
 
@@ -642,7 +539,7 @@ class Relay(
         await self.send(
             text_data=json.dumps({
                 "type": "delete_env",
-                "data": f"Deleted {env_id} succsssfully",
+                "admin_data": f"Deleted {env_id} succsssfully",
             })
         )
 
@@ -652,7 +549,7 @@ class Relay(
 
     async def _handle_train_gnn(self, data: dict):
         """
-        get nv ids fetch data and train a gan e.g.
+        get nv ids fetch admin_data and train a gan e.g.
         """
         pass
 
@@ -684,11 +581,12 @@ class Relay(
             path = f"users/{self.user_id}/env/{env_id}"
             self.db_manager.upsert_data(
                 path=path,
-                data={"files": self.file_store},
+                admin_data={"files": self.file_store},
             )
         """
-        # todo distribute to corrrect files
-        await self.handle_sim_start(data)
+        # todo thread
+        env_ids = data.get("env_ids")
+        self.guard.main(env_ids)
 
 
 
@@ -708,7 +606,7 @@ class Relay(
                 """
                 self.db_manager.upsert_data(
                     path=f"{self.user_id}/files",
-                    data={
+                    admin_data={
                         name: base64.b64encode(f_bytes).decode("utf-8")
                     }
                 )
@@ -716,16 +614,16 @@ class Relay(
                 print("Uploaded file:", name)
 
 
-    async def handle_sim_start(self, data):
+    async def batch_inject_env(self, data):
         print("START SIM REQUEST RECEIVED")
-        # Start metering
-        if self.active_sim_task:
-            self.active_sim_task.cancel()
-        self.active_sim_task = asyncio.create_task(self.monitor_resources())
         
-        env_ids:list[str] = data.get("data", {}).get("env_ids")
-        self.current_sim_env_ids = env_ids
-        for env_id in env_ids:
+        envs = self.g.get_nodes_by_type(
+            filter_key="ENV",
+            filter_value=self.user_id
+        )
+
+        for env in envs:
+            env_id = env["nid"]
             try:
                 if self.world_creator.env_id_map:
 
@@ -737,8 +635,8 @@ class Relay(
                     await self.send(
                         text_data=json.dumps({
                             "type": "deployment_success",
-                            "data": {
-                                "msg": "Invalid Command registered",
+                            "admin_data": {
+                                "msg": f"Deployed machine to {env_id}",
                             },
                         })
                     )
@@ -747,7 +645,7 @@ class Relay(
                     await self.send(
                         text_data=json.dumps({
                             "type": "deployment_error",
-                            "data": {
+                            "admin_data": {
                                 "msg": f"skipping invalid env id: {env_id}",
                             },
                         }))
@@ -755,16 +653,12 @@ class Relay(
                 print(f"Err deploymnt: {e}")
                 await self.send(
                     text_data=json.dumps({
-                        "type": "deployment_success",
-                        "data": {
-                            "msg": f"Deployed machine to {env_id}",
+                        "type": "deployment_error",
+                        "admin_data": {
+                            "msg": f"Failed to deploy machine to {env_id}: {str(e)}",
                         },
                     })
                 )
-
-
-
-
 
     async def ai_log_sum_process(self, data):
         nid = data.get("nid")
@@ -780,7 +674,7 @@ class Relay(
         await self.send(text_data=json.dumps({
             "type": "ai_log_sum",
             "message": "success",
-            "data": response
+            "admin_data": response
         }))
 
 
@@ -829,7 +723,7 @@ class Relay(
                 {
                     "type": "env_ids",
                     "status": "successful",
-                    "data": self.created_envs,
+                    "admin_data": self.created_envs,
                 }
             )
         )
@@ -847,44 +741,6 @@ class Relay(
         )
 
         print("classification recieved:", classification)
-
-        if classification == "upgrade":
-             # Default to +1 upgrade
-             PLANS = ["free", "magician", "wizard"]
-             PLAN_PRICES = {
-                "free": None,
-                "magician": os.environ.get("PRICE_MAGICIAN", "price_1Qj..."), 
-                "wizard": os.environ.get("PRICE_WIZARD", "price_1Qk...")
-             }
-             
-             user_doc = self.firestore.get_user_doc(self.user_id)
-             current_plan = user_doc.get("plan", "free") if user_doc else "free"
-             
-             try:
-                current_idx = PLANS.index(current_plan)
-             except ValueError:
-                current_idx = 0
-             
-             new_idx = min(len(PLANS) - 1, current_idx + 1)
-             new_plan = PLANS[new_idx]
-             
-             if new_plan == current_plan:
-                 await self.send(text_data=json.dumps({
-                     "type": "payment_info",
-                     "data": "You are already on the highest plan."
-                 }))
-                 return
-
-             price_id = PLAN_PRICES.get(new_plan)
-             if price_id:
-                 url = await self.create_stripe_session(price_id)
-                 if url:
-                     await self.send(text_data=json.dumps({
-                         "type": "payment_url",
-                         "data": url,
-                         "plan": new_plan
-                     }))
-             return
 
         if classification in self.chat_classifier.use_cases:
             result = self.chat_classifier.use_cases[classification]
@@ -934,7 +790,7 @@ class Relay(
 
         self.auth_data = {
             "type": "auth",
-            "data": {
+            "admin_data": {
                 "session_id": self.session_id,
                 "key": self.env_id,
             }
@@ -986,11 +842,12 @@ class Relay(
                             update_def(res_data)
                         )
                 except Exception as e:
-                    print(f"Error wile reuqest bq data: {e}")
+                    print(f"Error wile reuqest bq admin_data: {e}")
                     time.sleep(5)
 
         def handle_data(data):
-            asyncio.run(self.handle_data_response(data))
+            from asgiref.sync import async_to_sync
+            async_to_sync(self.handle_data_response)(data)
 
         self.data_thread = threading.Thread(
             target=rcv_data,
@@ -1005,7 +862,7 @@ class Relay(
         await self.send(text_data=json.dumps({
             "type": "dataset",
             "message": "success",
-            "data": data
+            "admin_data": data
         }))
         # end thread after 1s
         self.data_thread.join(1)
@@ -1022,7 +879,7 @@ class Relay(
         await self.send(text_data=json.dumps({
             "type": "creds",
             "message": "success",
-            "data": {
+            "admin_data": {
                 "creds": self.db_manager.fb_auth_payload,
                 "db_path": os.environ.get("FIREBASE_RTDB"),
                 "listener_paths": listener_paths
@@ -1093,7 +950,7 @@ class Relay(
         env_content = {
             "type": "init_graph_data",  # todo re-set type front
             "message": "success",
-            "data": {
+            "admin_data": {
                 "edges": edges,
                 "nodes": nodes,
                 "meta": empty_nid_struct,
@@ -1109,7 +966,7 @@ class Relay(
         self.sim.env = self.g.G.nodes[TEST_ENV_ID]
         self.sim.run_sim(self.g)
         await self.file_response(
-            {"data": self.sim.updator.datastore}
+            {"admin_data": self.sim.updator.datastore}
         )
         return
 
@@ -1117,7 +974,7 @@ class Relay(
         if getattr(self, "cluster_auth_data", None) is None:
             data = {
                 "type": "auth",
-                "data": {
+                "admin_data": {
                     "session_id": self.session_id,
                     "key": self.env_id,
                 }
@@ -1158,7 +1015,7 @@ class Relay(
         await self.send(
             text_data=json.dumps({
             "type": "data_response",
-            "data": content
+            "admin_data": content
         }))
 
 
@@ -1183,12 +1040,12 @@ class Relay(
 
 
     async def handle_data_changes(self, data):
-        # data => {'type': None, 'path': '/', 'data': {'F_mu_
+        # admin_data => {'type': None, 'path': '/', 'admin_data': {'F_mu_
         print("handle_data_changes")
         # todo make a class for it
         all_subs = self.qf_utils.get_all_subs_list(just_id=True)
 
-        attrs = data["data"]
+        attrs = data["admin_data"]
         #print("changed attrs", attrs)
         nid = attrs["id"]
 
@@ -1208,9 +1065,9 @@ class Relay(
                 self.worker_states[state].append(nid)
                 await self.send(text_data=json.dumps({
                     "type": "metadata_update",
-                    "data": {
+                    "admin_data": {
                         "id": nid,
-                        "data": data,
+                        "admin_data": data,
                     }
                 }))
 
@@ -1229,8 +1086,8 @@ class Relay(
                     # edge change
                     await self.send(text_data=json.dumps({
                         "type": "edge_data",
-                        "data": {
-                            "data": data,
+                        "admin_data": {
+                            "admin_data": data,
                         }
                     }))
                     self.g.G.edges[src, trgt].update(attrs)
@@ -1249,9 +1106,9 @@ class Relay(
                             # todo filter just necessary key fields (meta field value etc)
                             await self.send(text_data=json.dumps({
                                 "type": "node_data",
-                                "data": {
+                                "admin_data": {
                                     "id": nid,
-                                    "data": data,
+                                    "admin_data": data,
                                 }
                             }))
                             break

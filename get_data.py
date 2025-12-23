@@ -48,7 +48,7 @@ def fetch_dataset_to_csv_list(
         print(f"ERROR: Table Listing Failed: {e}")
         return [f"Table Listing Error: {e}"]
 
-    # 3. Loop through tables and fetch CSV data
+    # 3. Loop through tables and fetch CSV admin_data
     for table in tables:
         table_ref = f"{project_id}.{dataset_id}.{table.table_id}"
         query = f"SELECT * FROM `{table_ref}`"
@@ -74,12 +74,12 @@ if __name__ == '__main__':
     load_dotenv()
 
     # --- Example Usage (Using Public Dataset) ---
-    MOCK_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "bigquery-public-data")
+    MOCK_PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "bigquery-public-admin_data")
     MOCK_DATASET_ID = os.environ.get("BQ_DATASET_ID", "QCOMPS")
     MOCK_CREDENTIALS_PATH = r"C:\Users\bestb\PycharmProjects\BestBrain\auth\credentials.json" if os.name == "nt" else "auth/credentials.json"
 
-    if MOCK_PROJECT_ID == "bigquery-public-data":
-        print("NOTE: Using public BQ data. No credentials required for public data access.")
+    if MOCK_PROJECT_ID == "bigquery-public-admin_data":
+        print("NOTE: Using public BQ admin_data. No credentials required for public admin_data access.")
 
     print("\n--- Starting Data Fetch ---")
 

@@ -1,5 +1,5 @@
-from sm.higgs.phi_utils import HiggsUtils
-import jax.numpy as jnp
+from core.sm.higgs.phi_utils import HiggsUtils
+
 class HiggsCreator(HiggsUtils):
     """
     A minimalistic class for creating a simplified Higgs-like field node
@@ -9,7 +9,6 @@ class HiggsCreator(HiggsUtils):
     def __init__(self, g):
         HiggsUtils.__init__(self)
         self.g=g
-
 
     def higgs_attrs(self, px_id, nid=None) -> list[dict]:
         """
@@ -31,36 +30,38 @@ class HiggsCreator(HiggsUtils):
         except Exception as e:
             print(f"Err higgs_attrs: {e}")
 
-    def higgs_params_batch(self, amount_nodes, dim, just_vals=False,just_k=False) -> dict or list:
-        #h = 0.0
-        N = dim
+    def higgs_params_batch(self, dim, just_vals=False, just_k=False) -> dict or list:
         #phi = self.init_phi(h)
-        field = {
-            # --- Arrays scaled by N (Structure of Arrays - SOA) ---
-            "phi": self.field_values(amount_nodes, dim, distance=0),
-            #"prev": jnp.zeros_like(phi_val),  # Previous timestep state
-            "dmu_h": [self.dmu(amount_nodes, dim) for _ in range(len(amount_nodes))],
-            "h": self.field_value("h"),  # The physical scalar field component
-            "dV_dh": self.field_value("h"),  # Potential derivative
-            "laplacian_h": self.field_value("h"),
-            "vev": jnp.full(N, 246.0, dtype=jnp.float32),  # Vacuum Expectation Value (VEV)
-            "energy": self.field_value("h"),  # Energy contribution per node
-            "energy_density": self.field_value("h"),
+        try:
+            field_value = self.field_value(dim=dim)
+            field = {
+                # --- Arrays scaled by N (Structure of Arrays - SOA) ---
+                "phi": field_value,
+                #"prev": np.zeros_like(phi_val),  # Previous timestep state
+                "dmu_h": self.dmu(dim),
+                "h": field_value,  # The physical scalar field component
+                "dV_dh": field_value,  # Potential derivative
+                "laplacian_h": field_value,
+                "vev": 246.0,  # Vacuum Expectation Value (VEV)
+                "energy": 0,  # Energy contribution per node
+                "energy_density": field_value,
 
-            # --- Scalars (Constants/System Aggregates) ---
-            "potential_energy_H": self.field_value("h"),  # Total potential energy (System Scalar)
-            "total_energy_H": self.field_value("h"),  # Total system energy (System Scalar)
-            "mass": jnp.full(N, 125.0, dtype=jnp.float32),  # Higgs mass constant
-            "lambda_H": jnp.full(N, 0.13, dtype=jnp.float32)  # Coupling constant
-        }
+                # --- Scalars (Constants/System Aggregates) ---
+                "potential_energy_H": field_value,
+                "total_energy_H": field_value,  # Total system energy (System Scalar)
+                "mass": 125.0,  # Higgs mass constant
+                "lambda_H": 0.13 # Coupling constant
+            }
 
-        if just_vals:
-            return list(field.values())
-        elif just_k:
-            return list(field.keys())
-        else:
-            return field
+            if just_vals:
+                return list(field.values())
+            elif just_k:
+                return list(field.keys())
+            else:
+                return field
 
+        except Exception as e:
+            print("Err higgs_params_batchs", e)
 
     def create_higgs_field(self, px_id):
         attrs = self.higgs_attrs(

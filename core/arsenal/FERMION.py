@@ -35,7 +35,6 @@ def psi_bar(psi, gamma):
     res = psi.conj().T @ gamma[0]
     return res
 
-
 # --------------------
 # dmu_psi
 # --------------------

@@ -1,11 +1,11 @@
 from _god.create_world import God
-from app_utils import USER_ID, ENV_ID
+from core.app_utils import USER_ID, ENV_ID
 from main import fetch_world_content
 from qf_utils.qf_utils import QFUtils
 from qf_utils.runtime_utils_creator import RuntimeUtilsCreator
 from utils.graph.local_graph_utils import GUtils
 
-g=GUtils(USER_ID)
+g=GUtils()
 qfu=QFUtils(g)
 
 world_cfg = fetch_world_content()
@@ -24,7 +24,7 @@ ruc = RuntimeUtilsCreator(
     g=g,
 )
 
-# data processor -> get single file
+# admin_data processor -> get single file
 for nid, attrs in g.G.nodes(data=True):
     pass
 

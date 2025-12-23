@@ -68,7 +68,7 @@ class NodeCfgManager:
                 text_data=json.dumps(
                     {
                         "type": "message",
-                        "data": "Upserted data in store",
+                        "admin_data": "Upserted admin_data in store",
                         "status": "TEMPORARY_SAVED",
                     }
                 )

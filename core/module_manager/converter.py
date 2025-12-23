@@ -2,12 +2,11 @@ import json
 import os
 from typing import Dict, Any
 
-from app_utils import ENVC
 from a_b_c.gemw.chat_main import Chat
 from fb_core.real_time_database import FBRTDBMgr
 
 # Importiere hier die Prompts als Konstanten
-from module_manager.utils.prompts import *
+from core.module_manager.utils.prompts import *
 
 class Converter:
     """
@@ -28,29 +27,6 @@ class Converter:
 
         os.makedirs(save_dir, exist_ok=True)
 
-    # ------------------- Module Fetch -------------------
-    def get_modules_from_file(self, path: str = None) -> Dict[str, str]:
-        """
-        Fetch all module files.
-        - TESTING mode: walk local filesystem under `path` and read all files.
-        - Otherwise: fetch from Firebase using FBRTDBMgr.get_data
-        Returns dict[module_name -> file_content]
-        """
-        if self.testing_mode:
-            path = path or "./"
-            module_files = {}
-            for root, dirs, files in os.walk(path):
-                for f in files:
-                    file_path = os.path.join(root, f)
-                    with open(file_path, "r", encoding="utf-8") as fd:
-                        module_files[f] = fd.read()
-            return module_files
-
-        if self.fb and path:
-            data: dict[str, Any] = self.fb.get_data([f"files/{name}" for name in ENVC.get("files", [])])
-            return {k: v.get("content", "") for k, v in data.items()}
-
-        return {}
 
     # ------------------- Query Helpers -------------------
     def query_agent(self, prompt: str, file_content: str) -> str:
@@ -129,21 +105,7 @@ class Converter:
         extracted['graph_links'] = self.extract_graph_links(file_content)
         return extracted
 
-    def build_arsenal_from_dir(self, path: str, allowed_fields: list[str] = []):
-        """
-        Fetch all modules and process them, store results locally
-        """
-        modules = self.get_modules_from_file(path)
-        for name, content in modules.items():
-            print(f"Processing {name}")
-            extracted = self.process_file(content, allowed_fields)
-            # store in arsenal
-            self.arsenal[name] = extracted
-            # optionally save JSON metadata per module
-            json_path = os.path.join(self.save_dir, f"{name}_metadata.json")
-            with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(extracted, f, indent=2)
-            print(f"Metadata saved to {json_path}")
+
 
     # ------------------- Check Equation Master -------------------
     def check_eq_master(self, eq_content: str) -> str:

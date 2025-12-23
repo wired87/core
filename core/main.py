@@ -2,11 +2,10 @@ import numpy as np
 import ray
 import os
 
-from _ray_core.base.admin_base import RayAdminBase
-from _ray_core.globacs.glob_creator import GlobsMaster
+from core._ray_core import GlobsMaster
 
-from app_utils import TESTING, USER_ID, ENV_ID, DEMO_ENV
-from _ray_core.globacs.state_handler.main import StateHandler
+from core.app_utils import TESTING, USER_ID, ENV_ID, DEMO_ENV
+from core._ray_core.globacs import StateHandler
 from fb_core.real_time_database import FBRTDBMgr
 from project_creators import start_relay, create_db_swat
 
@@ -38,7 +37,7 @@ def fetch_world_content():
         world_cfg["cluster_dim"] = 2
         world_cfg["particle"] = "electron"
         world_cfg["phase"] = 3
-        world_cfg["sim_time_s"] = 1
+        world_cfg["sim_time"] = 1
         world_cfg["energy"] = 20
 
     # calc 3D amount nodes
