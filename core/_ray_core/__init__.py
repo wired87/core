@@ -4,7 +4,7 @@
 from core._ray_core.base.admin_base import RayAdminBase
 
 #
-print("================== INIT RAY CORE ==================")
+#print("================== INIT RAY CORE ==================")
 #
 
 """

@@ -2,8 +2,6 @@ import ast
 import inspect
 import os
 
-#from ray import get_actor
-
 from core.app_utils import TESTING, USER_ID, ARSENAL_PATH
 from fb_core.real_time_database import FBRTDBMgr
 from graph_visualizer.pyvis_visual import create_g_visual
@@ -55,7 +53,6 @@ class ModuleLoader(
         print("====== load_local_module_codebase ======")
         # tdo use Converter to convert files
         try:
-
             print(f"load codebase for {self.id}")
             attrs = self.g.G.nodes[self.id]
             if attrs.get("content", None):
@@ -179,7 +176,6 @@ class ModuleLoader(
         print("finished extract_module_classes")
 
 
-
     def set_arsenal_struct(self) -> list[dict]:
         """
         Gather parent MODULE (e.g. fermion)
@@ -193,9 +189,8 @@ class ModuleLoader(
 
             methods: dict[str, dict] = self.g.get_neighbor_list(
                 node=self.id,
-                target_type="PARAM",
+                target_type="METHOD",
             )
-
             print(f"defs found {self.id}:", methods.keys())
 
             if methods:
@@ -220,7 +215,6 @@ class ModuleLoader(
             )
 
             self.set_method_exec_index()
-
         except Exception as e:
             print(f"Error RELAY.retrieve_arsenal_struct: {e}")
             return []
@@ -303,7 +297,4 @@ class ModuleLoader(
 
         return scheduled_order
 
-if __name__ == "__main__":
-    mm = ModuleLoader(GUtils(USER_ID))
-    mm.module_workflow()
 

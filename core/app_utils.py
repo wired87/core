@@ -16,13 +16,13 @@ SCHEMA_GRID = [
 ARSENAL_PATH=r"C:\Users\bestb\PycharmProjects\BestBrain\core\arsenal" if os.name == "nt" else r"core/arsenal"
 
 ## GCP
-GCP_ID = os.environ.get("GCP_ID")
+GCP_ID = os.environ.get("GCP_PROJECT_ID")
 FBDB_INSTANCE = os.environ.get("FIREBASE_RTDB")
 GEM_API_KEY=os.environ.get("GEMINI_API_KEY")
 LOGGING_DIR = os.environ.get("LOGGING_DIR")
 
 
-
+BASE_MODULES={}
 def get_runnables():
     try:
         import jax.numpy as jnp

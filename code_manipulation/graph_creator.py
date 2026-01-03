@@ -158,7 +158,8 @@ class StructInspector(ast.NodeVisitor):
                         parent=["DATATYPE", "METHOD"],
                         module=self.module_name,
                 ))
-                # link method → attr
+
+                # link METHOD -> ATTR
                 self.g.add_edge(
                     src=method_name,
                     trt=attr_key,
@@ -168,6 +169,8 @@ class StructInspector(ast.NodeVisitor):
                         "trgt_layer": "PARAM",
                     }
                 )
+
+                # MODULE -> PARAM
                 self.g.add_edge(
                     src=self.module_name,
                     trt=attr_key,

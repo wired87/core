@@ -1,4 +1,3 @@
-
 from pydantic import BaseModel
 
 
@@ -15,3 +14,7 @@ class NodeCFGType(BaseModel):
     phase: list[PhaseType]
 
 ######################################
+
+
+
+

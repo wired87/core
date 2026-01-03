@@ -11,11 +11,12 @@ from tempfile import TemporaryDirectory
 from core.app_utils import USER_ID, ENV_ID
 from data import QF_LEX
 from qf_utils.all_subs import ALL_SUBS, G_FIELDS, H, FERMIONS
+from qf_utils.field_utils import FieldUtils
 from qf_utils.mover import Mover
 from qf_utils.qf_utils import QFUtils
 
 
-class God:
+class God(FieldUtils):
 
     """
     HANDLES THE CREATION OF A CLUSTER
@@ -28,27 +29,23 @@ class God:
     """
 
     def __init__(
-            self,
-            g,
-            qfu:QFUtils,
-
-            env_id=ENV_ID,
-            user_id=USER_ID,
-            testing=False,
-            world_type="bare",
-            enable_data_manager=True,
-            file_store=None,
+        self,
+        g,
+        qfu:QFUtils,
+        env_id=ENV_ID,
+        user_id=USER_ID,
+        testing=False,
+        world_type="bare",
+        enable_data_manager=True,
+        file_store=None,
     ):
+        FieldUtils.__init__(self)
         print("init God")
         self.bz_content = None
         self.user_id = user_id
         self.world_type=world_type
 
         self.enable_data_manager = enable_data_manager
-
-        self.spread_items_type = [
-            "PIXEL"
-        ]
 
         self.qfu=qfu
         self.save_path = rf"C:\Users\wired\OneDrive\Desktop\qfs\qf_sim\world\graphs\world_{user_id}.json" if os.name == "nt" else f"qf_sim/world/graphs/world_{user_id}.json"
@@ -94,7 +91,8 @@ class God:
                     type="PARAM",
                     **{
                         k:v
-                        for k, v in meta_attrs.items() if k not in ["nid", "type"]}
+                        for k, v in meta_attrs.items()
+                        if k not in ["nid", "type"]}
                 )
             )
 
@@ -198,7 +196,7 @@ class God:
             try:
                 self.g.add_node(
                     dict(
-                        nid=ntype,
+                        nid=ntype.upper(),
                         type="FIELD",
                         finished_run=False
                     )

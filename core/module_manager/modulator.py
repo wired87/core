@@ -12,7 +12,6 @@ from utils.graph.local_graph_utils import GUtils
 
 
 class Modulator(
-    #StateHandler,
     ModuleLoader,
     EqExtractor,
 ):
@@ -22,12 +21,10 @@ class Modulator(
             mid:str,
             qfu:QFUtils,
             module_index:int,
-            world_cfg:dict
     ):
         self.id = mid
         self.g:GUtils = GUtils(G=G)
         self.qfu = qfu
-        self.world_cfg=world_cfg
         self.fu = FieldUtils()
         #StateHandler.__init__(self)
         EqExtractor.__init__(self, self.g)
@@ -57,18 +54,11 @@ class Modulator(
                 # link
                 pass
 
-            """
-            STATE:
-            - code generated
-            """
-
             self.fields = self.g.get_neighbor_list_rel(
                 node=self.id,
                 trgt_rel="has_finteractant",
                 as_dict=True
             )
-
-            print("self.fields", self.fields)
 
             # init here because  if isdir fields, params mus be def
             ModuleLoader.__init__(
@@ -79,7 +69,7 @@ class Modulator(
             )
 
             # create workers and params for each field
-            self.create_field_workers(self.fields, module_index)
+            self.create_field_workers(list(self.fields.keys()))
 
             # convert
             # build
@@ -94,15 +84,6 @@ class Modulator(
             self.set_arsenal_struct()
             print("self.arsenal_struct", self.arsenal_struct)
 
-            # map param -> operator pytree ->
-            """
-            for item in self.arsenal_struct:
-                self.process_equation(
-                    expression_node=item["code"],
-                    parent_id=self.id,
-                    module_id=item["nid"],
-                )
-            """
 
             print("MODULE CONVERSION COMPLETE")
         except Exception as e:
@@ -110,15 +91,35 @@ class Modulator(
 
 
 
-    def set_field_data(self, field, module_param_struct):
-        data: dict = self.qfu.batch_field_single(
-            ntype=field,
-            amount_nodes=1,  # test batch
-            dim=self.fu.env,
-        )
-        for k, soa in data.items():
-            module_param_struct[k] = [soa]
-        print("create_modules finished")
+    def set_field_data(self, field):
+        """
+        Set example field data
+        """
+        print("set_field_data")
+        try:
+
+            data: dict = self.qfu.batch_field_single(
+                ntype=field,
+                dim=self.fu.env,
+            )
+
+            # set params for module
+            keys = list(data.keys())
+            values = list(data.values())
+            axis_def = self.set_axis(values)
+
+            print(f"update field node {field} ")
+            self.g.update_node(
+                dict(
+                    nid=field,
+                    keys=keys,
+                    values=values,
+                    axis_def=axis_def,
+                )
+            )
+        except Exception as e:
+            print("Err set_field_data:", e)
+    print("create_modules finished")
 
 
     def create_modules(self):
@@ -201,63 +202,36 @@ class Modulator(
 
 
 
-    def create_field_workers(self, fields, module_index):
-        # todo field utils -> remote
+    def create_field_workers(
+            self,
+            fields:list[str]
+    ):
+        # todo may add module based axis def
         start = time.perf_counter_ns()
-        module_param_struct = {}
-        for i, attrs in enumerate(fields):
-            if "ref" not in attrs:
-                uname = f"DATA_EXTRACTOR_{attrs['nid'].upper()}"
-
-                # 2. FINDEN DES ZUGEHÖRIGEN MODULE-INDEX
-                # Bestimmt den Parent-Typ des Feldes (sollte der NID des Moduls sein)
-                parent_ntype = self.qfu.get_parent(attrs["nid"])
-
-                # Sucht den Index des Moduls in der sortierten Liste
-                # Nutzt -1 als Marker, falls das Modul nicht gefunden wird
-                ref = NodeDataProcessor(
-                    #field_index=i, # todo index apply at reorder
-                    ntype=attrs["nid"],
-                    nid=uname,
-                    env=self.fu.env,
-                    #all_fields=[a["nid"] for a in fields],
-                    mid=self.id,
-                    module_index=attrs["module_index"],
-                    index=i,
-                    amount_nodes=1,
-                    world_cfg=self.world_cfg,
-                    arsenal_struct=[],
-                )
-                try:
-                    self.g.update_node({
-                        "nid": attrs["nid"],
-                        "ref": ref,
-                    })
-
-                except Exception as e:
-                    print(f"Error creating DATA_EXTRACTOR for node: {e}")
-
+        try:
+            for i, fid in enumerate(fields):
                 self.set_field_data(
-                    field=attrs["nid"],
-                    module_param_struct=module_param_struct,
+                    field=fid,
                 )
-
-        self.keys: list[str] = list(module_param_struct.keys())
-        self.values = list(module_param_struct.values())
-
-        # add method index to node to ensure persistency in equaton handling
-        self.g.update_node(
-            dict(
-                nid=self.id,
-                keys=self.keys,
-                value=self.values,
-                module_index=module_index
-            )
-        )
+        except Exception as e:
+            print("Err create_field_workers", e)
         end = time.perf_counter_ns()
         print("Field Workers created successfully after s:", end - start)
 
-
+    def set_axis(self, data:list) -> tuple:
+        """
+        Determines the vmap axis for each parameter in the admin_data bundle.
+        - Use axis 0 for array-like admin_data (map over it).
+        - Use None for scalar admin_data (broadcast it).
+        """
+        return (
+            0
+            if not isinstance(
+                param, (int, float)
+            )
+            else None
+            for param in data
+        )
 
 """    
 def create_field_stack(self):

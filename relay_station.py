@@ -4,16 +4,26 @@ import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from core.env_manager.env_lib import handle_get_env, handle_del_env, handle_set_env, handle_get_envs_user, EnvManager
+from core.injection_manager.injection import (
+    handle_set_inj, handle_del_inj, handle_get_inj_user, handle_get_inj_list,
+    handle_link_inj_env, handle_rm_link_inj_env, handle_list_link_inj_env, handle_get_injection,
+    handle_link_session_injection, handle_rm_link_session_injection, handle_get_sessions_injections
+)
+from core.module_manager.ws_modules_manager import (
+    handle_del_module,
+    handle_link_session_module,
+    handle_set_module,
+    handle_get_module,
+    handle_list_users_modules,
+)
+from core.fields_manager.fields_lib import handle_del_field, handle_set_field, \
+    handle_link_module_field, handle_list_modules_fields, handle_list_users_fields, \
+    handle_rm_link_module_field, handle_get_modules_fields, handle_get_sessions_fields, FieldsManager
 from core.guard import Guard
 
-"""
 
-[2025-12-19 15:55:39,521 E 3044 30260] rpc_client.h:203: Failed to connect to GCS within 60 seconds. GCS may have been killed. It's either GCS is terminated by `ray stop` or is killed unexpectedly. If it is killed unexpectedly, see the log file gcs_server.out. https://docs.ray.io/en/master/ray-observability/user-guides/configure-logging.html#logging-directory-structure. The program will terminate.
-Windows fatal exception: access violation
-
-"""
-
-
+import inspect
 import requests
 import json
 import dotenv
@@ -24,9 +34,10 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 
 import asyncio
 from urllib.parse import parse_qs
-import importlib
 
-from core.actors import deploy_guard
+from core.module_manager.ws_modules_manager.modules_lib import handle_rm_link_session_module
+from core.module_manager.module_etractor.extractor import RawModuleExtractor
+from core.sm_manager.sm_manager import SMManager
 from qf_utils.qf_utils import QFUtils
 from fb_core.real_time_database import FBRTDBMgr
 
@@ -50,16 +61,83 @@ from utils.id_gen import generate_id
 from utils.utils import Utils
 
 from fb_core.firestore_manager import FirestoreMgr
+
+from core.user_manager import UserManager
+from core.session_manager.session import SessionManager
+from core.session_manager.session import (
+    handle_get_sessions_modules, handle_get_sessions_envs,
+    handle_link_env_session, handle_rm_link_env_session
+)
+
 from dataclasses import dataclass
-from typing import Callable, Any, Awaitable
+from typing import Callable, Any, Awaitable, Dict
+
 
 @dataclass
 class RelayCase:
     case: str
     description: str
     callable: Callable[[Any], Awaitable[Any]]
+    required_data_structure: Dict = None
+    output_data_structure: Dict = None
 
 dotenv.load_dotenv()
+
+RELAY_CASES_CONFIG = [
+    # ENV HANDLING
+    {"case": "GET_ENV", "desc": "", "func": handle_get_env, "req_struct": {"auth": {"env_id": "str"}}, "out_struct": {"type": "GET_ENV", "data": {"env": "dict"}}},
+    {"case": "GET_USERS_ENVS", "desc": "", "func": handle_get_envs_user, "req_struct": {"auth": {"user_id": "str"}}, "out_struct": {"type": "GET_USERS_ENVS", "data": {"envs": "list"}}},
+    {"case": "DEL_ENV", "desc": "", "func": handle_del_env, "req_struct": {"auth": {"env_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_USERS_ENVS", "data": {"envs": "list"}}},
+    {"case": "SET_ENV", "desc": "", "func": handle_set_env, "req_struct": {"data": {"env_item": "dict"}, "auth": {"user_id": "str"}}, "out_struct": {"type": "GET_USERS_ENVS", "data": {"envs": "list"}}},
+
+    # FIELD
+    {"case": "DEL_FIELD", "desc": "Delete Field", "func": handle_del_field, "req_struct": {"auth": {"field_id": "str", "user_id": "str"}}, "out_struct": {"type": "LIST_USERS_FIELDS", "data": {"fields": "list"}}},
+    {"case": "LIST_USERS_FIELDS", "desc": "List Users Fields", "func": handle_list_users_fields, "req_struct": {"auth": {"user_id": "str"}}, "out_struct": {"type": "LIST_USERS_FIELDS", "data": {"fields": "list"}}},
+    {"case": "LIST_MODULES_FIELDS", "desc": "List Modules Fields", "func": handle_list_modules_fields, "req_struct": {"auth": {"module_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_MODULES_FIELDS", "data": {"fields": "list"}}},
+    {"case": "SET_FIELD", "desc": "Set Field", "func": handle_set_field, "req_struct": {"data": {"field": "dict"}, "auth": {"field_id": "str", "user_id": "str"}}, "out_struct": {"type": "LIST_USERS_FIELDS", "data": {"fields": "list"}}},
+    {"case": "LINK_MODULE_FIELD", "desc": "Link Module Field", "func": handle_link_module_field, "req_struct": {"auth": {"user_id": "str", "module_id": "str", "field_id": "str"}}, "out_struct": {"type": "GET_MODULES_FIELDS", "data": {"fields": "list"}}},
+    {"case": "RM_LINK_MODULE_FIELD", "desc": "Remove Link Module Field", "func": handle_rm_link_module_field, "req_struct": {"auth": {"user_id": "str", "module_id": "str", "field_id": "str"}}, "out_struct": {"type": "GET_MODULES_FIELDS", "data": {"fields": "list"}}},
+    {"case": "GET_MODULES_FIELDS", "desc": "Get Modules Fields", "func": handle_get_modules_fields, "req_struct": {"auth": {"user_id": "str", "module_id": "str"}}, "out_struct": {"type": "GET_MODULES_FIELDS", "data": {"fields": "list"}}},
+    {"case": "SESSIONS_FIELDS", "desc": "Get Sessions Fields", "func": handle_get_sessions_fields, "req_struct": {"auth": {"user_id": "str", "session_id": "str"}}, "out_struct": {"type": "SESSIONS_FIELDS", "data": {"fields": "list"}}},
+
+    # INJECTION - Energy Designer
+    {"case": "SET_INJ", "desc": "Set/upsert injection", "func": handle_set_inj, "req_struct": {"data": "dict", "auth": {"user_id": "str"}}, "out_struct": {"type": "GET_INJ_USER", "data": "list"}},
+    {"case": "DEL_INJ", "desc": "Delete injection", "func": handle_del_inj, "req_struct": {"auth": {"injection_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_INJ_USER", "data": "list"}},
+    {"case": "GET_INJ_USER", "desc": "Get user injections", "func": handle_get_inj_user, "req_struct": {"auth": {"user_id": "str"}}, "out_struct": {"type": "GET_INJ_USER", "data": "list"}},
+    {"case": "GET_INJ_LIST", "desc": "Get injection list", "func": handle_get_inj_list, "req_struct": {"data": {"inj_ids": "list"}, "auth": {"user_id": "str"}}, "out_struct": {"type": "GET_INJ_LIST", "data": "list"}},
+    
+    # INJECTION - Env Linking
+    {"case": "LINK_INJ_ENV", "desc": "Link injection to env", "func": handle_link_inj_env, "req_struct": {"auth": {"injection_id": "str", "env_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_INJ_ENV", "data": "list"}},
+    {"case": "RM_LINK_INJ_ENV", "desc": "Remove link injection to env", "func": handle_rm_link_inj_env, "req_struct": {"auth": {"injection_id": "str", "env_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_INJ_ENV", "data": "list"}},
+    {"case": "LIST_LINK_INJ_ENV", "desc": "List env linked injections", "func": handle_list_link_inj_env, "req_struct": {"auth": {"env_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_INJ_ENV", "data": "list"}},
+    {"case": "GET_INJ_ENV", "desc": "Get env injections", "func": handle_list_link_inj_env, "req_struct": {"auth": {"env_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_INJ_ENV", "data": "list"}},
+    {"case": "GET_INJECTION", "desc": "Get single injection", "func": handle_get_injection, "req_struct": {"auth": {"injection_id": "str"}}, "out_struct": {"type": "GET_INJECTION", "data": "dict"}},
+
+    # INJECTIONS (Session)
+    {"case": "LINK_SESSION_INJECTION", "desc": "Link Session Injection", "func": handle_link_session_injection, "req_struct": {"auth": {"session_id": "str", "injection_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_INJECTIONS", "data": {"injections": "list"}}},
+    {"case": "RM_LINK_SESSION_INJECTION", "desc": "Remove Link Session Injection", "func": handle_rm_link_session_injection, "req_struct": {"auth": {"session_id": "str", "injection_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_INJECTIONS", "data": {"injections": "list"}}},
+    {"case": "GET_SESSIONS_INJECTIONS", "desc": "Get Session Injections", "func": handle_get_sessions_injections, "req_struct": {"auth": {"session_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_INJECTIONS", "data": {"injections": "list"}}},
+
+    {"case": "REQUEST_INJ_SCREEN", "desc": "Requesting admin_data relavant for inj setup", "func": None, "func_name": "request_inj_process_start", "req_struct": {"data": {"env_id": "str"}}, "out_struct": {"type": "INJ_PATTERN_STRUCT", "admin_data": "dict", "env_id": "str"}},
+    {"case": "START_SIM", "desc": "Start simulation", "func": None, "func_name": "_handle_start_sim_process", "req_struct": {"data": "dict"}, "out_struct": {"type": "START_SIM", "status": {"state": "str", "code": "int", "msg": "str"}, "data": "dict"}},
+    {"case": "SET_INJ_PATTERN", "desc": "Set ncfg injection pattern", "func": None, "func_name": "set_env_inj_pattern", "req_struct": {"data": "dict"}, "out_struct": None},
+    {"case": "GET_INJ", "desc": "Retrieve inj cfg list", "func": None, "func_name": "set_env_inj_pattern", "req_struct": {"data": "dict"}, "out_struct": None},
+
+    # SESSION
+    {"case": "LINK_ENV_SESSION", "desc": "Link Env Session", "func": handle_link_env_session, "req_struct": {"auth": {"user_id": "str", "session_id": "str", "env_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_ENVS", "data": {"envs": "list"}}},
+    {"case": "RM_LINK_ENV_SESSION", "desc": "Remove Link Env Session", "func": handle_rm_link_env_session, "req_struct": {"auth": {"user_id": "str", "session_id": "str", "env_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_ENVS", "data": {"envs": "list"}}},
+    {"case": "GET_SESSIONS_ENVS", "desc": "Get Session Envs", "func": handle_get_sessions_envs, "req_struct": {"auth": {"user_id": "str", "session_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_ENVS", "data": {"envs": "list"}}},
+    
+    # MODULES
+    {"case": "DEL_MODULE", "desc": "Delete Module", "func": handle_del_module, "req_struct": {"auth": {"module_id": "str", "user_id": "str"}}, "out_struct": {"type": "LIST_USERS_MODULES", "data": {"modules": "list"}}},
+    {"case": "LINK_SESSION_MODULE", "desc": "Link Session Module", "func": handle_link_session_module, "req_struct": {"auth": {"user_id": "str", "session_id": "str", "module_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_MODULES", "data": {"modules": "list"}}},
+    {"case": "RM_LINK_SESSION_MODULE", "desc": "Remove Link Session Module", "func": handle_rm_link_session_module, "req_struct": {"auth": {"user_id": "str", "session_id": "str", "module_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_MODULES", "data": {"modules": "list"}}},
+    {"case": "SET_MODULE", "desc": "Set Module", "func": handle_set_module, "req_struct": {"data": {"files": "list"}, "auth": {"user_id": "str"}}, "out_struct": {"type": "LIST_USERS_MODULES", "data": {"modules": "list"}}},
+    {"case": "GET_MODULE", "desc": "Get Module", "func": handle_get_module, "req_struct": {"auth": {"module_id": "str"}}, "out_struct": {"type": "GET_MODULE", "data": "dict"}},
+    {"case": "GET_SESSIONS_MODULES", "desc": "Get Session Modules", "func": handle_get_sessions_modules, "req_struct": {"auth": {"user_id": "str", "session_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_MODULES", "data": {"modules": "list"}}},
+    {"case": "LIST_USERS_MODULES", "desc": "List User Modules", "func": handle_list_users_modules, "req_struct": {"auth": {"user_id": "str"}}, "out_struct": {"type": "LIST_USERS_MODULES", "data": {"modules": "list"}}},
+    {"case": "CONVERT_MODULE", "desc": "Convert Module", "func": None, "func_name": "_handle_convert_module", "req_struct": {"auth": {"module_id": "str"}, "data": {"files": "dict"}}, "out_struct": {"type": "CONVERT_MODULE", "data": "dict"}},
+]
 
 class Relay(
     AsyncWebsocketConsumer
@@ -104,6 +182,7 @@ class Relay(
 
         self.connection_manager = ConnectionManager()
         self.chat_classifier = AIChatClassifier()
+        self.env_manager = EnvManager()
 
         self.utils = Utils()
 
@@ -124,11 +203,11 @@ class Relay(
         self.user_id = None
         self.run = True
         self.database = None
-        #self.ray_admin = None
         self.ws_port = None
+
         self.env_store = []
         self.data_request_endpoint = f"{self.domain}/bq/auth"
-
+        self.sm_manager = SMManager()
         self.fields = []
 
         self.ws_handler = None
@@ -146,6 +225,8 @@ class Relay(
         self.active_envs = {}
         self.tmp = TemporaryDirectory()
         self.root = Path(self.tmp.name)
+        self.user_manager = UserManager()
+
 
         self.worker_states = {
             "unknown": [],
@@ -160,10 +241,10 @@ class Relay(
             "set_parameters",
             "stop",
         ]
-
+        self.session_id=None
         self.loop = asyncio.new_event_loop()
         self.data_thread_loop = asyncio.new_event_loop()
-
+        self.user_tables_authenticated = False
         self.cluster_auth_data = None
 
         self.db_manager = FBRTDBMgr()
@@ -180,12 +261,11 @@ class Relay(
             self.cluster_root = "cluster.botworld.cloud"
 
         self.auth_data = None
-        
-        self.firestore = FirestoreMgr()
+
+        #self.firestore = FirestoreMgr()
 
         self.relay_cases: list[RelayCase] = []
         self._register_cases()
-        threading.Thread(target=self._scan_dynamic_cases, daemon=True).start()
 
 
     async def connect(self):
@@ -193,14 +273,14 @@ class Relay(
         # Create ID
         await self.accept()
         print("Scope type:", self.scope.get("type"))
+
         query_string = self.scope["query_string"].decode()
         query_params = parse_qs(query_string)
+
         print(f"query_params extracted {query_params}")
 
         user_id = query_params.get("user_id")[0]  # todo user_id create frontend
         self.user_id = user_id
-
-        self.session_id = generate_id()
 
         print("self.user_id", self.user_id)
 
@@ -218,6 +298,7 @@ class Relay(
             G=None,
             g_from_path=None,
         )
+
         self.qfu = QFUtils(
             g=self.g
         )
@@ -258,84 +339,79 @@ class Relay(
             user_id
         )
 
-        print("request accepted")
+        # Initialize User Management Workflow
+        if not self.user_tables_authenticated:
+            try:
+                user_email = None
+                workflow_results = self.user_manager.initialize_qbrain_workflow(
+                    uid=self.user_id,
+                    email=user_email,
+                )
+                print(f"User management workflow completed: {workflow_results}")
+            except Exception as e:
+                print(f"Warning: User management workflow error: {e}")
+                import traceback
+                traceback.print_exc()
+            self.user_tables_authenticated=True
+        
+        if not self.session_id:
+            # Initialize Session Management and Create Session
+            try:
+                self.session_manager = SessionManager()
+                # Create session after successful user authentication
+                session_id = self.session_manager.get_or_create_active_session(self.user_id)
+                if session_id:
+                    self.session_id = session_id
+                    print(f"Session created successfully: {session_id}")
+                else:
+                    print(f"Warning: Session creation failed for user {self.user_id}")
+                    # Generate fallback session_id to maintain functionality
+                    self.session_id = generate_id()
+                    print(f"Using FALLABCK SESSION ID: {self.session_id}")
+            except Exception as e:
+                print(f"Warning: SESSION MGR ERR: {e}")
+                import traceback
+                traceback.print_exc()
+                # Generate fallback session_id to ensure functional stability
+                self.session_id = generate_id()
+                print(f"USING FALLABACK SESSION ID: {self.session_id}")
 
-    async def validate_action(self, action_type, data):
-        # Validation logic removed, all actions are now permitted
-        return True
+        """
+        # ENSURE SM IN USER PRESENT
+        self.sm_manager.main(self.user_id)
+        """
 
-
+        return_data = {
+            "type": "SET_SID",
+            "auth":{
+                "sid": self.session_id,
+            },
+            "data":{},
+        }
+        return_data=json.dumps(return_data)
+        await self.send(text_data=return_data)
+        print(f"REQUEST FOR USER {self.user_id} ACCEPTED")
 
 
 
 
     def _register_cases(self):
-        cases = [
-            ("world_cfg", "Process world configuration", self._handle_world_cfg),
-
-            # INJECTION HANDLER
-            ("node_cfg", "Process node configuration", self._handle_node_cfg),
-
-            # module handler -> include in bar receive
-            ("file", "Handle file uploads", self._handle_files),
-
-            ("request_inj_screen", "Requesting admin_data relavant for inj setup (fields, grid conc etc)",
-             self.request_inj_process_start),
-
-            ("start_sim", "Start simulation", self._handle_start_sim_wrapper),
-
-            ("set_inj_pattern", "Set ncfg injection pattern", self.set_cfg_process),
-
-            ("env_ids", "Retrieve environment IDs", self._handle_env_ids),
-            ("get_data", "Fetch and zip admin_data from BigQuery", self._handle_get_data),
-            ("delete_env", "Delete an environment", self._handle_delete_env),
-            ("extend_gnn", "Extend GNN", self._handle_extend_gnn),
-            # train is performed in each sim
-            #("train_gnn", "Train GNN", self._handle_train_gnn),
-
-            ("create_visuals", "Create visuals", self._handle_create_visuals),
-            ("create_knowledge_graph_from_data_tables", "Create KG from admin_data tables", self._handle_create_kg),
-        ]
-        
-        for case, desc, func in cases:
-            self.relay_cases.append(RelayCase(case=case, description=desc, callable=func))
+        for case_info in RELAY_CASES_CONFIG:
+            func = case_info.get("func")
+            if func is None and "func_name" in case_info:
+                func = getattr(self, case_info["func_name"])
+            
+            self.relay_cases.append(RelayCase(
+                case=case_info["case"], 
+                description=case_info["desc"], 
+                callable=func, 
+                required_data_structure=case_info.get("req_struct", {}), 
+                output_data_structure=case_info.get("out_struct", {})
+            ))
 
 
 
 
-    def _scan_dynamic_cases(self):
-        """
-        Scans environment variables starting with 'RELAY' for paths to dictionaries
-        mapping case names to callables.
-        Format of env var value: 'module.path.variable_name'
-        """
-        for key, value in os.environ.items():
-            if key.startswith("RELAY"):
-                try:
-                    # Assume value is "module.path.dict_name"
-                    if "." in value:
-                        module_name, dict_name = value.rsplit(".", 1)
-                        module = importlib.import_module(module_name)
-                        case_dict = getattr(module, dict_name)
-                        
-                        if isinstance(case_dict, dict):
-                            print(f"Loading dynamic cases from {key} -> {value}")
-                            for case_name, handler in case_dict.items():
-                                if callable(handler):
-                                    # Check if case already exists to avoid duplicates/overwrites if desired, 
-                                    # but typically dynamic overwrites static or appends.
-                                    # Here we append.
-                                    self.relay_cases.append(
-                                        RelayCase(
-                                            case=case_name,
-                                            description=f"Dynamic case from {key}",
-                                            callable=handler
-                                        )
-                                    )
-                                else:
-                                    print(f"Skipping non-callable handler for case {case_name} in {key}")
-                except Exception as e:
-                    print(f"Failed to load dynamic cases from {key} ({value}): {e}")
 
     async def receive(
             self,
@@ -344,16 +420,18 @@ class Relay(
     ):
         print(f"start receive: {text_data}")
         try:
-            data = deserialize(text_data)
-            data_type = data.get("type")  # assuming 'type' field for command
-            print(f"Received message from frontend: {data}")
-
-            # Middleware Guard
-            if data_type in [
-                "world_cfg", "start_sim"
-            ] and not self.testing:
-                if not await self.validate_action(data_type, data):
-                    return
+            payload = deserialize(text_data)
+            data_type = payload.get("type")  # assuming 'type' field for command
+            
+            # Inject session_id into auth if available
+            if self.session_id:
+                if "auth" not in payload:
+                    payload["auth"] = {}
+                # Only inject if not already present (frontend might override)
+                if "session_id" not in payload["auth"]:
+                    payload["auth"]["session_id"] = self.session_id
+                    
+            print(f"Received message from frontend: {payload}")
 
             # Dynamic Dispatch
             handled = False
@@ -361,7 +439,30 @@ class Relay(
             # Iterate over a copy to ensure thread safety if cases are added at runtime
             for relay_case in list(self.relay_cases):
                 if relay_case.case == data_type:
-                    await relay_case.callable(data)
+                    # Sig check to support both legacy (1 arg) and new (2 args) handlers
+                    sig = inspect.signature(relay_case.callable)
+                    try:
+                        if len(sig.parameters) >= 2:
+                            # Pass auth as dict if it looks like env_lib handler? 
+                            # env_lib handlers are functions.
+                            # For now pass AuthData object. If env_lib fails, we should fix env_lib.
+                            # But wait, env_lib expects dict.
+                            # Let's check module name?
+                            if relay_case.callable.__module__.endswith("env_lib"):
+                                res = await relay_case.callable(payload) if inspect.iscoroutinefunction(relay_case.callable) else relay_case.callable(payload)
+                            else:
+                                res = await relay_case.callable(payload) if inspect.iscoroutinefunction(relay_case.callable) else relay_case.callable(payload)
+                        else:
+                            res = await relay_case.callable(payload) if inspect.iscoroutinefunction(relay_case.callable) else relay_case.callable(payload)
+                    except TypeError as e:
+                         # Fallback or re-raise
+                         print(f"Error calling handler {relay_case.case}: {e}")
+                         raise
+
+                    return_data = json.dumps(res, default=str)
+                    print("send", return_data)
+
+                    await self.send(text_data=return_data)
                     handled = True
                     break
             
@@ -382,16 +483,13 @@ class Relay(
             if isinstance(world_cfg, list) and len(world_cfg) > 0:
                 world_cfg = world_cfg[0]
             
-            # Normalize field names: frontend uses 'amount_of_nodes', Guard expects 'amount_nodes'
-            if "amount_of_nodes" in world_cfg and "amount_nodes" not in world_cfg:
-                world_cfg["amount_nodes"] = world_cfg["amount_of_nodes"]
-            
             # Ensure env_id is present (frontend sends 'id')
             if "env_id" not in world_cfg and "id" in world_cfg:
                 world_cfg["env_id"] = world_cfg["id"]
             
             node = self.guard.set_wcfg(world_cfg)
             self.required_steps["world_cfg"] = True
+
             await self.send(
                 text_data=json.dumps({
                     "type": "world_cfg",
@@ -408,7 +506,6 @@ class Relay(
         self.world_creator.node_cfg_process(data)
 
 
-
     async def _handle_env_ids(self):
         await self.send(
             text_data=json.dumps({
@@ -418,6 +515,7 @@ class Relay(
                 ),
             })
         )
+
 
 
     async def request_inj_process_start(self, data):
@@ -443,15 +541,62 @@ class Relay(
             )
 
 
-    async def set_cfg_process(self, data):
+    async def set_env_inj_pattern(self, data):
+        """
+        Set injection pattern for environment.
+        Handles 'injection_id_struct' by resolving injection IDs to actual data patterns.
+        
+        Args:
+            data: {
+                "env_id": str,
+                "injection_id_struct": {ntype: {pos_str: inj_id}},
+                ...
+            }
+        """
         print("inj_cfg_process start")
-        # get guard of user
         env_id = data.get("env_id")
-        if env_id:
+        
+        # New structure: map mapping position to injection_id
+        injection_id_struct = data.get("injection_id_struct") 
+        
+        resolved_pattern = {}
+        
+        if injection_id_struct and env_id:
+            print(f"Resolving injection IDs for env {env_id}")
+            
+            # Resolve IDs to patterns
+            # Structure: {ntype: {pos: inj_id}}
+            for ntype, pos_map in injection_id_struct.items():
+                resolved_pattern[ntype] = {}
+                
+                for pos_key, inj_id in pos_map.items():
+                    # Retrieve injection data from BigQuery
+                    inj_record = self.injection_manager.get_injection(inj_id)
+                    
+                    if inj_record and "data" in inj_record:
+                        # inj_record["data"] is [[times], [energies]]
+                        resolved_pattern[ntype][pos_key] = inj_record["data"]
+                    else:
+                        print(f"Warning: Injection {inj_id} not found or has no data")
+            
+            # Apply resolved pattern to guard
+            # Note: guard.set_inj_pattern likely expects the pattern data directly
             self.guard.set_inj_pattern(
-                data.get("inj_pattern") or data.get("inj_pattern"),
+                resolved_pattern,
                 env_id
             )
+            print("Injection pattern applied")
+    
+    # Old _handle methods for injections removed as they are now in injection.py
+
+            
+        elif data.get("inj_pattern"):
+            # Legacy/Direct pattern support
+            self.guard.set_inj_pattern(
+                data.get("inj_pattern"),
+                env_id
+            )
+        
         print("inj_cfg_process cfg set")
 
 
@@ -504,28 +649,29 @@ class Relay(
             )
 
     async def _handle_files(self, data):
-
-        ### todo impl, cachiin (bq->byes + embed -> ss -> if exists: get id(name) -> save local; else: self.handle fiels incl embeds -> bq
-
+        """
+        RCV FILE -> load self.root -> loop all files (check mod eists)
+        """
         # HANDLE FILES
         files = data.get("files")
         if files:
-            # hande files -> save G
-            await self._handle_files(files)
+            # SAVE RECEIVED FILE
+            for f in files:
+                with open(os.path.join(self.root, f.name), "w") as content:
+                    content.write(f)
 
-        # todo upser files
+            self.guard.handle_mod_stack(
+                self.root
+            )
 
-        self.guard.handle_mod_stack(
-            files,
-            self.root
-        )
+            await self.send(
+                text_data=json.dumps({
+                    "type": "message",
+                    "admin_data": "Messages processed successfully",
+                })
+            )
 
-        await self.send(
-            text_data=json.dumps({
-                "type": "message",
-                "admin_data": "Messages processed successfully",
-            })
-        )
+
 
     async def _handle_delete_env(self, data: dict):
         env_id = data.get("env_id")
@@ -574,19 +720,56 @@ class Relay(
         """
         pass
 
-    async def _handle_start_sim_wrapper(self, data: dict):
-        # APPLY COLLECTED FILE NAMES TO ENVS
+    async def _handle_start_sim_process(self, payload: dict):
         """
-        for env_id in self.created_envs:
-            path = f"users/{self.user_id}/env/{env_id}"
-            self.db_manager.upsert_data(
-                path=path,
-                admin_data={"files": self.file_store},
-            )
+        Handles the START_SIM case.
+        Delegates to Guard.sim_start_process to fetch data, build graph, and compile pattern.
+        Deactivates session upon success.
         """
-        # todo thread
-        env_ids = data.get("env_ids")
-        self.guard.main(env_ids)
+        print("Starting Simulation Process...")
+        try:
+            # 1. Call Guard Process
+            # Guard.sim_start_process is synchronous, so we call it directly.
+            # It performs batch data fetching, graph construction, and pattern compilation.
+            self.guard.sim_start_process(payload)
+            
+            # 2. Deactivate Session
+            if hasattr(self, 'session_id') and self.session_id:
+                print(f"Deactivating session {self.session_id} after successful sim start")
+                self.session_manager.deactivate_session(self.session_id)
+                
+            # 3. Send Success Response
+            response = {
+                "type": "START_SIM",
+                "status": {
+                    "state": "success",
+                    "code": 200,
+                    "msg": "Simulation started and session completed."
+                },
+                "data": {} 
+            }
+            await self.send(text_data=json.dumps(response))
+            print("Sim start process completed successfully.")
+
+        except Exception as e:
+            print(f"Error in start_sim_process: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Send Error Response
+            error_response = {
+                "type": "START_SIM",
+                "status": {
+                    "state": "error",
+                    "code": 500,
+                    "msg": str(e)
+                },
+                "data": {}
+            }
+            await self.send(text_data=json.dumps(error_response))
+
+    # Legacy injection methods removed (moved to injection.py)
+
 
 
 
@@ -1009,8 +1192,6 @@ class Relay(
             }))
 
 
-
-
     async def file_response(self, content):
         await self.send(
             text_data=json.dumps({
@@ -1152,5 +1333,50 @@ class Relay(
                 if new[k] != old[k]:
                     changes[k] = new[k]
         return changes
+
+    async def _handle_convert_module(self, payload):
+        """
+        Input: CONVERT_MODULE, auth={module_id, user_id}, data={files={pdf:files}}
+        Behavior: Call RawModuleExtractor.process -> return result.
+        Output: type=CONVERT_MODULE, data={params:..., code:...}
+        """
+        auth = payload.get("auth", {})
+        data = payload.get("data", {})
+        module_id = auth.get("module_id")
+        
+        if not module_id:
+             error_response = {
+                "type": "CONVERT_MODULE",
+                "status": {"state": "error", "code": 400, "msg": "Missing module_id"},
+                "data": {}
+            }
+             await self.send(text_data=json.dumps(error_response))
+             return
+
+        try:
+            print(f"Starting module conversion for module {module_id}")
+            extractor = RawModuleExtractor(self.user_id, module_id)
+            # Run in executor to avoid blocking event loop
+            files = data.get("files", {})
+            result = await self.loop.run_in_executor(None, extractor.process, files)
+            
+            response = {
+                "type": "CONVERT_MODULE",
+                "status": {"state": "success", "code": 200, "msg": "Module converted"},
+                "data": result
+            }
+            await self.send(text_data=json.dumps(response))
+            print(f"Module conversion completed for {module_id}")
+            
+        except Exception as e:
+            print(f"Error converting module: {e}")
+            import traceback
+            traceback.print_exc()
+            error_response = {
+                "type": "CONVERT_MODULE",
+                "status": {"state": "error", "code": 500, "msg": str(e)},
+                "data": {}
+            }
+            await self.send(text_data=json.dumps(error_response))
 
 

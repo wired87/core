@@ -20,9 +20,8 @@ class DataUtils:
     """
 
     def __init__(
-            self, ntype, qfu, amount_nodes, world_cfg):
+            self, ntype, qfu, amount_nodes):
         self.ntype=ntype
-        self.amount_nodes=world_cfg["amount_nodes"]
 
         self.fu = FieldUtils()
 
@@ -41,12 +40,6 @@ class DataUtils:
         self.sum_util_keys: list[str] or None = None
 
         self.eq_utils = {}
-
-    def print_payload(self,param_map):
-        try:
-            print(f"fire payload {self.ntype} SOA KEYS: {list(self.soa.keys())} --- {[f'{list(self.soa.keys())[p]}::{p}' for p in param_map]}")
-        except Exception as e:
-            print("Err print_payload", e)
 
 
 
@@ -96,11 +89,6 @@ class DataUtils:
         )
         print(f"grabbed items from {self.ntype}: {payload.shape}")
         return ray.put(payload)
-
-
-
-
-
 
 
 
@@ -194,6 +182,7 @@ class DataUtils:
                         attrs[key] = val
         except Exception as e:
             print(f"Err extract_utils: {e}")
+
 
     def vertical_to_horizontal(self):
         # scale params vertical -

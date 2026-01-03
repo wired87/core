@@ -27,26 +27,15 @@ dotenv.load_dotenv()
 
 
 OS_NAME = os.name
-print("OS_NAME", OS_NAME)
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+print("HI!", OS_NAME)
 if OS_NAME == "nt":
     GOOGLE_APPLICATION_CREDENTIALS = r"C:\\Users\\wired\\OneDrive\\Desktop\\Projects\\BestBrain\\_google\\g_auth\\aixr-401704-59fb7f12485c.json"
-
 else:
     GOOGLE_APPLICATION_CREDENTIALS = "/home/derbenedikt_sterra/BestBrain/_google/g_auth/aixr-401704-59fb7f12485c.json"
-
-
-
-# Set absolute path to pythonpath
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-cpr("HI!")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'django-insecure-gq0rr+q=s$=lci8=r%whnubclama3db!wnl1gpmh!_z2x5u_i3'
-
 
 
 if os.name == "nt":
@@ -109,8 +98,6 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     "corsheaders",
-    #'rest_framework.authtoken',
-    #'rest_framework_simplejwt.token_blacklist',
 ]
 
 ASGI_APPLICATION = "bm.asgi.application"
@@ -129,11 +116,6 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = 'bm.urls'
-
-
-
-
-
 
 
 # JWT

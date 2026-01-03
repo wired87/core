@@ -27,7 +27,6 @@ class NodeDataProcessor(
             nid,
             ntype,
             amount_nodes,
-            world_cfg,
             mid,
             arsenal_struct,
             module_index,
@@ -36,7 +35,6 @@ class NodeDataProcessor(
         StateHandler.__init__(self)
 
         self.time = 0
-        self.world_cfg=world_cfg
         self.arsenal_struct=arsenal_struct
 
         self.amount_nodes=amount_nodes
@@ -53,7 +51,6 @@ class NodeDataProcessor(
             self.g,
             ntype,
             amount_nodes,
-            world_cfg
         )
 
         self.updator = get_actor("UPDATOR")
@@ -299,7 +296,6 @@ class NodeProcessorWorker(NodeDataProcessor):
             nid,
             ntype,
             amount_nodes,
-            world_cfg,
             mid,
             arsenal_struct,
             module_index,
@@ -311,7 +307,6 @@ class NodeProcessorWorker(NodeDataProcessor):
             nid,
             ntype,
             amount_nodes,
-            world_cfg,
             mid,
             arsenal_struct,
             module_index,

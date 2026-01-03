@@ -1,7 +1,5 @@
 import os
-
 from ray import get_actor
-
 from core._ray_core.base.base import BaseActor
 from core._ray_core.globacs.state_handler.main import StateHandler
 from core.app_utils import ARSENAL_PATH
@@ -10,7 +8,6 @@ from utils.graph.local_graph_utils import GUtils
 
 import dotenv
 dotenv.load_dotenv()
-
 
 class ModuleCreator(
     StateHandler,
@@ -25,7 +22,6 @@ class ModuleCreator(
             self,
             G,
             qfu,
-            world_cfg,
     ):
         """
         attrs: extracted module content in frmat:
@@ -39,15 +35,14 @@ class ModuleCreator(
         self.g = GUtils(
             G=G
         )
-        self.world_cfg=world_cfg
         self.mmap = []
         self.qfu=qfu
         self.arsenal_struct: list[dict] = None
-
+        self.sm=None
 
     def load_sm(self):
         new_modules = []
-        sm=True
+        sm = True
         for module_file in os.listdir(ARSENAL_PATH):
             if not self.g.G.has_node(module_file):
                 new_modules.append(module_file)
@@ -64,7 +59,9 @@ class ModuleCreator(
         """
         LOOP (TMP) DIR -> CREATE MODULES FORM MEDIA
         """
-
+        if self.sm is None:
+            self.load_sm()
+            self.sm=True
         # todo load modules form files
         for root, dirs, files in os.walk(temp_path):
             for module in dirs:
@@ -98,16 +95,20 @@ class ModuleCreator(
         try:
             mid = file.split(".")[0]
             print("CREATE M", mid)
-            module_index = len([nid for nid, _ in self.g.get_nodes("type", "MODULE")])
+
+            module_index = len(
+                [
+                    nid
+                    for nid, _ in self.g.get_nodes("type", "MODULE")
+                ]
+            )
+
             mref = Modulator(
                 G=self.g.G,
                 mid=mid,
                 qfu=self.qfu,
-                # ensure persistent module index ref
                 module_index=module_index,
-                world_cfg=self.world_cfg,
             )
-
 
             # save ref
             self.g.add_node(

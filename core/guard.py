@@ -1,18 +1,27 @@
-import base64
+import json
+import logging
 import pprint
 import time
-from typing import Any
+from datetime import datetime
+from typing import Any, Dict
+
+import networkx as nx
 
 from _god.create_world import God
 from core._ray_core.globacs.state_handler.main import StateHandler
 
 from bob_builder.artifact_registry.artifact_admin import ArtifactAdmin
 from core.app_utils import SCHEMA_GRID
+from core.env_manager import EnvManager
+from core.fields_manager.fields_lib import FieldsManager, generate_numeric_id
+from core.injection_manager import InjectionManager
+from core.module_manager.ws_modules_manager import ModuleWsManager
+from core.user_manager import UserManager
 
 from gnn_master.pattern_store import GStore
 from core.module_manager.mcreator import ModuleCreator
 from qf_utils.all_subs import ALL_SUBS
-from qf_utils.field_utils import FieldUtils
+from qf_utils.qf_utils import QFUtils
 from workflows.deploy_sim import DeploymentHandler
 
 class PatternMaster:
@@ -20,6 +29,7 @@ class PatternMaster:
     def __init__(self, g):
         self.g=g
         self.modules_struct=[]
+
 
 
     def get_empty_field_structure(self):
@@ -47,8 +57,7 @@ class PatternMaster:
 class Guard(
     StateHandler,
     God,
-    FieldUtils,
-PatternMaster,
+    PatternMaster,
 ):
     # todo answer caching
     # todo cross module param edge map
@@ -77,12 +86,21 @@ PatternMaster,
         self.deployment_handler = DeploymentHandler(
             user_id
         )
+
+        # DB MANAGERS
+        self.module_db_manager = ModuleWsManager()
+        self.field_manager = FieldsManager()
+        self.injection_manager = InjectionManager()
+        self.env_manager = EnvManager()
+        self.user_manager = UserManager()
+
+
         self.world_cfg=None
         self.artifact_admin = ArtifactAdmin()
 
         self.time = 0
 
-        self.qfu = qfu
+        self.qfu:QFUtils = qfu
         self.g = g
         self.ready_map = {
             k: False
@@ -92,9 +110,7 @@ PatternMaster,
         self.mcreator = ModuleCreator(
             self.g.G,
             self.qfu,
-            self.world_cfg,
         )
-        self.modules = self.mcreator.load_sm()
 
         self.pattern_arsenal = GStore
 
@@ -108,19 +124,162 @@ PatternMaster,
         print("Guard Initialized!")
 
 
+
+    def sim_start_process(self, payload):
+        """
+        1. Parse payload to get IDs.
+        2. Batch fetch data.
+        3. Convert to pattern (Graph).
+        4. Compile pattern.
+        """
+        import pprint
+        
+        data = payload.get("data", {})
+        config = payload.get("config", {})
+        if not config and "data" in payload and "config" in payload["data"]:
+             config = payload["data"]["config"]
+        elif not config and "config" in data:
+             config = data["config"]
+             
+        envs_config = config.get("envs", {})
+        
+        # 1. Collect IDs
+        env_ids = set()
+        module_ids = set()
+        field_ids = set()
+        inj_ids = set()
+        
+        for env_id, env_data in envs_config.items():
+            env_ids.add(env_id)
+            modules = env_data.get("modules", {})
+            for mod_id, mod_data in modules.items():
+                module_ids.add(mod_id)
+                fields = mod_data.get("fields", {})
+                for field_id, field_data in fields.items():
+                    field_ids.add(field_id)
+                    injections = field_data.get("injections", {})
+                    for pos, inj_id in injections.items():
+                        inj_ids.add(inj_id)
+
+        # 2. Batch Fetch
+        print(f"Fetching data: {len(env_ids)} Envs, {len(module_ids)} Modules, {len(field_ids)} Fields, {len(inj_ids)} Injections")
+        
+        fetched_envs = {}
+        if env_ids:
+            res = self.env_manager.retrieve_env_from_id(list(env_ids))
+            fetched_envs = {item["id"]: item for item in res.get("envs", [])}
+            
+        fetched_modules = {}
+        if module_ids:
+            res = self.module_db_manager.get_module_by_id(list(module_ids))
+            fetched_modules = {item["id"]: item for item in res.get("modules", [])}
+
+        fetched_fields = {}
+        if field_ids:
+            res = self.field_manager.get_fields_by_id(list(field_ids))
+            fetched_fields = {item["id"]: item for item in res} 
+            
+        fetched_injections = {}
+        if inj_ids:
+            res = self.injection_manager.get_inj_list(list(inj_ids))
+            fetched_injections = {item["id"]: item for item in res}
+
+        # 3. Populate Graph (Pattern Construction)
+        for env_id, env_config in envs_config.items():
+            env_data = fetched_envs.get(env_id)
+            if env_data:
+                try:
+                    params = self.qfu.create_env(world_cfg=env_data)
+                except Exception as e:
+                    print(f"Error create_env for {env_id}: {e}")
+                    params = {}
+                
+                self.g.add_node(dict(
+                    nid=env_id,
+                    type="ENV",
+                    **env_data
+                ))
+            else:
+                self.g.add_node({"nid": env_id, "type": "ENV"})
+
+            modules_config = env_config.get("modules", {})
+            for mod_id, mod_config in modules_config.items():
+                mod_data = fetched_modules.get(mod_id)
+                if mod_data:
+                    self.g.add_node(dict(
+                        nid=mod_id,
+                        type="MODULE",
+                        **mod_data
+                    ))
+                else:
+                    self.g.add_node({"nid": mod_id, "type": "MODULE"})
+
+                self.g.add_edge(env_id, mod_id, attrs={"rel": "contains"})
+
+                fields_config = mod_config.get("fields", {})
+                for field_id, field_config in fields_config.items():
+                    field_data = fetched_fields.get(field_id)
+                    if field_data:
+                        params = field_data.get("params", {})
+                        self.g.add_node(dict(
+                            nid=field_id.upper(),
+                            type="FIELD",
+                            field_keys=list(params.keys()),
+                            value=list(params.values()),
+                            axis_def=self.qfu.set_axis(params),
+                            **field_data
+                        ))
+                        try:
+                           self.qfu.add_params_link_fields(params, field_id, mod_id)
+                        except Exception as e:
+                            print(f"Error linking params for field {field_id}: {e}")
+
+                    else:
+                        self.g.add_node({"nid": field_id, "type": "FIELD"})
+
+                    self.g.add_edge(mod_id, field_id, attrs={"rel": "has_finteractant"})
+                    
+                    injections_config = field_config.get("injections", {})
+                    for pos, inj_id in injections_config.items():
+                        inj_data = fetched_injections.get(inj_id)
+                        if inj_data:
+                            self.g.add_node(dict(
+                                nid=inj_id,
+                                type="INJECTION",
+                                **inj_data
+                            ))
+                        else:
+                            self.g.add_node({"nid": inj_id, "type": "INJECTION"})
+                            
+                        self.g.add_edge(field_id, inj_id, attrs={"rel": "injection_at", "pos": pos})
+
+        print("Graph populated with fetched data.")
+
+        # 4. Compile Pattern
+        try:
+            self.main()
+            print("Pattern Compiled:")
+            pprint.pprint(self.module_pattern_collector)
+        except Exception as e:
+             print(f"Error in compile_pattern: {e}")
+             import traceback
+             traceback.print_exc()
+
+
+
+
+
+
+
+
+
+
+
+
     def main(self, env_ids:list[str]):
         """
         CREATE/COLLECT PATTERNS FOR ALL ENVS AND CREATE VM
         """
-
-        # all modules are ready build?
-        finished_modules = False
-        while not finished_modules:
-            print("check modules ready")
-            all_modules = [nid for nid, _ in self.g.get_nodes(filter_key="type", filter_value="MODULE")]
-            finished_modules = self.all_nodes_ready(all_modules)
-            time.sleep(1)
-
         # pattern extractor -> include all fields
         # need
         # inj
@@ -141,7 +300,7 @@ PatternMaster,
                 "DB": self.db,
                 "AMOUNT_NODES": self.amount_nodes,
                 "INJECTION_PATTERN": inj_pattern,
-                "TIME": self.world_cfg,
+                "WORLD_CFG": json.dumps(self.world_cfg),
                 "ENERGY_MAP": self.module_map_entry
             }
             print(f"DOCKER ENV VARS CREATED FOR {env}:")
@@ -154,13 +313,6 @@ PatternMaster,
             )
 
         print(f"Deployment of {env_ids} Finished!")
-
-
-    def get_inj_pattern_data(self):
-        return {
-            "amount_nodes": self.amount_nodes,
-            "fields": self.fields,
-        }
 
 
     def get_state(self):
@@ -223,20 +375,22 @@ PatternMaster,
     def set_wcfg(self, world_cfg):
         self.world_cfg = world_cfg
 
-        self.amount_nodes = world_cfg["amount_nodes"]
+        amount_nodes = world_cfg["amount_nodes"]
 
-        self.schema_grid = [
-            (i, i, i)
-            for i in range(self.amount_nodes)
+        schema_grid = [
+            (x, y, z)
+            for x in range(amount_nodes)
+            for y in range(amount_nodes)
+            for z in range(amount_nodes)
         ]
 
         node = {
             "nid": world_cfg["env_id"],
             "cfg": world_cfg,
-            "params": self.create_env(),
+            "params": self.create_env(world_cfg),
+            "schema_grid": schema_grid,
             "type": "ENV",
         }
-
         self.g.add_node(node)
         return node
 
@@ -257,7 +411,6 @@ PatternMaster,
             self.g.G.nodes[mid]["field_keys"] = field_ids
         except Exception as e:
             print("Err receive_ready", mid, e)
-
 
     def set_param_pathway(
             self,
@@ -458,8 +611,7 @@ PatternMaster,
 
     def handle_mod_stack(
             self,
-            files:list[Any],
-            root
+            root,
     ):
         """
         receive files
@@ -467,20 +619,58 @@ PatternMaster,
         load in ModuleCreator -> create modules
         """
         print("handle_mod_stack")
-        for f in files:
-            # Pflichtfelder
-            fname = f["name"]
-            rel_path = f.get("path", fname)
-            raw = base64.b64decode(f["admin_data"])
-            target = root / rel_path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(raw)
-
         # create modules form files -> save converted in G
         self.mcreator.main(
             temp_path=root
         )
         print("handle_mod_stack finished successfully")
+
+    def convert_config_to_graph(self, input_struct: dict):
+        """
+        Convert provided input structure to nx.Graph.
+        Node types: ENV, MODULE, FIELD, INJECTION.
+        Logical linking fields together.
+        """
+        import networkx as nx
+        
+        G = nx.Graph()
+        
+        config = input_struct.get("config", {})
+        envs = config.get("envs", {})
+
+        for env_id, env_data in envs.items():
+            # Add ENV node
+            if not G.has_node(env_id):
+                G.add_node(env_id, type="ENV")
+            
+            modules = env_data.get("modules", {})
+            for mod_id, mod_data in modules.items():
+                # Add MODULE node
+                if not G.has_node(mod_id):
+                    G.add_node(mod_id, type="MODULE")
+                
+                # Link ENV -> MODULE
+                G.add_edge(env_id, mod_id, rel="contains")
+                
+                fields = mod_data.get("fields", {})
+                for field_id, field_data in fields.items():
+                    # Add FIELD node
+                    if not G.has_node(field_id):
+                        G.add_node(field_id, type="FIELD")
+                    
+                    # Link MODULE -> FIELD
+                    G.add_edge(mod_id, field_id, rel="contains")
+                    
+                    injections = field_data.get("injections", {})
+                    for pos, inj_id in injections.items():
+                        # Add INJECTION node
+                        if not G.has_node(inj_id):
+                            G.add_node(inj_id, type="INJECTION")
+                        
+                        # Link FIELD -> INJECTION
+                        G.add_edge(field_id, inj_id, rel="injection_at", pos=pos)
+        
+        return G
 
 
     def create_db(self):
@@ -510,7 +700,7 @@ PatternMaster,
                     ]
             else:
                 print(f"NO fields for {mid}: {fields}")
-
+    
 
     def compile_pattern(self):
         try:
@@ -703,3 +893,103 @@ except Exception as e:
     print("Ray not accessible:", e)
 
 
+"""
+
+
+    def standard_manager(self, user_id: str = "public"):
+        Upsert standard nodes and edges from QFUtils to BigQuery tables.
+        print("PROCESSING STANDARD MANAGER WORKFLOW")
+        standard_stack_exists: bool = self.user_manager.get_standard_stack(
+            user_id
+        )
+        if standard_stack_exists is False:
+            # Create module stack
+            # todo one time create -> create copy from public row (so user can edit it -< session related)
+            qf = QFUtils(
+                G=nx.Graph()
+            )
+            qf.build_interacion_G()
+            module_creator = ModuleCreator(
+                G=qf.g.G,
+                qfu=qf
+            )
+            module_creator.load_sm()
+
+            modules = []
+            fields = []
+            # Upsert Nodes & Edges
+            logging.info("Upserting standard nodes...")
+            for nid, attrs in qf.g.G.nodes(data=True):
+                ntype = attrs.get("type")
+
+                if ntype == "MODULE":
+                    # Get PARAM neighbors
+                    params = qf.g.get_neighbor_list(
+                        target_type="PARAM",
+                        node=nid,
+                        just_id=True,
+                    )
+
+                    # Upsert Module
+                    module_data = {
+                        "id": attrs["nid"],
+                        "file_type": None,
+                        "binary_data": None,
+                        "code": attrs["code"],
+                        "user_id": user_id,
+                        "created_at": datetime.utcnow().isoformat(),
+                        "params": params
+                    }
+                    modules.append(module_data)
+
+                elif ntype == "FIELD":
+                    # Upsert Field
+                    field_data = {
+                        "id": nid,
+                        "params": attrs
+                    }
+                    fields.append(field_data)
+
+            self.module_db_manager.set_module(
+                modules, user_id
+            )
+
+            self.field_manager.set_field(
+                fields, user_id
+            )
+
+            # Upsert Edges
+            mfs = []
+            ffs = []
+            logging.info("Upserting standard edges...")
+            for u, v, attrs in qf.g.G.edges(data=True):
+                src_layer = attrs.get("src_layer")
+                trgt_layer = attrs.get("trgt_layer")
+
+                if src_layer == "MODULE" and trgt_layer == "FIELD":
+                    # Module -> Field
+                    data = {
+                        "id": generate_numeric_id(),
+                        "module_id": u,
+                        "field_id": v,
+                        "user_id": user_id
+                    }
+                    mfs.append(data)
+
+                elif src_layer == "FIELD" and trgt_layer == "FIELD":
+                    # Field -> Field
+                    data = {
+                        "id": generate_numeric_id(),
+                        "field_id": u,
+                        "interactant_field_id": v,
+                        "user_id": user_id
+                    }
+                    ffs.append(data)
+
+            # UPSERT
+            self.field_manager.link_module_field(mfs)
+            self.field_manager.link_field_field(ffs)
+        print("FINISHED SM WORKFLOW AFTER SECONDs")
+
+
+"""

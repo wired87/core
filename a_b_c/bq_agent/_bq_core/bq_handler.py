@@ -31,7 +31,7 @@ class BQGroundZero:
         self.bqclient = bigquery.Client(
             credentials=load_service_account_credentials()
         )
-        self.ensure_dataset_exists()
+
 
     def ensure_dataset_exists(self, ds_name=None):
         """
@@ -76,7 +76,7 @@ class BQGroundZero:
         bq_types=bq_types[:-1]
         """
 
-    def upsert_row_query(self, table_id: str, rows: list[dict], schema: dict[str]) -> str:
+    def upsert_row_query(self, table_id: str, rows: list[dict], schema: dict) -> str:
         print("Upsert to", table_id)
 
         # Create a string representation of the rows as BigQuery STRUCTs
@@ -207,37 +207,30 @@ class BQGroundZero:
         else:
             return "STRING"
 
-
-    def schema_from_dict(self, rows:list, embed=None):
-        """
-        Dynamically infers BigQuery schema from a list of JSON dictionaries.
-
-        Args:
-            json_data (list): A list of dictionaries representing JSON rows.
-
-        Returns:
-            list: A list of bigquery.SchemaField objects.
-        """
-        schema = []
+    def schema_from_dict(self, rows: list, embed=None) -> dict[str, str]:
+        schema = {}
         for data in rows:
             for key, value in data.items():
-                print("VALUE", value, type(value))
-                if isinstance(value, int):
-                    field_type = "INTEGER"
+                if isinstance(value, bool):
+                    f_type = "BOOLEAN"
+                elif isinstance(value, int):
+                    f_type = "INTEGER"
                 elif isinstance(value, float):
-                    field_type = "FLOAT"
-                elif isinstance(value, bool):
-                    field_type = "BOOLEAN"
+                    f_type = "FLOAT"
                 elif isinstance(value, list) and embed:
-                    for i in value:
-                        print("it", type(i))
-                    field_type = "ARRAY<NUMERIC>"
+                    # BigQuery uses 'REPEATED' mode for arrays,
+                    # but for a type-string dict, we label it ARRAY
+                    f_type = "ARRAY<NUMERIC>"
+                elif isinstance(value, bytes):
+                    f_type = "BYTES"
                 else:
-                    field_type = "STRING"
-                s = bigquery.SchemaField(key, field_type, mode="NULLABLE")
-                if s not in schema:
-                    schema.append(s)
+                    f_type = "STRING"
+
+                if key not in schema:
+                    schema[key] = f_type
         return schema
+
+
 
     def convert_dict_shema_bq(self, schema):
         s=[]
@@ -245,12 +238,12 @@ class BQGroundZero:
             s.append(bigquery.SchemaField(k, v, mode="NULLABLE"))
         return s
 
-    def run_query(self, query: str or list, conv_to_dict=False):
+    def run_query(self, query: str or list, conv_to_dict=False, job_config=None):
         try:
             if isinstance(query, list):
                 query = ";\n".join(query)
 
-            job = self.bqclient.query(query)
+            job = self.bqclient.query(query, job_config=job_config)
 
             result = job.result()
 
@@ -313,6 +306,20 @@ class BQCore(BQGroundZero):
 
         return tables
 
+
+    def add_columns_bulk(self, table_name: str, new_columns: dict):
+        """
+        Adds multiple missing columns in one operation.
+
+        :param table_name: The BigQuery table name.
+        :param new_columns: Dictionary {column_name: column_type}.
+        """
+        table_ref = f"{self.bqclient.project}.{self.ds_id}.{table_name}"
+        table = self.bqclient.get_table(table_ref)
+        updated_schema = table.schema + [bigquery.SchemaField(col, col_type) for col, col_type in new_columns.items()]
+        table.schema = updated_schema
+        self.bqclient.update_table(table, ["schema"])
+        print(f"✅ Added missing columns: {', '.join(new_columns.keys())}")
 
 
     def bq_check_table_exists(self, table_name):
@@ -529,8 +536,8 @@ class BQCore(BQGroundZero):
             self.bqclient.create_table(table)
 
         except Exception as e:
-            print(f"Erro happened:{e}")
-
+            print(f"Erro ensure_table_exists:{e}")
+        print(f"Table {table_ref} with schema {schema} exists")
         return table_ref, schema
 
 
@@ -539,7 +546,7 @@ class BQCore(BQGroundZero):
         return f"{self.pid}.{ds_id}"
 
     def bq_insert(self, table_id: str, rows: List[dict], upsert=False, ds_id=None):
-        table_ref, schema=self.ensure_table_exists(table_id, rows, ds_id)
+        table_ref, schema = self.ensure_table_exists(table_id, rows, ds_id)
 
         self.update_bq_schema(table_id, rows)
 
@@ -598,7 +605,7 @@ class BQCore(BQGroundZero):
 
     def list_tables(self) -> list:
         """Lists all tables in a BigQuery dataset.
-
+        ALTER TABLE aixr-401704.QBRAIN.users ADD COLUMN sm_stack_status STRING
         Args:
             client: A BigQuery client instance.
             dataset_id: The ID of the dataset.
@@ -760,20 +767,6 @@ class BigQueryGraphHandler(BQCore):
             print(f"⚠️ Error retrieving columns for {table_name}: {e}")
             return set()
 
-    def add_columns_bulk(self, table_name: str, new_columns: dict):
-        """
-        Adds multiple missing columns in one operation.
-
-        :param table_name: The BigQuery table name.
-        :param new_columns: Dictionary {column_name: column_type}.
-        """
-        table_ref = f"{self.bqclient.project}.{self.ds_id}.{table_name}"
-        table = self.bqclient.get_table(table_ref)
-        updated_schema = table.schema + [bigquery.SchemaField(col, col_type) for col, col_type in new_columns.items()]
-        table.schema = updated_schema
-        self.bqclient.update_table(table, ["schema"])
-        print(f"✅ Added missing columns: {', '.join(new_columns.keys())}")
-
 
 
 
@@ -801,8 +794,8 @@ class BigQueryRAG(BQCore):  # Inherit from BigQueryLoader if you have one
         table_id: str,
         custom: bool = True,
         limit: int = 10,
-        select: List[str] = ["nid"],
-        embed_column: str = "embed", # BigQuery terminology often uses 'column'
+        select: List[str] = ["id"],
+        embed_column: str = "embedding", # BigQuery terminology often uses 'column'
         model_name: Optional[str] = None # Required if custom=False
     ) -> List[typing.Dict]:
         """
@@ -1040,3 +1033,29 @@ if __name__ == '__main__':
 if __name__ == "__main__":
     v=BQGroundZero()
     print(v.run_query(query="SELECT 1"))
+
+
+"""
+def schema_from_dict(self, rows:list, embed=None):
+    schema = []
+    for data in rows:
+        for key, value in data.items():
+            print("VALUE", value, type(value))
+            if isinstance(value, int):
+                field_type = "INTEGER"
+            elif isinstance(value, float):
+                field_type = "FLOAT"
+            elif isinstance(value, bool):
+                field_type = "BOOLEAN"
+            elif isinstance(value, list) and embed:
+                for i in value:
+                    print("it", type(i))
+                field_type = "ARRAY<NUMERIC>"
+            else:
+                field_type = "STRING"
+            s = bigquery.SchemaField(key, field_type, mode="NULLABLE")
+            if s not in schema:
+                schema.append(s)
+    return schema
+
+"""
