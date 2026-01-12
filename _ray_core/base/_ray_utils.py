@@ -1,8 +1,23 @@
 import os
 
-import ray
-from ray.actor import ActorHandle
-from ray.util.state import list_actors, list_workers
+try:
+    import ray
+    from ray.actor import ActorHandle
+    from ray.util.state import list_actors, list_workers
+except ImportError:
+    class MockRay:
+        class util:
+             def list_named_actors(self, all_namespaces=True):
+                 return []
+        def get_actor(self, *args):
+            return None
+    ray = MockRay()
+    class ActorHandle:
+        pass
+    def list_actors(detail=True):
+        return []
+    def list_workers(detail=True):
+        return []
 
 
 class RayUtils:

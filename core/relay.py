@@ -2,8 +2,8 @@ import os
 import ray
 from ray import get_actor
 
-from core._ray_core.base.admin_base import RayAdminBase
-from core._ray_core.globacs.state_handler.main import StateHandler
+from _ray_core import RayAdminBase
+from _ray_core.globacs.state_handler.main import StateHandler
 from fb_core.real_time_database import FBRTDBMgr
 
 from core.app_utils import DOMAIN, TESTING

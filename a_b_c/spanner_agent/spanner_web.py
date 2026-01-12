@@ -14,7 +14,7 @@ from a_b_c.spanner_agent._spanner_graph.create_workflow import SpannerCreator
 from a_b_c.spanner_agent._spanner_graph.g_utils import SpannerGraphManager
 
 from core.app_utils import APP, ENV_ID, GCP_ID
-from core._ray_core.base.base import BaseActor
+from _ray_core.base.base import BaseActor
 from qf_utils.all_subs import ALL_SUBS
 
 

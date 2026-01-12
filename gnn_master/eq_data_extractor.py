@@ -1,8 +1,8 @@
 import ray
 from ray import get_actor
 
-from core._ray_core.base.base import BaseActor
-from core._ray_core.globacs.state_handler.main import StateHandler
+from _ray_core.base.base import BaseActor
+from _ray_core.globacs.state_handler.main import StateHandler
 
 from core.app_utils import ENV_ID
 from gnn_master.edge_utils import DataUtils
@@ -97,6 +97,7 @@ class NodeDataProcessor(
         method ensures we calc just points where time is
         existence
         """
+
         # todo set e param map
         energy_path_patterns = []
         for i, module in enumerate(nodes):

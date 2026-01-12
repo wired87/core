@@ -5,7 +5,7 @@ import dotenv
 dotenv.load_dotenv()
 
 from core.app_utils import ENV_ID, GLOBAC_STORE
-from core._ray_core.base.base import BaseActor
+from _ray_core.base.base import BaseActor
 from qf_utils.all_subs import ALL_SUBS
 
 

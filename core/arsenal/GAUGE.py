@@ -6,6 +6,8 @@ import jax.numpy as jnp
 
 @jit
 def gg_coupling(
+        _g,
+        _field_value,
         g,
         field_value,
         g_neighbors_gg,
@@ -176,10 +178,9 @@ def fmunu(
     return F
 
 
-
 @jit
 def dmuG(
-        field_value,  # Aktuelles Gitter (Psi(t))
+        field_value,  # komplettes grid Aktuelles Gitter
         prev,  # Gitter des vorherigen Zeitschritts (Psi(t-dt))
         d,  # Räumlicher Gitterabstand d
         dt,  # Zeitschrittweite

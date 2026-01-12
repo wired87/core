@@ -4,7 +4,7 @@ import ray
 from tempfile import TemporaryDirectory
 
 
-from core._ray_core import BaseActor
+from _ray_core.base.base import BaseActor
 from core.qf_utils.qf_utils import QFUtils
 from utils.file._csv import dict_2_csv_buffer, collect_keys
 from utils.graph.local_graph_utils import GUtils

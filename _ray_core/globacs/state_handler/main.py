@@ -3,14 +3,11 @@ from ray._private.custom_types import ACTOR_STATUS
 from ray.util.state import list_actors
 from ray.util.state.common import ActorState, WorkerState
 
-
 import dotenv
-
-from core._ray_core.globacs.state_handler.sh_utils import StateHandlerUtils
-from core.app_utils import FB_DB_ROOT
-
 dotenv.load_dotenv()
 
+from _ray_core.globacs.state_handler.sh_utils import StateHandlerUtils
+from core.app_utils import FB_DB_ROOT
 
 
 class StateHandler(

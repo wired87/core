@@ -3,7 +3,7 @@ from jax import jit, vmap
 from typing import List, Dict, Any, Tuple
 
 from core.sm.fermion.ferm_utils import FermUtils
-from core._ray_core.utils.ray_validator import RayValidator
+from _ray_core.utils.ray_validator import RayValidator
 
 
 @jit

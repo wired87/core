@@ -1,5 +1,6 @@
 import time
-from typing import Any
+import json
+from typing import Any, List, Dict
 
 
 from code_manipulation.eq_extractor import EqExtractor
@@ -7,7 +8,6 @@ from core.module_manager.module_loader import ModuleLoader
 from qf_utils.field_utils import FieldUtils
 from qf_utils.qf_utils import QFUtils
 
-from gnn_master.eq_data_extractor import NodeDataProcessor
 from utils.graph.local_graph_utils import GUtils
 
 
@@ -20,87 +20,121 @@ class Modulator(
             G,
             mid:str,
             qfu:QFUtils,
-            module_index:int,
     ):
         self.id = mid
         self.g:GUtils = GUtils(G=G)
         self.qfu = qfu
         self.fu = FieldUtils()
+        
+        # Initialize StructInspector manually as ModuleLoader init is skipped
+        self.current_class = None
+        
         #StateHandler.__init__(self)
         EqExtractor.__init__(self, self.g)
 
-        self.module_index=module_index
 
-
-    def module_conversion_process(self, module_index):
+    def register_modules_G(self, modules: List[Dict]):
+        """
+        Registers modules and their parameters into the local graph (self.g).
+        """
+        print(f"Registering {len(modules)} modules to G")
         try:
-            attrs = self.g.G.nodes[self.id]
-            sm = attrs["sm"]
-            if sm is False:
-                """
-                prompt:
-                extract the following information from th povided physics papaer.
-                - the published field (elektron or other)
-                - the published fields interactant 
-                - parameters with example value present within the field
-                - equations within the publication 
-                """
-                # file_module
-                # load files
-                # param map extract
-                # -> include G with keys and type
-                # struct!!!!
-                # align key params existing fields (extension?)
-                # link
-                pass
+            for module in modules:
+                module_id = module.get("id")
+                if not module_id:
+                    print(f"Skipping module without id: {module}")
+                    continue
 
-            self.fields = self.g.get_neighbor_list_rel(
-                node=self.id,
-                trgt_rel="has_finteractant",
-                as_dict=True
-            )
+                # 1. Add Module Node
+                # Ensure nid and type are set for GUtils.add_node
+                module_attrs = module.copy()
+                module_attrs["nid"] = module_id
+                module_attrs["type"] = "MODULE"
+                
+                self.g.add_node(attrs=module_attrs)
+
+                # 2. Process Params
+                params_raw = module.get("params")
+                params = {}
+                if params_raw:
+                    if isinstance(params_raw, str):
+                        try:
+                            params = json.loads(params_raw)
+                        except Exception as e:
+                            print(f"Error parsing params for module {module_id}: {e}")
+                            params = {}
+                    elif isinstance(params_raw, dict):
+                        params = params_raw
+                
+                # 3. Create Param Nodes and Links
+                for param_id, data_type in params.items():
+                    # Add Param Node
+                    param_attrs = {
+                        "nid": param_id,
+                        "type": "PARAM",
+                        "data_type": data_type
+                    }
+                    self.g.add_node(attrs=param_attrs)
+                    
+                    # Link Module -> Param
+                    edge_attrs = {
+                        "rel": "uses_param",
+                        "src_layer": "MODULE",
+                        "trgt_layer": "PARAM"
+                    }
+                    self.g.add_edge(
+                        src=module_id,
+                        trt=param_id,
+                        attrs=edge_attrs
+                    )
+                    
+        except Exception as e:
+            print(f"Error in register_modules_G: {e}")
+
+
+    def module_conversion_process(self):
+        try:
+            if not self.g.G.has_node(self.id):
+                self.g.add_node(
+                    attrs=dict(
+                        nid=self.id,
+                        type="MODULE",
+                    )
+                )
 
             # init here because  if isdir fields, params mus be def
             ModuleLoader.__init__(
                 self,
                 G=self.g.G,
                 nid=self.id,
-                fields=self.fields,
+                #fields=self.fields,
             )
 
-            # create workers and params for each field
-            self.create_field_workers(list(self.fields.keys()))
-
-            # convert
-            # build
-            # convert G
-            # return callable
-            self.load_local_module_codebase()
+            self.load_local_module_codebase(code_base=self.g.G.nodes[self.id].get("code"))
 
             # code -> G
             self.create_code_G(mid=self.id)
 
             # G -> sorted runnables -> add inde to node
             self.set_arsenal_struct()
-            print("self.arsenal_struct", self.arsenal_struct)
 
-
-            print("MODULE CONVERSION COMPLETE")
+            print("module_conversion_process... done")
+            #print("self.arsenal_struct", self.arsenal_struct)
         except Exception as e:
             print("MODULE CONVERSION FAILED:", e)
 
 
 
-    def set_field_data(self, field):
+    def set_field_data(self, field, dim=3):
         """
         Set example field data
         """
-        print("set_field_data")
+        print("set_field_data for ", field)
         try:
 
             data: dict = self.qfu.batch_field_single(
                 ntype=field,
-                dim=self.fu.env,
+                dim=dim,
             )
 
             # set params for module
@@ -233,47 +267,3 @@ class Modulator(
             for param in data
         )
 
-"""    
-def create_field_stack(self):
-    print("create_field_stack start")
-    module_param_struct = {}
-
-    fields = self.g.get_neighbor_list(
-        node=self.id,
-        target_type="FIELD",
-        just_ids=True,
-    )
-
-    for f in fields:
-        self.set_field_data(
-            f,
-            module_param_struct
-        )
-
-    self.keys: list[str] = list(module_param_struct.keys())
-    self.values = list(module_param_struct.values())
-
-    # add method index to node to ensure persistency in equaton handling
-    self.g.update_node(
-        dict(
-            nid=self.id,
-            keys=self.keys,
-            value=self.values,
-        )
-    )
-"""
-"""    
-def create_grid(self):
-    print("Creating grid...")
-    start = time.perf_counter_ns()
-    tasks = []
-
-    for nid, attrs in self.fields.items():
-        tasks.append(
-            attrs["edge_ref"].build_processor_module.remote(
-            )
-        )
-    ray.get(tasks)
-    end = time.perf_counter_ns()
-    print("Grid created successfully after s:", end - start)
-"""

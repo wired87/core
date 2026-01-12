@@ -1,7 +1,15 @@
 import os
-from ray import get_actor
-from core._ray_core.base.base import BaseActor
-from core._ray_core.globacs.state_handler.main import StateHandler
+try:
+    from ray import get_actor
+    from _ray_core.base.base import BaseActor
+    from _ray_core.globacs.state_handler.main import StateHandler
+except ImportError:
+    def get_actor(*args, **kwargs):
+        pass
+    class BaseActor:
+        pass
+    class StateHandler:
+        pass
 from core.app_utils import ARSENAL_PATH
 from core.module_manager.modulator import Modulator
 from utils.graph.local_graph_utils import GUtils
@@ -38,20 +46,26 @@ class ModuleCreator(
         self.mmap = []
         self.qfu=qfu
         self.arsenal_struct: list[dict] = None
-        self.sm=None
+
 
     def load_sm(self):
+        print("load_sm...")
         new_modules = []
-        sm = True
         for module_file in os.listdir(ARSENAL_PATH):
             if not self.g.G.has_node(module_file):
-                new_modules.append(module_file)
+                mod_id = module_file.split(".")[0]
+                new_modules.append(mod_id)
                 self.create_modulator(
-                    module_file,
-                    from_code_file=True,
-                    sm=sm
+                    mod_id,
+                    code=open(
+                        os.path.join(
+                            ARSENAL_PATH,
+                            module_file
+                        ),
+                        "r",
+                        encoding="utf-8").read()
                 )
-        return new_modules
+        print("sm load successfully modules:", new_modules)
 
 
     def main(self, temp_path):
@@ -59,24 +73,20 @@ class ModuleCreator(
         """
         LOOP (TMP) DIR -> CREATE MODULES FORM MEDIA
         """
-        if self.sm is None:
-            self.load_sm()
-            self.sm=True
         # todo load modules form files
         for root, dirs, files in os.walk(temp_path):
             for module in dirs:
                 if not self.g.G.has_node(module):
                     self.create_modulator(
                         module,
-                        from_code_file=False,
                     )
 
             for f in files:
                 if not self.g.G.has_node(f):
                     self.create_modulator(
                         f,
-                        from_code_file=True,
                     )
+
         print("modules updated")
 
 
@@ -86,53 +96,25 @@ class ModuleCreator(
             ref.module_build_process.remote()
 
 
-    def create_modulator(
-            self,
-            file,
-            from_code_file:bool=False,
-            sm=False
-    ):
+    def create_modulator(self, mid, code=None):
         try:
-            mid = file.split(".")[0]
-            print("CREATE M", mid)
-
-            module_index = len(
-                [
-                    nid
-                    for nid, _ in self.g.get_nodes("type", "MODULE")
-                ]
-            )
-
             mref = Modulator(
                 G=self.g.G,
                 mid=mid,
                 qfu=self.qfu,
-                module_index=module_index,
             )
 
             # save ref
             self.g.add_node(
                 dict(
                     nid=mid,
-                    ref=mref,
                     type="MODULE",
-                    path=file,
-                    module_index=module_index,
-                    file=from_code_file,
-                    callable=None,
-                    sm=sm,
-                    ready=False,
+                    code=code
                 )
             )
 
             print("MODULATORS CREATED")
-            mref.module_conversion_process(module_index)
-
-            self.g.update_node(
-                attrs=dict(
-                    nid=mid,
-                    ready=True
-                )
-            )
+            mref.module_conversion_process()
         except Exception as e:
             print(f"Err create_modulator: {e}")
+        print("create_modulator finished")

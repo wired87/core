@@ -2,10 +2,10 @@ import numpy as np
 import ray
 import os
 
-from core._ray_core import GlobsMaster
+from _ray_core import GlobsMaster
 
 from core.app_utils import TESTING, USER_ID, ENV_ID, DEMO_ENV
-from core._ray_core.globacs import StateHandler
+from _ray_core.globacs.state_handler.main import StateHandler
 from fb_core.real_time_database import FBRTDBMgr
 from project_creators import start_relay, create_db_swat
 

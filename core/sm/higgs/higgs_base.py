@@ -1,7 +1,7 @@
 import numpy as np
 from core.sm.higgs.phi_utils import HiggsUtils
 from qf_utils.field_utils import FieldUtils
-from core._ray_core.utils.ray_validator import RayValidator
+from _ray_core.utils.ray_validator import RayValidator
 
 class HiggsBase(
     FieldUtils,

@@ -60,6 +60,10 @@ class StructInspector(ast.NodeVisitor):
                 return_key = self.extract_return_statement_expression(
                     method_node=node,
                 )
+
+                # VALID RETURN VARIABEL NAMES
+                if len(return_key.split(" ")) > 0:
+                    return_key=method_id
                 entire_def = ast.unparse(node)
 
                 data = {
@@ -71,21 +75,17 @@ class StructInspector(ast.NodeVisitor):
                     'returns': return_type,
                     'docstring': docstring,
                     "code": entire_def,
-                    "callable": create_runnable(
-                        eq_code=entire_def,
-                        eq_key=method_id,
-                        xtrn_mods=RUNNABLE_MODULES
-                    ),
                 }
 
-                # 1. Update Parameter Node
+
+                # 1. METHOD Node
                 self.g.add_node(
                     attrs=data
                 )
 
                 print("METHOD node created", method_id)
 
-                # MODULE -> PARAM
+                # MODULE -> METHOD
                 self.g.add_edge(
                     src=self.module_name,
                     trt=method_id,
@@ -113,8 +113,17 @@ class StructInspector(ast.NodeVisitor):
                 if arg.arg == 'self': continue
                 param_name = arg.arg
                 param_type = _get_type_name(arg.annotation)
+                print("ADD PARAM:", param_name)
+                # PARAM
+                self.g.add_node(
+                    attrs=dict(
+                        nid=param_name,
+                        type='PARAM',
+                        param_type=param_type,
+                    )
+                )
 
-                # Edge: Param -> Parameter (Needs Input)
+                # METHOD -> PARAM
                 self.g.add_edge(
                     src=method_id,
                     trt=param_name,
@@ -124,6 +133,17 @@ class StructInspector(ast.NodeVisitor):
                         trgt_layer='PARAM',
                         src_layer='METHOD',
                     ))
+
+                # MODULE -> PARAM
+                if not self.g.G.has_edge(self.module_name, param_name):
+                    self.g.add_edge(
+                        src=self.module_name,
+                        trt=param_name,
+                        attrs=dict(
+                            rel='requires_param',
+                            trgt_layer='PARAM',
+                            src_layer='MODULE',
+                        ))
             except Exception as e:
                 print("Err node.args.args", e)
 
@@ -138,50 +158,12 @@ class StructInspector(ast.NodeVisitor):
                 if isinstance(node, ast.Return):
                     # Check if a value is returned (i.e., not a simple 'return')
                     if node.value is not None:
-                        # Use ast.unparse to reconstruct the Python code for the expression
-                        # Example: for 'return new_dict', returns 'new_dict'
-                        # Example: for 'return laplacian_h', returns 'laplacian_h'
                         return ast.unparse(node.value).strip()
             except Exception as e:
                 print("Err extract_return_statement_expression",e)
         return None
 
-    def add_param(self, method_name, body_src):
-        for match in re.finditer(r"attrs\[['\"]([^'\"]+)['\"]\]", body_src):
-            try:
-                attr_key = match.group(1)
-                # add attr node
-                self.g.add_node(
-                    dict(
-                        nid=attr_key,
-                        type="PARAM",
-                        parent=["DATATYPE", "METHOD"],
-                        module=self.module_name,
-                ))
 
-                # link METHOD -> ATTR
-                self.g.add_edge(
-                    src=method_name,
-                    trt=attr_key,
-                    attrs={
-                        "rel": "uses_param",
-                        "src_layer": "METHOD",
-                        "trgt_layer": "PARAM",
-                    }
-                )
-
-                # MODULE -> PARAM
-                self.g.add_edge(
-                    src=self.module_name,
-                    trt=attr_key,
-                    attrs=dict(
-                        rel='has_variable',
-                        src_layer='MODULE',
-                        trgt_layer='PARAM',
-                    )
-                )
-            except Exception as e:
-                print("Err add_param",e)
 
     # C. Visit Class Variables
     def visit_Assign(self, node: ast.Assign):
@@ -196,9 +178,6 @@ class StructInspector(ast.NodeVisitor):
 
                     # Simple type inference (kept simple from original)
                     value_type = 'Unknown'
-                    if isinstance(node.value, ast.Constant):
-                        value_tyspe = type(node.value.value).__name__
-
                     var_id = f"{self.current_class}.{var_name}"
 
                     # 1. Add CLASS_VAR Node

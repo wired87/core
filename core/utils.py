@@ -1,4 +1,3 @@
-from qf_utils.runtime_utils_creator import RuntimeUtilsCreator
 
 
 class Preprocessor:
@@ -24,9 +23,7 @@ class Preprocessor:
             "parent_pixel_id",
         }
 
-        self.ruc = RuntimeUtilsCreator(
-            g=None,
-        )
+
 
     def get_env(self):
         return self.env

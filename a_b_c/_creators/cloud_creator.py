@@ -11,9 +11,9 @@ from a_b_c.gemw.gem import Gem
 from a_b_c.spanner_agent._spanner_graph.emulator import SpannerEmulatorManager
 from a_b_c.spanner_agent.spanner_agent import SpannerWorker
 from core.app_utils import TABLE_NAME, DOMAIN, ENV_ID
-from core._ray_core.base.base import BaseActor
+from _ray_core.base.base import BaseActor
 from a_b_c.db_worker import FBRTDBAdminWorker
-from core._ray_core.globacs.state_handler.main import StateHandler
+from _ray_core.globacs.state_handler.main import StateHandler
 from qf_utils.all_subs import ALL_SUBS
 from utils.utils import Utils
 

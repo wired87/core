@@ -1,11 +1,11 @@
 import asyncio
 
 import ray
-from core._ray_core.base.base import BaseActor
+from _ray_core.base.base import BaseActor
 
 from core.app_utils import FB_DB_ROOT
 
-from core._ray_core.globacs.state_handler.main import StateHandler
+from _ray_core.globacs.state_handler.main import StateHandler
 
 import dotenv
 

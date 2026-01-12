@@ -1,5 +1,5 @@
 import ray
-from core._ray_core.base._ray_utils import RayUtils
+from _ray_core.base._ray_utils import RayUtils
 
 
 class StateHandlerUtils(RayUtils):

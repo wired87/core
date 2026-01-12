@@ -1,8 +1,16 @@
 import random
 
-import ray
+try:
+    import ray
+except ImportError:
+    class MockRay:
+        def remote(self, *args, **kwargs):
+            if len(args) == 1 and hasattr(args[0], "__call__"):
+                 return args[0]
+            return lambda cls: cls
+    ray = MockRay()
 
-from core._ray_core.base.base import BaseActor
+from _ray_core.base.base import BaseActor
 from core.app_utils import FB_DB_ROOT, TESTING
 from fb_core.real_time_database import FBRTDBMgr
 from qf_utils.all_subs import ALL_SUBS

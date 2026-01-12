@@ -1,3 +1,4 @@
+import json
 import time
 from typing import List
 
@@ -75,6 +76,34 @@ class BQGroundZero:
             bq_types += bq_type
         bq_types=bq_types[:-1]
         """
+
+    def upsert_row_query(self, table_id: str, rows: list[dict], schema: dict) -> str:
+        struct_rows = []
+        for row in rows:
+            val_strs = []
+            for k in schema.keys():
+                v = row.get(k)
+                if isinstance(v, str):
+                    # Escape quotes for SQL safety
+                    safe_val = v.replace('"', '\\"')
+                    val_strs.append(f'"{safe_val}" AS {k}')
+                elif v is None:
+                    val_strs.append(f'NULL AS {k}')
+                else:
+                    val_strs.append(f'{v} AS {k}')
+
+            struct_rows.append(f"STRUCT({', '.join(val_strs)})")
+
+        # Final query using 'nid' as the Primary Key
+        return f"""
+            MERGE INTO `{self.pid}.{self.ds_id}.{table_id}` T
+            USING (SELECT * FROM UNNEST([{', '.join(struct_rows)}])) AS S
+            ON T.nid = S.nid
+            WHEN MATCHED THEN UPDATE SET {", ".join([f"T.{k}=S.{k}" for k in schema.keys()])}
+            WHEN NOT MATCHED THEN INSERT ({", ".join(schema.keys())}) VALUES ({", ".join([f"S.{k}" for k in schema.keys()])})
+        """
+
+
 
     def upsert_row_query(self, table_id: str, rows: list[dict], schema: dict) -> str:
         print("Upsert to", table_id)
@@ -232,7 +261,7 @@ class BQGroundZero:
 
 
 
-    def convert_dict_shema_bq(self, schema):
+    def convert_dict_shema_bq(self, schema:dict):
         s=[]
         for k, v in schema.items():
             s.append(bigquery.SchemaField(k, v, mode="NULLABLE"))
@@ -243,19 +272,21 @@ class BQGroundZero:
             if isinstance(query, list):
                 query = ";\n".join(query)
 
+            print("run BQ Query:", query)
+
             job = self.bqclient.query(query, job_config=job_config)
 
             result = job.result()
 
             if conv_to_dict is True:
                 result = [dict(row) for row in result]
-
+            
             print("BQ Query Result finished")
             print("Return", result)
 
             return result
         except Exception as e:
-            print("Error executing query:", e)
+            print(f"Error executing query:{query}:\n", e)
 
 
 class BQCore(BQGroundZero):
@@ -526,7 +557,11 @@ class BQCore(BQGroundZero):
         if ds_id is None:
             ds_id = self.ds_id
         table_ref = f"{self.bqclient.project}.{ds_id}.{table_name}"
-        schema = self.schema_from_dict(rows)
+
+        schema = self.convert_dict_shema_bq(
+            self.schema_from_dict(rows)
+        )
+
         try:
             self.bqclient.get_table(table_ref)
         except NotFound:
@@ -545,34 +580,48 @@ class BQCore(BQGroundZero):
         ds_id = ds_id or self.ds_id
         return f"{self.pid}.{ds_id}"
 
+    import json
+
     def bq_insert(self, table_id: str, rows: List[dict], upsert=False, ds_id=None):
         table_ref, schema = self.ensure_table_exists(table_id, rows, ds_id)
 
-        self.update_bq_schema(table_id, rows)
-
         if not isinstance(rows, list):
-            rows = [rows]  # if just Single dict
-        if len(rows) > 0:
-            print(f"Insert {len(rows)} rows")
-            for i in range(0, len(rows), self.batch_upload_size):
-                batch_chunk = rows[i:i + self.batch_upload_size]
-                print("Insert batch rows")
-                if upsert is True:
-                    query = self.upsert_row_query(
-                        table_id, rows=batch_chunk, schema=schema
-                    )
+            rows = [rows]
+
+        # 1. Flatten all complex fields to prevent "Array specified for non-repeated field"
+        cleaned_rows = []
+        for row in rows:
+            clean_row = {}
+            for k, v in row.items():
+                # If the value is a list or dict, stringify it
+                if isinstance(v, (list, dict)):
+                    clean_row[k] = json.dumps(v)
+                else:
+                    clean_row[k] = v
+            cleaned_rows.append(clean_row)
+
+        self.update_bq_schema(table_id, cleaned_rows)
+
+        # 2. Batch processing (50 rows at a time)
+        batch_size = 50
+        if len(cleaned_rows) > 0:
+            for i in range(0, len(cleaned_rows), batch_size):
+                batch_chunk = cleaned_rows[i:i + batch_size]
+
+                if upsert:
+                    query = self.upsert_row_query(table_id, rows=batch_chunk, schema=schema)
                     self.run_query(query)
                 else:
-                    print(f"upsert {batch_chunk} to {table_ref}")
-                    result=self.bqclient.insert_rows_json(table=table_ref, json_rows=batch_chunk)
-                    print("result", result)
-                    if len(result):
-                        print("Failed upsertion:")
-                        time.sleep(15)
-                        result=self.bqclient.insert_rows_json(table=table_ref, json_rows=batch_chunk)
-                        print(f"second try result: {result}")
+                    errors = self.bqclient.insert_rows_json(table=table_ref, json_rows=batch_chunk)
+                    if errors:  # Retry logic
+                        print(f"Warning: Insert failed, retrying in 5s... Errors: {errors}")
+                        time.sleep(5)
+                        errors = self.bqclient.insert_rows_json(table=table_ref, json_rows=batch_chunk)
+                        if errors:
+                             print(f"ERROR: Failed to insert rows to {table_id} after retry: {errors}")
         else:
-            print("No new rows to upsert")
+            print("No rows to process.")
+
 
 
 
@@ -1057,5 +1106,105 @@ def schema_from_dict(self, rows:list, embed=None):
             if s not in schema:
                 schema.append(s)
     return schema
+
+upsert query def
+
+
+
+    def upsert_row_query(self, table_id: str, rows: list[dict], schema: dict) -> str:
+        print("Upsert to", table_id)
+
+        # Create a string representation of the rows as BigQuery STRUCTs
+        # Example: STRUCT(1 AS id, "value1" AS col1), STRUCT(2 AS id, "value2" AS col1)
+        struct_rows = []
+        for row in rows:
+            val_strs = []
+            for k, v in row.items():
+                # Handle different admin_data types for correct BigQuery literal representation
+                if isinstance(v, str):
+                    val_strs.append(f'"{v}" AS {k}')  # Use double quotes for strings
+                elif isinstance(v, (int, float)):
+                    val_strs.append(f'{v} AS {k}')
+                elif v is None:
+                    val_strs.append(f'NULL AS {k}')
+                else:
+                    # Attempt a generic representation, might need more specific handling
+                    val_strs.append(f'{repr(v)} AS {k}')
+
+            struct_str = ", ".join(val_strs)
+            struct_rows.append(f"STRUCT({struct_str})")
+
+        # Construct the USING clause with UNNESTing the array of STRUCTs
+        # BigQuery expects the UNNEST to be the source of the MERGE
+        unnested_source = 
+            (SELECT * FROM UNNEST([
+                {', '.join(struct_rows)}
+            ]))
+      
+        # Construct the UPDATE SET clause
+        # This updates existing rows with values from the source, prioritizing source values
+        update_clause_parts = []
+        for k in schema.keys():
+            # Use S.<column_name> for values from the source (unnested rows)
+            update_clause_parts.append(f"T.{k} = S.{k}")
+        update_clause = ",\n          ".join(update_clause_parts)  # Indent for readability
+
+        # Construct the INSERT clause
+        # This inserts new rows from the source
+        insert_cols = ", ".join(schema.keys())
+        # Use S.<column_name> for values to be inserted
+        insert_vals = ", ".join(f"S.{col}" for col in schema.keys())
+
+        # Construct the full MERGE statement
+        # The alias 'S' is applied to the result of the UNNEST subquery
+        query = 
+            MERGE INTO `{self.pid}.{self.ds_id}.{table_id}` T
+            USING {unnested_source} AS S
+            ON T.nid = S.nid
+            WHEN MATCHED THEN
+              UPDATE SET
+                {update_clause}
+            WHEN NOT MATCHED THEN
+              INSERT ({insert_cols}) VALUES ({insert_vals})
+        return query.strip()
+
+    def get_parent(self, table:str):
+        return f"projects/{self.pid}/datasets/{self.ds_id}/tables/{table}"
+
+
+    def bq_insert(self, table_id: str, rows: List[dict], upsert=False, ds_id=None):
+        table_ref, schema = self.ensure_table_exists(table_id, rows, ds_id)
+
+        # stringify rows
+        for row in rows:
+            if "parent" in row and isinstance(row["parent"], (dict, list)):
+                row["parent"] = json.dumps(row["parent"])
+
+        self.update_bq_schema(table_id, rows)
+
+        if not isinstance(rows, list):
+            rows = [rows]  # if just Single dict
+        if len(rows) > 0:
+            print(f"Insert {len(rows)} rows")
+            for i in range(0, len(rows), self.batch_upload_size):
+                batch_chunk = rows[i:i + self.batch_upload_size]
+                print("Insert batch rows")
+                if upsert is True:
+                    query = self.upsert_row_query(
+                        table_id, rows=batch_chunk, schema=schema
+                    )
+                    self.run_query(query)
+                else:
+                    print(f"insert {batch_chunk} to {table_ref}")
+                    result = self.bqclient.insert_rows_json(table=table_ref, json_rows=batch_chunk)
+                    print("result", result)
+                    if len(result):
+                        print("Failed insertion:")
+                        time.sleep(15)
+                        result=self.bqclient.insert_rows_json(table=table_ref, json_rows=batch_chunk)
+                        print(f"second try result: {result}")
+        else:
+            print("No new rows to insert")
+
 
 """

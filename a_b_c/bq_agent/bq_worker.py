@@ -4,7 +4,7 @@ from a_b_c.bq_agent._bq_core.loader.aloader import ABQHandler
 from a_b_c.bq_agent._bq_core.manager_wrapper import BQController
 
 from core.app_utils import DB_NAME
-from core._ray_core.base.base import BaseActor
+from _ray_core.base.base import BaseActor
 
 
 @ray.remote(num_cpus=0.2)

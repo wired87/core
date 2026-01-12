@@ -108,7 +108,7 @@ class FermCreator(FermUtils):
     def create_f_core_batch(
             self,
             ntype,
-            dim:int = 4,
+            dim:int = 3,
             just_v=False,
             just_k=False,
     ):
@@ -154,12 +154,11 @@ class FermCreator(FermUtils):
             yterm=0,
             gf_coupling=psi,
             gg_coupling=psi,
-            dmu_psi=self.dmu(),
+            dmu_psi=self.dmu(dim),
             psi=psi,
             dirac=psi,
             psi_bar=psi,
             prev=psi,
-            #quark_index=item_index,
             velocity=0.0,
             **item,
         )

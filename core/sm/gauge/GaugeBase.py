@@ -1,6 +1,6 @@
 from jax import jit
 
-from core._ray_core.utils.ray_validator import RayValidator
+from _ray_core.utils.ray_validator import RayValidator
 
 from itertools import product
 

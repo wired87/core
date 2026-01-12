@@ -7,9 +7,9 @@ from ray import get_actor, ObjectRef
 
 from ray.util.state.common import ActorState, WorkerState
 
-from core._ray_core.base._ray_utils import RayUtils
-from core._ray_core.base.base import BaseActor
-from core._ray_core.globacs.state_handler.main import StateHandler
+from _ray_core.base._ray_utils import RayUtils
+from _ray_core.base.base import BaseActor
+from _ray_core.globacs.state_handler.main import StateHandler
 from core.app_utils import FB_DB_ROOT, SESSION_ID, USER_ID, ARSENAL_PATH
 from qf_utils.all_subs import ALL_SUBS
 from core.qf_utils.qf_utils import QFUtils

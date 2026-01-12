@@ -1,7 +1,20 @@
-import ray
-from ray import get_actor
+try:
+    import ray
+    from ray import get_actor
+except ImportError:
+    class MockRay:
+        def get(self, *args, **kwargs):
+            return None
+    ray = MockRay()
+    def get_actor(*args, **kwargs):
+         class MockActor:
+             def get_data_state_G(self):
+                  return MockActor()
+             def remote(self):
+                  return None
+         return MockActor()
 
-from core._ray_core.base._ray_utils import RayUtils
+from _ray_core.base._ray_utils import RayUtils
 
 
 class BaseActor(RayUtils):

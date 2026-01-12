@@ -1,6 +1,6 @@
 import ray
 
-from core._ray_core.base.base import BaseActor
+from _ray_core.base.base import BaseActor
 from a_b_c.spanner_agent.controller import SpannerController
 from core.app_utils import TESTING
 

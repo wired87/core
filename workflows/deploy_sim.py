@@ -215,7 +215,7 @@ class DeploymentHandler(VMMaster):
                 "START_MODE": "TEST",
                 "TIMEOUT": "300"
             },
-            "boot_disk_size_gb": 1,
+            "boot_disk_size_gb": 10,
             "boot_disk_type": "pd-balanced",
         }
 
@@ -229,24 +229,30 @@ class DeploymentHandler(VMMaster):
             sys.exit(1)
         return value
 
+    def get_vm_cfg(
+        self,
+        testing,
+        instance_name,
+        image,
+        container_env,
+    ):
+        print(f"{testing} create_vm {instance_name}")
+
+        if testing is True:
+                cfg = self.test_vm_cfg
+        else:
+            cfg = self.get_prod_vm_cfg(
+                instance_name,
+                image,
+                container_env,
+            )
+        return cfg
 
     def create_vm(
             self,
-            testing,
-            instance_name,
-            image=None,
-            container_env=None,
+            cfg,
         ):
-        print(f"{testing} create_vm {instance_name}")
         try:
-            if testing is True:
-                cfg = self.test_vm_cfg
-            else:
-                cfg = self.get_prod_vm_cfg(
-                    instance_name,
-                    image,
-                    container_env,
-                )
             self.create_instance(
                 **cfg
             )
@@ -280,7 +286,7 @@ class DeploymentHandler(VMMaster):
             "gpu_type": "nvidia-tesla-t4",
             "gpu_count": 1,
             # 3. Custom Container Image
-            "container_image": conainer_image,
+            "container_image": container_image,
             "container_env": container_env,
             "boot_disk_size_gb": 30,
             "boot_disk_type": "pd-balanced",

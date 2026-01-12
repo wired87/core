@@ -9,7 +9,6 @@ import time
 from tempfile import TemporaryDirectory
 
 from core.app_utils import USER_ID, ENV_ID
-from data import QF_LEX
 from qf_utils.all_subs import ALL_SUBS, G_FIELDS, H, FERMIONS
 from qf_utils.field_utils import FieldUtils
 from qf_utils.mover import Mover
@@ -83,7 +82,7 @@ class God(FieldUtils):
             )
         )
 
-        for nid, meta_attrs in QF_LEX.items():
+        """for nid, meta_attrs in QF_LEX.items():
             print("create PARAM:", nid)
             self.g.add_node(
                 attrs=dict(
@@ -94,7 +93,7 @@ class God(FieldUtils):
                         for k, v in meta_attrs.items()
                         if k not in ["nid", "type"]}
                 )
-            )
+            )"""
 
 
 
@@ -188,7 +187,6 @@ class God(FieldUtils):
             if args.get("type") == "PIXEL"
         ]
 
-        default_px_id = "px_0"
         #self.g.print_status_G("G BEFORE LOADUP")
 
         # todo save instant in vertical format

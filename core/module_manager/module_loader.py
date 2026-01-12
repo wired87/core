@@ -1,8 +1,9 @@
 import ast
 import inspect
 import os
+import pprint
 
-from core.app_utils import TESTING, USER_ID, ARSENAL_PATH
+from core.app_utils import TESTING, ARSENAL_PATH
 from fb_core.real_time_database import FBRTDBMgr
 from graph_visualizer.pyvis_visual import create_g_visual
 from code_manipulation.graph_creator import StructInspector
@@ -23,17 +24,15 @@ class ModuleLoader(
             self,
             G,
             nid,
-            fields:list[str],
+            #fields:list[str],
     ):
         self.id=nid
-        self.fields=fields
+        #self.fields=fields
 
         self.g = GUtils(G=G)
         self.qfu=QFUtils(g=self.g)
 
         StructInspector.__init__(self, self.g.G)
-
-        self.module_file_path = self.g.G.nodes[self.id]["path"]
 
         self.modules = {}
         self.device = "gpu" if TESTING is False else "cpu"
@@ -46,57 +45,62 @@ class ModuleLoader(
         return self.finished
 
 
-    def load_local_module_codebase(self):
+    def load_local_module_codebase(self, code_base):
         """
-        LOAD CONVERTED CODE FROM ARSENAL_PATH
+        LOAD CONVERTED CODE FOR MODULE
         """
         print("====== load_local_module_codebase ======")
         # tdo use Converter to convert files
         try:
-            print(f"load codebase for {self.id}")
-            attrs = self.g.G.nodes[self.id]
-            if attrs.get("content", None):
-                print(f"code for already saved in G -> continue")
-                return
+            if code_base is None:
+                print(f"load codebase for MODULE {self.id}")
+                attrs = self.g.G.nodes[self.id]
+                if attrs.get("content", None):
+                    print(f"code for already saved in G -> continue")
+                    return
 
-            print(f"start code xtraction for {self.id}")
-            file_name = os.path.join(ARSENAL_PATH, f"{self.id}.py")
-            with open(file_name, "r", encoding="latin-1") as file_handle: #latin-1
-                # Use the file_name as the key
-                print("create module name")
+                print(f"start code xtraction for {self.id}")
+                file_name = os.path.join(ARSENAL_PATH, f"{self.id}.py")
+
+                with open(file_name, "r", encoding="latin-1") as file_handle: #latin-1
+                    # Use the file_name as the key
+                    print("create module name")
+                    module_name = self.id.split(".")[0]
+                    print("CREATE MODULE:", module_name)
+                code_base = file_handle.read()
+            else:
                 module_name = self.id.split(".")[0]
-                print("CREATE MODULE:", module_name)
-                mcontent = file_handle.read()
-                self.g.update_node(
-                    dict(
-                        nid=module_name,
-                        type="MODULE",
-                        parent=["FILE"],
-                        content=mcontent # code str
-                    )
-                )
 
+            self.g.update_node(
+                attrs=dict(
+                    nid=module_name,
+                    type="MODULE",
+                    parent=["FILE"],
+                    code=code_base # code str
+                )
+            )
         except Exception as e:
             print("Err load_local_module_codebase:", e)
             print(f"  Module ID: {self.id}")
-            print(f"  Attempted path: {self.module_file_path}")
+
         print("finished load_local_module_codebase")
+        self.g.print_status_G()
 
 
-
-    def create_code_G(self, mid):
+    def create_code_G(self, mid, code=None):
         print("====== create_code_G ======")
+        print(f"DEBUG: self.g is {self.g}")
         try:
             #GET MDULE ATTRS
             mattrs = self.g.G.nodes[mid]
             
             # Check if content exists
-            if "content" not in mattrs:
+            if "code" not in mattrs:
                 raise KeyError(f"Module '{mid}' does not have 'content' attribute. Available attributes: {list(mattrs.keys())}")
             
             # CREATE G FROM IT
             self.convert_module_to_graph(
-                code_content=mattrs["content"],
+                code_content=mattrs["code"],
                 module_name=mid
             )
 
@@ -110,7 +114,7 @@ class ModuleLoader(
             print("create_code_G finished")
         except Exception as e:
             print(f"Error in create_code_G for module '{mid}':", e)
-            raise
+        self.g.print_status_G()
 
 
     def extract_module_classes(self):
@@ -182,15 +186,17 @@ class ModuleLoader(
         -> get child methods
         -> sort from
         """
+        print("set_arsenal_struct")
         try:
             # get all methods for the desired task
             print("start retrieve_arsenal_struct")
             arsenal_struct: list[dict] = []
-
+            modules_params = set()
             methods: dict[str, dict] = self.g.get_neighbor_list(
                 node=self.id,
                 target_type="METHOD",
             )
+
             print(f"defs found {self.id}:", methods.keys())
 
             if methods:
@@ -206,6 +212,8 @@ class ModuleLoader(
 
                     print("params set")
                     pkeys = list(params.keys())
+                    for key in pkeys:
+                        modules_params.add(key)
                     attrs["params"] = pkeys
                     arsenal_struct.append(attrs)
 
@@ -215,10 +223,27 @@ class ModuleLoader(
             )
 
             self.set_method_exec_index()
+            self.update_module_node(list(modules_params))
+            print("set_arsenal_struct... done")
         except Exception as e:
             print(f"Error RELAY.retrieve_arsenal_struct: {e}")
             return []
 
+
+    def update_module_node(self, modules_params):
+        try:
+            self.g.update_node(
+                dict(
+                    nid=self.id,
+                    arsenal_struct=self.arsenal_struct,
+                    params=modules_params,
+                ),
+            )
+            pprint.pp(self.arsenal_struct)
+            print("update_module_node... done")
+        except Exception as e:
+            print(f"Error MLOADER.update_module_node: {e}")
+            return []
 
     def set_method_exec_index(self):
         # add method index to node to ensure persistency in equaton handling
@@ -230,9 +255,6 @@ class ModuleLoader(
                 )
             )
         print("finished retrieve_arsenal_struct")
-
-
-
 
 
 
@@ -267,7 +289,7 @@ class ModuleLoader(
 
             # 1. Identify all methods ready in this iteration
             for method in remaining_methods:
-                required_params = set(method.get('parameters', []))
+                required_params = set(method.get('params', []))
 
                 # Dependencies are the internal keys required by the method.
                 # External initial inputs (like 'mass', 'vev') are ignored here,

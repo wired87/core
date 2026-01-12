@@ -3,7 +3,7 @@ import os
 import ray
 import requests
 
-from core._ray_core.utils.ray_validator import RayValidator
+from _ray_core.utils.ray_validator import RayValidator
 from core.app_utils import DOMAIN, FB_DB_ROOT, TESTING
 from fb_core.real_time_database import FBRTDBMgr
 from utils.file.main import GraphBuilder

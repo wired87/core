@@ -4,7 +4,9 @@ import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from core.env_manager.env_lib import handle_get_env, handle_del_env, handle_set_env, handle_get_envs_user, EnvManager
+import networkx as nx
+
+from core.env_manager.env_lib import handle_get_env, handle_del_env, handle_set_env, handle_get_envs_user, EnvManager, handle_link_env_module, handle_rm_link_env_module, handle_download_model, handle_retrieve_logs_env, handle_get_env_data
 from core.injection_manager.injection import (
     handle_set_inj, handle_del_inj, handle_get_inj_user, handle_get_inj_list,
     handle_link_inj_env, handle_rm_link_inj_env, handle_list_link_inj_env, handle_get_injection,
@@ -19,7 +21,15 @@ from core.module_manager.ws_modules_manager import (
 )
 from core.fields_manager.fields_lib import handle_del_field, handle_set_field, \
     handle_link_module_field, handle_list_modules_fields, handle_list_users_fields, \
-    handle_rm_link_module_field, handle_get_modules_fields, handle_get_sessions_fields, FieldsManager
+    handle_rm_link_module_field, handle_get_modules_fields, handle_get_sessions_fields, \
+    fields_manager
+
+from core.param_manager.params_lib import (
+    handle_get_users_params, handle_set_param, handle_del_param,
+    handle_link_field_param, handle_rm_link_field_param, handle_get_fields_params,
+    params_manager
+)
+
 from core.guard import Guard
 
 
@@ -35,9 +45,10 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 import asyncio
 from urllib.parse import parse_qs
 
+
 from core.module_manager.ws_modules_manager.modules_lib import handle_rm_link_session_module
 from core.module_manager.module_etractor.extractor import RawModuleExtractor
-from core.sm_manager.sm_manager import SMManager
+from core.sm_manager.sm_manager import SMManager, handle_enable_sm
 from qf_utils.qf_utils import QFUtils
 from fb_core.real_time_database import FBRTDBMgr
 
@@ -60,13 +71,13 @@ from utils.graph.local_graph_utils import GUtils
 from utils.id_gen import generate_id
 from utils.utils import Utils
 
-from fb_core.firestore_manager import FirestoreMgr
 
 from core.user_manager import UserManager
 from core.session_manager.session import SessionManager
 from core.session_manager.session import (
     handle_get_sessions_modules, handle_get_sessions_envs,
-    handle_link_env_session, handle_rm_link_env_session
+    handle_link_env_session, handle_rm_link_env_session,
+    handle_list_user_sessions
 )
 
 from dataclasses import dataclass
@@ -89,7 +100,10 @@ RELAY_CASES_CONFIG = [
     {"case": "GET_USERS_ENVS", "desc": "", "func": handle_get_envs_user, "req_struct": {"auth": {"user_id": "str"}}, "out_struct": {"type": "GET_USERS_ENVS", "data": {"envs": "list"}}},
     {"case": "DEL_ENV", "desc": "", "func": handle_del_env, "req_struct": {"auth": {"env_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_USERS_ENVS", "data": {"envs": "list"}}},
     {"case": "SET_ENV", "desc": "", "func": handle_set_env, "req_struct": {"data": {"env_item": "dict"}, "auth": {"user_id": "str"}}, "out_struct": {"type": "GET_USERS_ENVS", "data": {"envs": "list"}}},
-
+    {"case": "DOWNLOAD_MODEL", "desc": "Download Model", "func": handle_download_model, "req_struct": {"auth": {"env_id": "string", "user_id": "string"}}, "out_struct": {"type": "DOWNLOAD_MODEL", "data": "dict"}},
+    {"case": "RETRIEVE_LOGS_ENV", "desc": "Retrieve Logs Env", "func": handle_retrieve_logs_env, "req_struct": {"auth": {"env_id": "string", "user_id": "string"}}, "out_struct": {"type": "RETRIEVE_LOGS_ENV", "data": "list"}},
+    {"case": "GET_ENV_DATA", "desc": "Get Env Data", "func": handle_get_env_data, "req_struct": {"auth": {"env_id": "string", "user_id": "string"}}, "out_struct": {"type": "GET_ENV_DATA", "data": "list"}},
+    
     # FIELD
     {"case": "DEL_FIELD", "desc": "Delete Field", "func": handle_del_field, "req_struct": {"auth": {"field_id": "str", "user_id": "str"}}, "out_struct": {"type": "LIST_USERS_FIELDS", "data": {"fields": "list"}}},
     {"case": "LIST_USERS_FIELDS", "desc": "List Users Fields", "func": handle_list_users_fields, "req_struct": {"auth": {"user_id": "str"}}, "out_struct": {"type": "LIST_USERS_FIELDS", "data": {"fields": "list"}}},
@@ -101,9 +115,9 @@ RELAY_CASES_CONFIG = [
     {"case": "SESSIONS_FIELDS", "desc": "Get Sessions Fields", "func": handle_get_sessions_fields, "req_struct": {"auth": {"user_id": "str", "session_id": "str"}}, "out_struct": {"type": "SESSIONS_FIELDS", "data": {"fields": "list"}}},
 
     # INJECTION - Energy Designer
-    {"case": "SET_INJ", "desc": "Set/upsert injection", "func": handle_set_inj, "req_struct": {"data": "dict", "auth": {"user_id": "str"}}, "out_struct": {"type": "GET_INJ_USER", "data": "list"}},
-    {"case": "DEL_INJ", "desc": "Delete injection", "func": handle_del_inj, "req_struct": {"auth": {"injection_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_INJ_USER", "data": "list"}},
-    {"case": "GET_INJ_USER", "desc": "Get user injections", "func": handle_get_inj_user, "req_struct": {"auth": {"user_id": "str"}}, "out_struct": {"type": "GET_INJ_USER", "data": "list"}},
+    {"case": "SET_INJ", "desc": "Set/upsert injection", "func": handle_set_inj, "req_struct": {"data": "dict", "auth": {"user_id": "str"}}, "out_struct": {"type": "GET_INJ_USER", "data": dict[str, list]}},
+    {"case": "DEL_INJ", "desc": "Delete injection", "func": handle_del_inj, "req_struct": {"auth": {"injection_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_INJ_USER", "data": dict[str, list]}},
+    {"case": "GET_INJ_USER", "desc": "Get user injections", "func": handle_get_inj_user, "req_struct": {"auth": {"user_id": "str"}}, "out_struct": {"type": "GET_INJ_USER", "data": dict[str, list]}},
     {"case": "GET_INJ_LIST", "desc": "Get injection list", "func": handle_get_inj_list, "req_struct": {"data": {"inj_ids": "list"}, "auth": {"user_id": "str"}}, "out_struct": {"type": "GET_INJ_LIST", "data": "list"}},
     
     # INJECTION - Env Linking
@@ -119,24 +133,36 @@ RELAY_CASES_CONFIG = [
     {"case": "GET_SESSIONS_INJECTIONS", "desc": "Get Session Injections", "func": handle_get_sessions_injections, "req_struct": {"auth": {"session_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_INJECTIONS", "data": {"injections": "list"}}},
 
     {"case": "REQUEST_INJ_SCREEN", "desc": "Requesting admin_data relavant for inj setup", "func": None, "func_name": "request_inj_process_start", "req_struct": {"data": {"env_id": "str"}}, "out_struct": {"type": "INJ_PATTERN_STRUCT", "admin_data": "dict", "env_id": "str"}},
-    {"case": "START_SIM", "desc": "Start simulation", "func": None, "func_name": "_handle_start_sim_process", "req_struct": {"data": "dict"}, "out_struct": {"type": "START_SIM", "status": {"state": "str", "code": "int", "msg": "str"}, "data": "dict"}},
     {"case": "SET_INJ_PATTERN", "desc": "Set ncfg injection pattern", "func": None, "func_name": "set_env_inj_pattern", "req_struct": {"data": "dict"}, "out_struct": None},
     {"case": "GET_INJ", "desc": "Retrieve inj cfg list", "func": None, "func_name": "set_env_inj_pattern", "req_struct": {"data": "dict"}, "out_struct": None},
 
     # SESSION
-    {"case": "LINK_ENV_SESSION", "desc": "Link Env Session", "func": handle_link_env_session, "req_struct": {"auth": {"user_id": "str", "session_id": "str", "env_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_ENVS", "data": {"envs": "list"}}},
+    {"case": "LINK_ENV_SESSION", "desc": "Link Env Session", "func": handle_link_env_session, "req_struct": {"auth": {"user_id": "str", "session_id": "str", "env_id": "str"}}, "out_struct": {"type": "LINK_ENV_SESSION", "data": {"sessions": "dict"}}},
     {"case": "RM_LINK_ENV_SESSION", "desc": "Remove Link Env Session", "func": handle_rm_link_env_session, "req_struct": {"auth": {"user_id": "str", "session_id": "str", "env_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_ENVS", "data": {"envs": "list"}}},
     {"case": "GET_SESSIONS_ENVS", "desc": "Get Session Envs", "func": handle_get_sessions_envs, "req_struct": {"auth": {"user_id": "str", "session_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_ENVS", "data": {"envs": "list"}}},
+    {"case": "LIST_USERS_SESSIONS", "desc": "List user sessions", "func": handle_list_user_sessions, "req_struct": {"auth": {"user_id": "str"}}, "out_struct": {"type": "LIST_USERS_SESSIONS", "data": {"sessions": "list"}}},
     
     # MODULES
     {"case": "DEL_MODULE", "desc": "Delete Module", "func": handle_del_module, "req_struct": {"auth": {"module_id": "str", "user_id": "str"}}, "out_struct": {"type": "LIST_USERS_MODULES", "data": {"modules": "list"}}},
     {"case": "LINK_SESSION_MODULE", "desc": "Link Session Module", "func": handle_link_session_module, "req_struct": {"auth": {"user_id": "str", "session_id": "str", "module_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_MODULES", "data": {"modules": "list"}}},
     {"case": "RM_LINK_SESSION_MODULE", "desc": "Remove Link Session Module", "func": handle_rm_link_session_module, "req_struct": {"auth": {"user_id": "str", "session_id": "str", "module_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_MODULES", "data": {"modules": "list"}}},
-    {"case": "SET_MODULE", "desc": "Set Module", "func": handle_set_module, "req_struct": {"data": {"files": "list"}, "auth": {"user_id": "str"}}, "out_struct": {"type": "LIST_USERS_MODULES", "data": {"modules": "list"}}},
+    {"case": "LINK_ENV_MODULE", "desc": "Link Env Module", "func": handle_link_env_module, "req_struct": {"auth": {"user_id": "str", "session_id": "str", "env_id": "str", "module_id": "str"}}, "out_struct": {"type": "LINK_ENV_MODULE", "data": {"sessions": "dict"}}},
+    {"case": "RM_LINK_ENV_MODULE", "desc": "Remove Link Env Module", "func": handle_rm_link_env_module, "req_struct": {"auth": {"user_id": "str", "session_id": "str", "env_id": "str", "module_id": "str"}}, "out_struct": {"type": "LINK_ENV_MODULE", "data": {"sessions": "dict"}}},
+    {"case": "SET_MODULE", "desc": "Set Module", "func": handle_set_module, "req_struct": {"data": {"id": "str", "files": "list"}, "auth": {"user_id": "str"}}, "out_struct": {"type": "LIST_USERS_MODULES", "data": {"modules": "list"}}},
+    {"case": "ENABLE_SM", "desc": "Enable Standard Model", "func": handle_enable_sm, "req_struct": {"auth": {"env_id": "str", "session_id": "str", "user_id": "str"}}, "out_struct": {"type": "ENABLE_SM", "data": {"sessions": "dict"}}},
     {"case": "GET_MODULE", "desc": "Get Module", "func": handle_get_module, "req_struct": {"auth": {"module_id": "str"}}, "out_struct": {"type": "GET_MODULE", "data": "dict"}},
-    {"case": "GET_SESSIONS_MODULES", "desc": "Get Session Modules", "func": handle_get_sessions_modules, "req_struct": {"auth": {"user_id": "str", "session_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_MODULES", "data": {"modules": "list"}}},
+    {"case": "GET_SESSIONS_MODULES", "desc": "Get Session Modules", "func": handle_get_sessions_modules, "req_struct": {"auth": {"user_id": "str", "session_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_MODULES", "data": {"modules": "list"}, "auth": {"session_id": "str"}}},
     {"case": "LIST_USERS_MODULES", "desc": "List User Modules", "func": handle_list_users_modules, "req_struct": {"auth": {"user_id": "str"}}, "out_struct": {"type": "LIST_USERS_MODULES", "data": {"modules": "list"}}},
     {"case": "CONVERT_MODULE", "desc": "Convert Module", "func": None, "func_name": "_handle_convert_module", "req_struct": {"auth": {"module_id": "str"}, "data": {"files": "dict"}}, "out_struct": {"type": "CONVERT_MODULE", "data": "dict"}},
+    # todo apply last paramet entire grid to eq def  - in jax_test
+    
+    # PARAMS
+    {"case": "LIST_USERS_PARAMS", "desc": "Get Users Params", "func": handle_get_users_params, "req_struct": {"auth": {"user_id": "str"}}, "out_struct": {"type": "LIST_USERS_PARAMS", "data": {"params": "list"}}},
+    {"case": "SET_PARAM", "desc": "Set Param", "func": handle_set_param, "req_struct": {"auth": {"user_id": "str"}, "data": {"param": "dict"}}, "out_struct": {"type": "LIST_USERS_PARAMS", "data": {"params": "list"}}},
+    {"case": "DEL_PARAM", "desc": "Delete Param", "func": handle_del_param, "req_struct": {"auth": {"user_id": "str", "param_id": "str"}}, "out_struct": {"type": "LIST_USERS_PARAMS", "data": {"params": "list"}}},
+    {"case": "LINK_FIELD_PARAM", "desc": "Link Field Param", "func": handle_link_field_param, "req_struct": {"auth": {"user_id": "str"}, "data": {"links": "list"}}, "out_struct": {"type": "GET_FIELDS_PARAMS", "data": {"params": "list"}}},
+    {"case": "RM_LINK_FIELD_PARAM", "desc": "Rm Link Field Param", "func": handle_rm_link_field_param, "req_struct": {"auth": {"user_id": "str", "field_id": "str", "param_id": "str"}}, "out_struct": {"type": "GET_FIELDS_PARAMS", "data": {"params": "list"}}},
+    {"case": "GET_FIELDS_PARAMS", "desc": "Get Fields Params", "func": handle_get_fields_params, "req_struct": {"auth": {"user_id": "str", "field_id": "str"}}, "out_struct": {"type": "GET_FIELDS_PARAMS", "data": {"params": "list"}}},
 ]
 
 class Relay(
@@ -284,6 +310,16 @@ class Relay(
 
         print("self.user_id", self.user_id)
 
+        try:
+            fields_manager.upload_sm_fields(self.user_id)
+        except Exception as e:
+            print(f"Error uploading SM fields: {e}")
+
+        try:
+            params_manager.upload_sm_params(self.user_id)
+        except Exception as e:
+            print(f"Error uploading SM params: {e}")
+
         # todo collect more sim admin_data like len, elements, ...
         # todo improve auth
         if not self.user_id:
@@ -295,7 +331,7 @@ class Relay(
 
         self.g = GUtils(
             nx_only=False,
-            G=None,
+            G=nx.Graph(),
             g_from_path=None,
         )
 
@@ -364,10 +400,7 @@ class Relay(
                     self.session_id = session_id
                     print(f"Session created successfully: {session_id}")
                 else:
-                    print(f"Warning: Session creation failed for user {self.user_id}")
-                    # Generate fallback session_id to maintain functionality
-                    self.session_id = generate_id()
-                    print(f"Using FALLABCK SESSION ID: {self.session_id}")
+                    raise Exception(f"Session creation failed for user {self.user_id}")
             except Exception as e:
                 print(f"Warning: SESSION MGR ERR: {e}")
                 import traceback
@@ -376,11 +409,11 @@ class Relay(
                 self.session_id = generate_id()
                 print(f"USING FALLABACK SESSION ID: {self.session_id}")
 
-        """
-        # ENSURE SM IN USER PRESENT
-        self.sm_manager.main(self.user_id)
-        """
+        await self.send_session()
+        print(f"REQUEST FOR USER {self.user_id} ACCEPTED")
 
+    async def send_session(self):
+        print("send_session")
         return_data = {
             "type": "SET_SID",
             "auth":{
@@ -390,12 +423,73 @@ class Relay(
         }
         return_data=json.dumps(return_data)
         await self.send(text_data=return_data)
-        print(f"REQUEST FOR USER {self.user_id} ACCEPTED")
+        print("send_session... done")
 
 
 
+    def _collect_relay_cases_dynamically(self):
+        """
+        Scans the project for python files containing variables starting with 'RELAY_',
+        loads them, and if they are a list of dicts, extends RELAY_CASES_CONFIG.
+        """
+        print("Starting dynamic RELAY_ case discovery...")
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        
+        # Exclude common non-project dirs to save time/errors
+        exclude_dirs = {'.venv', 'venv', '.git', '__pycache__', '.idea', 'node_modules', 'build', 'dist'}
+        
+        for root, dirs, files in os.walk(project_root):
+            # Modify dirs in-place to exclude unwanted directories
+            dirs[:] = [d for d in dirs if d not in exclude_dirs]
+            
+            for file in files:
+                if file.endswith(".py") and file != os.path.basename(__file__): # Skip self to avoid circular/re-import issues if not careful
+                    file_path = os.path.join(root, file)
+                    
+                    try:
+                        # We use importlib to load the module dynamically
+                        # Calculate relative path for module import dotted notation
+                        rel_path = os.path.relpath(file_path, project_root)
+                        module_name = os.path.splitext(rel_path)[0].replace(os.sep, ".")
+                        
+                        # Guard against potential import errors or side effects
+                        # In a production system, static analysis (AST) might be safer than importing,
+                        # but importing ensures we get the actual evaluated object.
+                        spec = importlib.util.spec_from_file_location(module_name, file_path)
+                        if spec and spec.loader:
+                            module = importlib.util.module_from_spec(spec)
+                            sys.modules[module_name] = module # Optional: cache it
+                            spec.loader.exec_module(module)
+                            
+                            for var_name, value in vars(module).items():
+                                if var_name.startswith("RELAY_") and isinstance(value, list):
+                                    # Basic validation: check if list contains dicts with 'case' key
+                                    if value and isinstance(value[0], dict) and "case" in value[0]:
+                                        print(f"Found {var_name} in {module_name} with {len(value)} cases.")
+                                        for case_def in value:
+                                            # Avoid duplicates if case already exists?
+                                            # For now, append/overwrite logic could be added. 
+                                            # Here we just extend the config list.
+                                            
+                                            # Check if already registered to avoid dupes from imports
+                                            # (Actually RELAY_CASES_CONFIG is global in this file scope, but we want to populate self.relay_cases)
+                                            func = case_def.get("func")
+                                            # Handle case where func is a lambda or partial which might not pickle well, but here we just run it.
+                                            
+                                            self.relay_cases.append(RelayCase(
+                                                case=case_def["case"], 
+                                                description=case_def.get("desc", ""), 
+                                                callable=func, 
+                                                required_data_structure=case_def.get("req_struct", {}), 
+                                                output_data_structure=case_def.get("out_struct", {})
+                                            ))
+                    except Exception as e:
+                        # print(f"Skipping {file_path} due to import error: {e}")
+                        pass
+        print(f"Dynamic discovery finished. Total cases: {len(self.relay_cases)}")
 
     def _register_cases(self):
+        # First, register the hardcoded/legacy config present in this file
         for case_info in RELAY_CASES_CONFIG:
             func = case_info.get("func")
             if func is None and "func_name" in case_info:
@@ -408,6 +502,9 @@ class Relay(
                 required_data_structure=case_info.get("req_struct", {}), 
                 output_data_structure=case_info.get("out_struct", {})
             ))
+            
+        # Then, run dynamic discovery
+        self._collect_relay_cases_dynamically()
 
 
 
@@ -430,11 +527,16 @@ class Relay(
                 # Only inject if not already present (frontend might override)
                 if "session_id" not in payload["auth"]:
                     payload["auth"]["session_id"] = self.session_id
-                    
+                
             print(f"Received message from frontend: {payload}")
 
             # Dynamic Dispatch
             handled = False
+
+            # {"case": "START_SIM", "desc": "Start simulation", "func": None, "func_name": "_handle_start_sim_process", "req_struct": {"data": "dict"}, "out_struct": {"type": "START_SIM", "status": {"state": "str", "code": "int", "msg": "str"}, "data": "dict"}},
+            if data_type == "START_SIM":
+                await self._handle_start_sim_process(payload)
+                return
 
             # Iterate over a copy to ensure thread safety if cases are added at runtime
             for relay_case in list(self.relay_cases):
@@ -443,11 +545,6 @@ class Relay(
                     sig = inspect.signature(relay_case.callable)
                     try:
                         if len(sig.parameters) >= 2:
-                            # Pass auth as dict if it looks like env_lib handler? 
-                            # env_lib handlers are functions.
-                            # For now pass AuthData object. If env_lib fails, we should fix env_lib.
-                            # But wait, env_lib expects dict.
-                            # Let's check module name?
                             if relay_case.callable.__module__.endswith("env_lib"):
                                 res = await relay_case.callable(payload) if inspect.iscoroutinefunction(relay_case.callable) else relay_case.callable(payload)
                             else:
@@ -726,18 +823,46 @@ class Relay(
         Delegates to Guard.sim_start_process to fetch data, build graph, and compile pattern.
         Deactivates session upon success.
         """
-        print("Starting Simulation Process...")
+        print("Starting Simulation Process with payload:", payload)
         try:
             # 1. Call Guard Process
-            # Guard.sim_start_process is synchronous, so we call it directly.
-            # It performs batch data fetching, graph construction, and pattern compilation.
             self.guard.sim_start_process(payload)
+            
+            # Update env status to IN_PROGRESS and notify frontend
+            env_id = payload.get("data", {}).get("env_id") or payload.get("auth", {}).get("env_id")
+            if env_id:
+                print(f"Updating status for env {env_id} to IN_PROGRESS")
+                try:
+                    # Update status
+                    self.user_manager.qb.set_item(
+                        "envs", 
+                        {"status": "IN_PROGRESS"}, 
+                        keys={"id": env_id, "user_id": self.user_id}
+                    )
+                    
+                    # Fetch updated entry
+                    updated_env = self.user_manager.qb.row_from_id(
+                        nid=env_id,
+                        table="envs",
+                        user_id=self.user_id
+                    )
+                    
+                    if updated_env:
+                        # Send to frontend
+                        await self.send(text_data=json.dumps({
+                            "type": "GET_USERS_ENVS",
+                            "data": {"envs": updated_env}
+                        }))
+                        print(f"Sent IN_PROGRESS status for env {env_id}")
+                except Exception as ex:
+                    print(f"Error updating env status: {ex}")
             
             # 2. Deactivate Session
             if hasattr(self, 'session_id') and self.session_id:
                 print(f"Deactivating session {self.session_id} after successful sim start")
                 self.session_manager.deactivate_session(self.session_id)
-                
+                self.session_id = self.session_manager.get_or_create_active_session(self.user_id)
+            
             # 3. Send Success Response
             response = {
                 "type": "START_SIM",
@@ -748,7 +873,10 @@ class Relay(
                 },
                 "data": {} 
             }
+            
             await self.send(text_data=json.dumps(response))
+            await self.send_session()
+
             print("Sim start process completed successfully.")
 
         except Exception as e:
@@ -768,9 +896,6 @@ class Relay(
             }
             await self.send(text_data=json.dumps(error_response))
 
-    # Legacy injection methods removed (moved to injection.py)
-
-
 
 
     def handle_files(self, files):
@@ -781,38 +906,25 @@ class Relay(
                     prompt="Create a unique name for the provided file",
                     base64_string=f_bytes
                 )
-
-                #
-
-                #self.file_store.append(name)
-
-                """
-                self.db_manager.upsert_data(
-                    path=f"{self.user_id}/files",
-                    admin_data={
-                        name: base64.b64encode(f_bytes).decode("utf-8")
-                    }
-                )
-                """
                 print("Uploaded file:", name)
 
 
-    async def batch_inject_env(self, data):
+    async def batch_inject_env(self, payload):
         print("START SIM REQUEST RECEIVED")
-        
-        envs = self.g.get_nodes_by_type(
-            filter_key="ENV",
-            filter_value=self.user_id
-        )
+        data = payload.get("data", {})
+        config = payload.get("config", {})
+        if not config and "data" in payload and "config" in payload["data"]:
+            config = payload["data"]["config"]
+        elif not config and "config" in data:
+            config = data["config"]
 
-        for env in envs:
-            env_id = env["nid"]
+        for env_id, env_data in config.items():
             try:
                 if self.world_creator.env_id_map:
 
-                    self.deployment_handler.create_vm(
-                        instance_name=env_id,
-                        testing=self.testing,
+                    self.guard.sim_start_process(
+                        env_id,
+                        env_data
                     )
 
                     await self.send(
