@@ -101,6 +101,7 @@ class Guard(
 
 
     def create_nodes(self, env_id, env_data):
+        print("create_nodes...")
         # RESET G
         self.g.G = nx.Graph()
 
@@ -128,9 +129,7 @@ class Guard(
                     "module_index": i,
                 }
             print("ADD MODULE", mod)
-            self.g.add_node(
-                mod
-            )
+            self.g.add_node(mod)
 
             fields = mod_data.get("fields", {})
 
@@ -148,7 +147,10 @@ class Guard(
 
                 injections = field_data.get("injections", {})
                 for pos, inj_id in injections.items():
+                    # add clean inj id
                     inj_ids.add(inj_id)
+
+                    inj_id = f"{pos}__{inj_id}"
                     self.g.add_node(
                         {
                             "nid": inj_id,
@@ -195,19 +197,24 @@ class Guard(
 
                 injections = field_data.get("injections", {})
                 for pos, inj_id in injections.items():
+                    inj_id = f"{pos}__{inj_id}"
+
                     # FIELD -> INJ
-                    self.g.add_edge(field_id, field_id, attrs={
-                        "rel": "injection_at",
-                        "pos": pos,
-                        "src_layer": "FIELD",
-                        "trgt_layer": "INJECTION",
-                    })
+                    self.g.add_edge(
+                        field_id,
+                        inj_id,
+                        attrs={
+                            "rel": "has_injection",
+                            "src_layer": "FIELD",
+                            "trgt_layer": "INJECTION",
+                        }
+                    )
         self.g.print_status_G()
         print("create_edges... done")
 
 
     def check_create_ghost_mod(self, env_id):
-        ghost_mod_id = f"{env_id}_GHOST_MODULE".upper()
+        ghost_mod_id = f"GHOST_MODULE"
         print(f"Creating Ghost Module: {ghost_mod_id}")
 
         modules = self.g.get_nodes(filter_key="type", filter_value="MODULE", just_id=True)
@@ -272,10 +279,9 @@ class Guard(
             )
         )
 
-        fields = self.g.get_nodes(
-            filter_key="type",
-            filter_value="FIELD",
-            just_id=True
+        fields = self.g.get_neighbor_list_rel(
+            node="GHOST_MODULE",
+            trgt_rel="has_field",
         )
 
         print("ADD ENV FIELD")
@@ -291,7 +297,6 @@ class Guard(
             )
         )
 
-        self.check_create_ghost_mod(env_id)
         print("handle_env... done")
 
 
@@ -419,6 +424,7 @@ class Guard(
         )
 
         print("Edges created.")
+        self.check_create_ghost_mod(env_id)
 
         self.handle_env(env_id)
         print("Env handled.")
@@ -468,7 +474,7 @@ class Guard(
                 table=self.injection_manager.table
             )
             fetched_injections = {item["id"]: item for item in res}
-            print(f"Fetched {len(fetched_injections)} injections.")
+            print(f"Fetched injections: {len(fetched_injections)} ")
 
 
         modules_config = env_data.get("modules", {})
@@ -539,16 +545,19 @@ class Guard(
                 print(f"Processing {len(injections_config)} injections for field {field_id}...")
                 for pos, inj_id in injections_config.items():
                     inj_data = fetched_injections.get(inj_id)
+                    inj_id = f"{pos}__{inj_id}"
+                    print(f"inj_data: {inj_data}")
                     if inj_data:
                         self.g.add_node(
                             dict(
-                                nid=f"{inj_data['pos']}__{inj_id}",
+                                nid=inj_id,
                                 type="INJECTION",
                                 **inj_data
                             )
                         )
+
                     else:
-                        self.g.update_node({"nid": inj_id, "type": "INJECTION"})
+                        self.g.update_node({"nid": inj_id, "type": "INJECTION", })
 
         print("Handling field interactants...")
         self.handle_field_interactants(
@@ -575,19 +584,19 @@ class Guard(
         CREATE/COLL ECT PATTERNS FOR ALL ENVS AND CREATE VM
         """
         print("Main started...")
+
         compiled_patterns: list = self.compile_pattern(env_id)
 
 
         dbs = self.create_db(env_id)
 
-        param_pathway = self.set_inj_pattern(env_node)
+        injection_patterns = self.set_inj_pattern(env_node)
 
         vm_payload = self.create_vm_cfgs(
             env_id=env_id,
             compiled_patterns=compiled_patterns,
             dbs=dbs,
             injection_patterns=injection_patterns,
-            param_pathway=param_pathway
         )
         #self.deploy_vms(vm_payload)
         print("Main... done")
@@ -608,25 +617,24 @@ class Guard(
             compiled_patterns: list,
             dbs: Any,
             injection_patterns: list,
-            param_pathway: Any
         ):
         vm_payload = {}
         env_node = self.g.get_node(env_id)
         env_node = {k:v for k,v in env_node.items() if k not in ["updated_at", "created_at"]}
-        print("add env node to world cfg:", env_node)
+        #print("add env node to world cfg:", env_node)
 
         # CREATE VM PAYLOAD
         world_cfg = {
             "UPDATOR_PATTERN": compiled_patterns,
             "DB": dbs,
-            "AMOUNT_NODES": env_node.get("amount_nodes", 100),
+            "AMOUNT_NODES": env_node.get("amount_of_nodes", 100),
             "INJECTION_PATTERN": injection_patterns,
             "WORLD_CFG": json.dumps({
                 "sim_time": env_node.get("sim_time", 1),
-                "amount_nodes": env_node.get("amount_nodes", 1),
+                "amount_nodes": env_node.get("amount_of_nodes", 1),
                 "dims": env_node.get("dims", 3),
             }),
-            "ENERGY_MAP": param_pathway
+            #"ENERGY_MAP": param_pathway
         }
 
         # SAVE to DB
@@ -645,9 +653,8 @@ class Guard(
             image=self.artifact_admin.get_latest_image(),
             container_env=container_env
         )
-
-        print("create_vm_cfgs finished... done")
         print(vm_payload)
+        print("create_vm_cfgs finished... done")
         return vm_payload
 
 
@@ -667,20 +674,10 @@ class Guard(
 
 
 
-
-    
-
-
-
-
-
-
-
-
     def set_wcfg(self, world_cfg):
         self.world_cfg = world_cfg
 
-        amount_nodes = world_cfg["amount_nodes"]
+        amount_nodes = world_cfg["amount_of_nodes"]
 
         schema_grid = [
             (x, y, z)
@@ -723,9 +720,12 @@ class Guard(
     ) -> list[list[int]]:
         # exact same format
         print("set_inj_pattern...")
-
-        struct = self.get_empty_field_structure()
+        struct = []
         try:
+            amount_nodes = env_attrs["amount_of_nodes"]
+            dims = env_attrs["dims"]
+            schema_positions = self.get_positions(amount_nodes, dims)
+
             modules = self.g.get_nodes(
                 filter_key="type",
                 filter_value="MODULE"
@@ -740,8 +740,8 @@ class Guard(
                 if "module_index" not in mattrs:
                     continue
 
-                mindex = mattrs["module_index"]
-                print(f"MODULE index for {mid}: {mindex}")
+                midx = mattrs["module_index"]
+                print(f"MODULE index for {mid}: {midx}")
 
                 fields = self.g.get_neighbor_list_rel(
                     node=mid,
@@ -753,63 +753,49 @@ class Guard(
                     if "field_index" not in fattrs:
                         continue
 
-                    modi = mattrs["module_index"]
                     fi:int = fattrs["field_index"]
                     f_keys=fattrs.get("keys", [])
+
 
                     trgt_index = None
                     for key_opt in trgt_keys:
                         if key_opt in f_keys:
-
                             # CKPT PARAM INDEX
-                            trgt_index = f_keys.index(key_opt)
-                            struct[modi][fi][trgt_index] = []
+                            param_trgt_index = f_keys.index(key_opt)
+                            print(f"{key_opt} in {fid}s params:", param_trgt_index)
 
                             # 5. Loop Injections
-                            injections = self.g.get_neighbor_list(
+                            injections = self.g.get_neighbor_list_rel(
                                 node=fid,
-                                target_type="INJECTION"
+                                trgt_rel="has_injection",
                             )
 
+                            if len(injections) > 0:
+                                print(f"INJs for FIELD {fid}:", injections)
+
                             if not injections or not len(injections):
+                                print(f"no injections for field {fid}")
                                 continue
 
-                            for inj_id, inj_attrs in injections.items():
-                                pos_index:int or None = self.get_pos_index(inj_id)
-                                if not pos_index:
-                                    struct[modi][fi][trgt_index] = None
-                                    continue
-                                amount_nodes = env_attrs["amount_nodes"]
-                                dims = env_attrs["dims"]
-                                schema_positions = self.get_positions(amount_nodes, dims)
-                                struct[modi][fi][trgt_index] = [None for _ in range(len(schema_positions))]
+                            for inj_id, inj_attrs in injections:
+                                print("work inj_id:", inj_id)
+                                pos_index:int or None = schema_positions.index(tuple(eval(inj_id.split("__")[0])))
 
-                                # APPLY DAA
-                                struct[modi][fi][trgt_index][pos_index] = inj_attrs["data"]
-
-                    print(f"set param pathway db from mod {modi} -> field {fattrs['nid']}({fi}) = {trgt_index}")
+                                print(f"pos_index {inj_id}:", pos_index)
+                                struct.append(
+                                    (midx, fi, param_trgt_index, pos_index, inj_attrs["data"])
+                                )
+                                print("applied data to struct")
+                            break
+                    print(f"set param pathway db from mod {midx} -> field {fattrs['nid']}({fi}) = {trgt_index}")
             print(f"set_inj_pattern... done")
         except Exception as e:
             print("Err set_inj_pattern", e)
         return struct
 
 
-    def get_pos_index(self, inj_id, schema_positions):
-        pos_str = inj_id.split("__")[0]
-        pos_idx = -1
-        try:
-            # Handle pos parsing if it's a string representation of a tuple
-            if isinstance(pos_str, str):
-                pos_tuple = eval(pos_str)
-            else:
-                pos_tuple = pos_str
 
-            if pos_tuple in schema_positions:
-                pos_idx = schema_positions.index(pos_tuple)
-        except Exception as e:
-            print(f"Error parsing pos {pos_str}: {e}")
-        if pos_idx != -1:
-            return pos_idx
+
 
 
 
@@ -883,41 +869,6 @@ class Guard(
 
 
 
-    def create_and_distribute_data(self):
-        """
-        Loop modules -> fields -> admin_data(params)
-        write param to nnx.Module
-        """
-
-        # create pattern
-        modules:list[tuple] = self.g.get_nodes(
-            filter_key="type",
-            filter_value="MODULE",
-        )
-
-        for mid, mttrs in modules:
-            # get module
-            fields = self.g.get_neighbor_list(
-                node=mid,
-                target_type="FIELD",
-            )
-
-            for fid, fattrs in fields:
-                params:dict[str, Any] = fattrs["admin_data"]
-
-                for i, (k, v) in enumerate(params.items()):
-                    # get param module
-                    param = self.g.G.nodes[k]
-                    module = param["module"]
-
-                    # add admin_data
-                    module.add_data(
-                        v,
-                        self.amount_nodes
-                    )
-
-        print("Params sorted to nodes")
-        return
 
 
     def all_nodes_ready(self, trgt_types) -> bool:
@@ -965,6 +916,7 @@ class Guard(
                 trgt_rel="has_field",
                 as_dict=True,
             )
+            mod_idx = m["module_index"]
             print("CREATE DB FIELDS FETCHED:", fields)
 
             for fid, fattrs in fields.items():
@@ -972,10 +924,9 @@ class Guard(
                     if fattrs.get("field_index") is None:
                          print(f"MISSING OR NONE FIELD INDEX FOR {fid}: keys: {fattrs.keys()}")
                          continue
-                    modi = m["module_index"]
                     fi = fattrs["field_index"]
-                    print(f"get db from mod{modi} -> field {fi}")
-                    db[modi][fi] = [
+                    print(f"get db from mod{mod_idx} -> field {fi}")
+                    db[mod_idx][fi] = [
                         fattrs.get("value", []),
                         fattrs.get("axis_def", [])
                     ]
@@ -996,6 +947,7 @@ class Guard(
                 trgt_rel="has_module",
                 as_dict=True,
             )
+
             print(f"modules for {env_id}", modules)
 
             # ADD ENV AND GHOST MODULE DIM
@@ -1085,13 +1037,13 @@ class Guard(
                                     trgt_rel="has_finteractant",
                                     as_dict=True
                                 )
-                                print("fneighbors", fneighbors)
+                                #print("fneighbors", fneighbors)
                                 if len(list(fneighbors.keys())) == 0: continue
 
                                 for o, (finid, fiattrs) in enumerate(fneighbors.items()):
                                     print("interactant fnid", finid, o)
                                     ikeys = fiattrs.get("keys", [])
-                                    print("ikeys",ikeys)
+                                    #print("ikeys",ikeys)
                                     if pid in ikeys:
                                         print("interactant pid", pid, o)
 
@@ -1129,14 +1081,14 @@ class Guard(
                         ret_idx = keys.index(
                             return_key
                         ) if return_key in keys else 0
-                        print("ret_idx", ret_idx)
+                        #print("ret_idx", ret_idx)
 
                         return_index_map = [
                             m_idx,
                             ret_idx,
                             field_index,
                         ]
-                        print(f"      Return Map: {return_key} -> {return_index_map}")
+                        #print(f"      Return Map: {return_key} -> {return_index_map}")
 
                         # save equation interaction pattern
                         # Use eq_idx (Equation Index)
@@ -1200,15 +1152,20 @@ class Guard(
 
 
     def get_empty_field_structure(self, include_ghost_mod=True, set_none=False):
-        modules = self.g.get_nodes(
+        modules: list = self.g.get_nodes(
             filter_key="type",
             filter_value="MODULE",
         )
         try:
+            # 1. Calculate Max Module Index
+            for mid, m in modules:
+                print(f">>>module {mid}", m["module_index"])
+
+            #nit with size max_index + 1
             modules_struct = [
                 [] for _ in range(len(modules))
             ]
-            print("modules_struct", modules_struct)
+            print("modules_struct initialized size:", len(modules_struct))
 
             for i, (mid, m) in enumerate(modules):
                 if not include_ghost_mod:
@@ -1225,13 +1182,14 @@ class Guard(
                     trgt_rel="has_field",
                     as_dict=True,
                 )
-                print(f"get_empty_field_structure fields for {mid}", len(list(fields.keys())))
+
+                print(f"get_empty_field_structure fields for {mid}")
 
                 field_struct = [
                     None if set_none is False else []
                     for _ in range(len(fields))
                 ]
-
+                print(f"field_struct created for {mid}")
                 # SET EMPTY FIELDS STRUCT AT MODULE INDEX
                 modules_struct[m_idx] = field_struct
 
@@ -1248,9 +1206,8 @@ if __name__ == "__main__":
     from utils.graph.local_graph_utils import GUtils
     from qf_utils.qf_utils import QFUtils
 
-
     # Define payload
-    payload = {'type': 'START_SIM', 'data': {'config': {'env_7c87bb26138a427eb93cab27d0f5429f': {'modules': {'GAUGE': {'fields': {'photon': {'injections': {'[4,4,4]': 'hi'}}, 'w_plus': {'injections': {}}, 'w_minus': {'injections': {}}, 'z_boson': {'injections': {}}, 'gluon_0': {'injections': {}}, 'gluon_1': {'injections': {}}, 'gluon_2': {'injections': {}}, 'gluon_3': {'injections': {}}, 'gluon_4': {'injections': {}}, 'gluon_5': {'injections': {}}, 'gluon_6': {'injections': {}}, 'gluon_7': {'injections': {}}}}, 'HIGGS': {'fields': {'higgs': {'injections': {}}}}, 'FERMION': {'fields': {'electron': {'injections': {}}, 'muon': {'injections': {}}, 'tau': {'injections': {}}, 'electron_neutrino': {'injections': {}}, 'muon_neutrino': {'injections': {}}, 'tau_neutrino': {'injections': {}}, 'up_quark_0': {'injections': {}}, 'up_quark_1': {'injections': {}}, 'up_quark_2': {'injections': {}}, 'down_quark_0': {'injections': {}}, 'down_quark_1': {'injections': {}}, 'down_quark_2': {'injections': {}}, 'charm_quark_0': {'injections': {}}, 'charm_quark_1': {'injections': {}}, 'charm_quark_2': {'injections': {}}, 'strange_quark_0': {'injections': {}}, 'strange_quark_1': {'injections': {}}, 'strange_quark_2': {'injections': {}}, 'top_quark_0': {'injections': {}}, 'top_quark_1': {'injections': {}}, 'top_quark_2': {'injections': {}}, 'bottom_quark_0': {'injections': {}}, 'bottom_quark_1': {'injections': {}}, 'bottom_quark_2': {'injections': {}}}}}}}}, 'auth': {'session_id': 339617269692277, 'user_id': '72b74d5214564004a3a86f441a4a112f'}, 'timestamp': '2026-01-08T11:54:50.417Z'}
+    payload = {'type': 'START_SIM', 'data': {'config': {'env_7c87bb26138a427eb93cab27d0f5429f': {'modules': {'GAUGE': {'fields': {'photon': {'injections': {'[4,4,4]': 'hi'}}, 'w_plus': {'injections': {}}, 'w_minus': {'injections': {}}, 'z_boson': {'injections': {}}, 'gluon_0': {'injections': {}}, 'gluon_1': {'injections': {}}, 'gluon_2': {'injections': {}}, 'gluon_3': {'injections': {}}, 'gluon_4': {'injections': {}}, 'gluon_5': {'injections': {}}, 'gluon_6': {'injections': {}}, 'gluon_7': {'injections': {}}}}, 'HIGGS': {'fields': {'phi': {'injections': {}}}}, 'FERMION': {'fields': {'electron': {'injections': {}}, 'muon': {'injections': {}}, 'tau': {'injections': {}}, 'electron_neutrino': {'injections': {}}, 'muon_neutrino': {'injections': {}}, 'tau_neutrino': {'injections': {}}, 'up_quark_0': {'injections': {}}, 'up_quark_1': {'injections': {}}, 'up_quark_2': {'injections': {}}, 'down_quark_0': {'injections': {}}, 'down_quark_1': {'injections': {}}, 'down_quark_2': {'injections': {}}, 'charm_quark_0': {'injections': {}}, 'charm_quark_1': {'injections': {}}, 'charm_quark_2': {'injections': {}}, 'strange_quark_0': {'injections': {}}, 'strange_quark_1': {'injections': {}}, 'strange_quark_2': {'injections': {}}, 'top_quark_0': {'injections': {}}, 'top_quark_1': {'injections': {}}, 'top_quark_2': {'injections': {}}, 'bottom_quark_0': {'injections': {}}, 'bottom_quark_1': {'injections': {}}, 'bottom_quark_2': {'injections': {}}}}}}}}, 'auth': {'session_id': 339617269692277, 'user_id': '72b74d5214564004a3a86f441a4a112f'}, 'timestamp': '2026-01-08T11:54:50.417Z'}
 
     print("Running START_SIM test...")
     
@@ -1264,102 +1221,3 @@ if __name__ == "__main__":
         env_id="env_7c87bb26138a427eb93cab27d0f5429f",
         env_data=payload["data"]["config"]["env_7c87bb26138a427eb93cab27d0f5429f"],
     )
-
-
-
-
-
-
-
-"""
-
-
-
-        print("set_inj_pattern started...")
-
-        # 1. Get all Envs
-
-        current_inj_struct = self.get_empty_field_structure()
-
-        # Prepare Position Map for this Env
-        amount_nodes = env_node.get("amount_nodes", 10)  # Default or fetch?
-        dim = env_node.get("dim", 3)
-        # Create a lookup for positions: tuple -> index
-        schema_positions = self.get_positions(amount_nodes, dim)
-        # Make it a list for indexing? schema_positions is already a list of tuples.
-
-        # 3. Loop Modules
-        modules = self.g.get_nodes(
-            filter_key="type",
-            filter_value="MODULE"
-        )
-
-        for mod_id, mod_attrs in modules.items():
-            if "GHOST" in mod_id.upper(): continue
-
-            m_idx = mod_attrs.get("module_index")
-            if m_idx is None: continue
-            print("inj work", mod_id, m_idx)
-
-            # 4. Loop Fields
-            fields = self.g.get_neighbor_list_rel(
-                node=mod_id,
-                trgt_rel="has_field",
-            )
-
-            for field_id, field_attrs in fields.items():
-                f_idx = field_attrs.get("field_index")
-                if f_idx is None: continue
-                print("inj work filed", field_id, f_idx)
-
-                # Get Field Keys for Energy Parameter Indexing
-                field_keys = field_attrs.get("keys", [])  # or "field_keys"?
-                if not field_keys and "field_keys" in field_attrs:
-                    field_keys = field_attrs["field_keys"]
-
-                # 5. Loop Injections
-                injections = self.g.get_neighbor_list(
-                    node=field_id,
-                    target_type="INJECTION"
-                )
-
-                for inj_id, inj_attrs in injections.items():
-
-                    pos_str = inj_id.split("__")[0]
-
-                    pos_idx = -1
-                    try:
-                        # Handle pos parsing if it's a string representation of a tuple
-                        if isinstance(pos_str, str):
-                            pos_tuple = eval(pos_str)
-                        else:
-                            pos_tuple = pos_str
-
-                        if pos_tuple in schema_positions:
-                            pos_idx = schema_positions.index(pos_tuple)
-                    except Exception as e:
-                        print(f"Error parsing pos {pos_str}: {e}")
-
-                    if pos_idx != -1:
-                        # Apply Data
-                        # Data should be in inj_attrs['data'] -> [[t], [val]]
-                        inj_data = inj_attrs.get("data")
-
-                        # We need to find 'energy' index in field_keys.
-                        param_key = "energy"  # Defaulting to energy as per standard sim logic
-                        if param_key in field_keys:
-                            p_idx = field_keys.index(param_key)
-
-                            # AUTO-EXPAND/INITIALIZE if needed:
-                            target_field_list = current_inj_struct[m_idx][f_idx]
-                            while len(target_field_list) <= p_idx:
-                                target_field_list.append(
-                                    [None] * len(schema_positions))  # Add slot for param, init with grid slots
-
-                            target_field_list[p_idx][pos_idx] = inj_data
-                        else:
-                            print(f"Energy param not found in field {field_id}")
-        print("set_inj_pattern finished.")
-        return current_inj_struct
-
-"""

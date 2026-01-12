@@ -16,7 +16,7 @@ class HiggsCreator(HiggsUtils):
         """
         try:
             if nid is  None:
-                nid = f"HIGGS__{px_id}"
+                nid = f"PHI__{px_id}"
 
             node_attrs = dict(
                 nid=nid,

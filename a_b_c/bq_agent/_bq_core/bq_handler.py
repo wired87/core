@@ -24,6 +24,7 @@ class BQGroundZero:
     BQ ERLAUBT NUR 5 ROW UPSERTIONS / 10sec / TABLE
     todo: migrate tables  from sp <-> bq
     """
+    DEFAULT_TIMESTAMP = "CURRENT_TIMESTAMP()"
 
     def __init__(self, dataset_id=None):
         self.pid = GCP_ID

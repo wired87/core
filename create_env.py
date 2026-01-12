@@ -240,25 +240,29 @@ class EnvCreatorProcess:
 
 
     def create_env_variables(self, env_id, cfg:dict=None) -> dict:
+        print("create_env_variables...")
         cfg = cfg or {}
         env_vars_dict = {
             "DOMAIN": "www.bestbrain.tech",
             "GCP_ID": "aixr-401704",
-            "DATASET_ID": "QCOMPS",
+            "DATASET_ID": "QBRAIN",
+            "BQ_DATA_TABLE": f"{env_id}_data",
             "LOGGING_DIR": "tmp/ray",
             "ENV_ID": env_id,
             "USER_ID": self.user_id,
-            "FIREBASE_RTDB": os.environ.get("FIREBASE_RTDB"),
-            "FB_DB_ROOT": f"users/{self.user_id}/env/{env_id}",
+            #"FIREBASE_RTDB": os.environ.get("FIREBASE_RTDB"),
+            #"FB_DB_ROOT": f"users/{self.user_id}/env/{env_id}",
             "DELETE_POD_ENDPOINT": "gke/delete-pod/",
-            "GKE_SIM_CLUSTER_NAME": os.environ.get("GKE_SIM_CLUSTER_NAME"),
+            #"GKE_SIM_CLUSTER_NAME": os.environ.get("GKE_SIM_CLUSTER_NAME"),
             "SG_DB_ID": env_id,
-            "GEMINI_API_KEY": os.environ["GEMINI_API_KEY"],
+            #"GEMINI_API_KEY": os.environ["GEMINI_API_KEY"],
             **{
                 k: (json.dumps(v) if not isinstance(v, str) else v)
                 for k, v in cfg.items()
             },
         }
+        pprint.pp(env_vars_dict)
+        print("create_env_variables... done")
         return env_vars_dict
 
 
