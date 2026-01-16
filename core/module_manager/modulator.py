@@ -2,7 +2,6 @@ import time
 import json
 from typing import Any, List, Dict
 
-
 from code_manipulation.eq_extractor import EqExtractor
 from core.module_manager.module_loader import ModuleLoader
 from qf_utils.field_utils import FieldUtils
@@ -87,9 +86,22 @@ class Modulator(
                         trt=param_id,
                         attrs=edge_attrs
                     )
-                    
+
         except Exception as e:
             print(f"Error in register_modules_G: {e}")
+
+
+    def set_constants(self):
+        print("set_constants...")
+        env_keys = list(self.qfu.create_env().keys())
+        for k,v in self.g.G.nodes(data=True):
+            if v["type"] == "PARAM":
+                if k in env_keys:
+                    v["const"] = True
+                else:
+                    v["const"] = False
+        print("set_constants... done")
+
 
 
     def module_conversion_process(self):
@@ -116,8 +128,9 @@ class Modulator(
             self.create_code_G(mid=self.id)
 
             # G -> sorted runnables -> add inde to node
-            self.set_arsenal_struct()
+            self.set_constants()
 
+            #self.set_axis_method_params()
             print("module_conversion_process... done")
             #print("self.arsenal_struct", self.arsenal_struct)
         except Exception as e:
@@ -140,9 +153,9 @@ class Modulator(
             # set params for module
             keys = list(data.keys())
             values = list(data.values())
-            axis_def = self.set_axis(values)
 
-            print(f"update field node {field} ")
+            axis_def = self.set_axis(values)
+            print(f"update field node {field}")
             self.g.update_node(
                 dict(
                     nid=field,
@@ -156,25 +169,8 @@ class Modulator(
     print("create_modules finished")
 
 
-    def create_modules(self):
-        # add method index to node to ensure persistency in equaton handling
-        for i, item in enumerate(self.arsenal_struct):
-            self.g.update_node(
-                dict(
-                    nid=item["nid"],
-                    method_id=i,
-                )
-            )
-        print("create_modules finished")
-
-
-
     def set_pattern(self):
-        STRUCT_SCHEMA = [
-            # module index
-            # findex
-            # list pindex
-        ]
+        STRUCT_SCHEMA = []
 
         for f in self.fields:
             node = self.g.G.nodes[f]
@@ -258,7 +254,7 @@ class Modulator(
         - Use axis 0 for array-like admin_data (map over it).
         - Use None for scalar admin_data (broadcast it).
         """
-        return (
+        return tuple(
             0
             if not isinstance(
                 param, (int, float)

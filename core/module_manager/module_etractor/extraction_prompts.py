@@ -16,8 +16,25 @@ RETURN ONLY THE EXECUTABLE PYTHON STRING WHICH INCLUDES SINGLE PYTHON FUNCTIONS 
 """
 
 CONV_EQ_CODE_TO_JAX_PROMPT = """
-Task:Transform the provided Python/NumPy code string—which implements physical simulation equations (SDE systems)—into a fundamentally optimized and high-performance JAX implementation. The goal is to leverage JAX's transformation capabilities (JIT, Vmap) while maintaining the highest standards of numerical physics and code simplicity.Strict Implementation Rules:JAX Best Practices:Use jax.numpy for all mathematical operations to ensure compatibility with JIT compilation.Implement the update function as a pure function (no side effects) to allow for jax.jit decoration.Replace manual loops with jax.vmap to handle the particle population ($N$) in parallel across the phase space.Numerical Optimization:Ensure all operations are compatible with XLA (Accelerated Linear Algebra) compilation.Use jax.lax.scan or jax.lax.fori_loop if time-stepping is required within the JAX-transformed block to minimize host-device communication.Maintain numerical stability in physical limits (e.g., handling high-energy limits in $\gamma$ and $\vec{\Omega}_{TBMT}$).Structure & Variable Integrity:Keep the exact variable names for receivers (e.g., omega_tbmt, C_vec, B_spin) as defined in the source paper and the previous extraction.Maintain the modular architecture: separate functions for Drift ($\mathcal{D}$) and Noise/Diffusion ($\mathcal{B}$).State Management:Pass the PRNG key (jax.random.PRNGKey) as an explicit argument to functions involving stochasticity (Noise components).Handle state updates (position, momentum, spin) using a single structured state object (e.g., a NamedTuple or a simple Dict) to facilitate serialization and JAX transformations.Type Hinting: Maintain strict Python type hints for all JAX arrays (jax.Array) and scalars.Code Integrity:Return ONLY the executable Python/JAX code string.Do not include markdown formatting, backticks, or explanatory text.The code must be fundamentally optimized but remain as uncomplicated as possible for long-term maintainability.
-Design parameters, used by methods, GPU valid (avoid string values and dictionaries)
-Make nested function (def inside of def) names start with underscore (_) 
+Task: Generate a SINGLE, high-performance JAX-JIT function that implements a physical equation.
+
+Strict Architecture Rules:
+1. Flat Structure: No classes, no NamedTuples, no dictionaries. Use only JAX Arrays and scalars as inputs.
+2. Single Entry Point: Return one function decorated with @jax.jit.
+3. Nested Logic: Any sub-calculations must be internal functions (def inside def).
+4. Naming Convention: All nested function names MUST start with an underscore (e.g., _calculate_term).
+5. Input Mapping: The function signature must accept the INPUT PARAMS provided.
+6. Pure JAX: Use jax.numpy exclusively. Avoid any Python-level branching; use jax.lax.select or jax.lax.cond if logic is needed.
+7. Modular Equation: The provided INPUT EQUATION must be the core of the return value or the primary state update.
+
+Code Style:
+- Extremely lean. No comments except for physical units if necessary.
+- No type hints inside the function body to keep it "simple and highly optimized".
+- The function should be ready for `vmap` (element-wise or batch-wise) by assuming inputs are JAX arrays.
+
+INPUT PARAMS: {params}
+INPUT EQUATION: {equation}
+
+Return ONLY the executable Python code.
 """
 

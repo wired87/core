@@ -8,6 +8,7 @@ from bob_builder.artifact_registry.artifact_admin import ArtifactAdmin
 from core.env_manager import EnvManager
 
 from core.fields_manager.fields_lib import FieldsManager
+from core.method_manager.method_lib import MethodManager
 
 from core.injection_manager import InjectionManager
 from core.module_manager.ws_modules_manager import ModuleWsManager
@@ -15,9 +16,9 @@ from core.qbrain_manager import QBrainTableManager
 from core.user_manager import UserManager
 from data import ENV
 
-from gnn_master.pattern_store import GStore
 from core.module_manager.mcreator import ModuleCreator
 from qf_utils.all_subs import ALL_SUBS
+from utils.str_size import get_str_size
 from workflows.deploy_sim import DeploymentHandler
 
 class PatternMaster:
@@ -63,6 +64,7 @@ class Guard(
         # DB MANAGERS
         self.module_db_manager = ModuleWsManager()
         self.field_manager = FieldsManager()
+        self.method_manager = MethodManager()
         self.injection_manager = InjectionManager()
         self.env_manager = EnvManager()
         self.user_manager = UserManager()
@@ -88,7 +90,7 @@ class Guard(
             self.qfu,
         )
 
-        self.pattern_arsenal = GStore
+        #self.pattern_arsenal = GStore
 
         # Time Series Model Init
         self.prev_state = None
@@ -157,6 +159,7 @@ class Guard(
                             "type": "INJECTION",
                         }
                     )
+
         print("create_nodes... done")
         self.g.print_status_G()
         return module_ids, field_ids, inj_ids
@@ -256,9 +259,9 @@ class Guard(
     def handle_env(self, env_id):
         print("handle_env...")
 
-        keys = list(ENV.keys()) + ["i"]
-        values = list(ENV.values()) + [1j]
-        axis_def = (None for _ in range(len(keys)))
+        keys = list(ENV.keys()) + ["i", "gamma"]
+        values = list(ENV.values()) + [1j, self.qfu.gamma]
+        axis_def = [None for _ in range(len(keys))]
 
         # FETCH ENV
         res = self.qb.row_from_id(
@@ -296,8 +299,74 @@ class Guard(
                 sub_type="ENV"
             )
         )
-
         print("handle_env... done")
+
+    def handle_methods(self, module_ids:list[str]):
+        print("handle_methods...")
+        for mid in module_ids:
+            mod_node = self.g.get_node(nid=mid)
+            mmethods = mod_node["methods"]
+
+            if isinstance(mmethods, str):
+                mmethods = json.loads(mmethods)
+
+            print("mod_node methods", mmethods)
+
+            methods = self.qb.row_from_id(
+                nid=mmethods,
+                table=self.method_manager.METHODS_TABLE,
+            )
+            print("methods", methods)
+
+            methods = {
+                item["id"]: item
+                for item in methods
+            }
+            print("methods1", methods)
+
+            for k, (method_id, method_data) in enumerate(methods.items()):
+                self.g.add_node({
+                    "nid": method_id,
+                    "type": "METHOD",
+                    **method_data,
+                })
+
+                # MODULE -> METHOD
+                self.g.add_edge(
+                    mid,
+                    method_id,
+                    attrs={
+                        "rel": "has_method",
+                        "src_layer": "MODULE",
+                        "trgt_layer": "METHOD",
+                    }
+                )
+        print("handle_methods... done")
+
+
+    def handle_fields(self, module_ids:list[str]):
+        for mid in module_ids:
+            mod_node = self.g.get_node(nid=mid)
+            fields = self.qb.row_from_id(
+                list(mod_node["fields"]),
+                table=self.field_manager.FIELDS_TABLE
+            )
+            fields = {
+                item["id"]: item
+                for item in fields
+            }
+            for k, (field_id, field_data) in enumerate(fields.items()):
+                # MODULE -> FIELD
+                self.g.add_edge(
+                    mid,
+                    field_id,
+                    attrs={
+                        "rel": "has_field",
+                        "src_layer": "MODULE",
+                        "trgt_layer": "FIELD",
+                    }
+                )
+
 
 
     def handle_field_interactants(self, field_ids:list[str], env_id:str):
@@ -308,12 +377,12 @@ class Guard(
         for fid in field_ids:
             missing_fields = []
             fattrs = self.g.get_node(fid)
-            print(f"get finteractants for {fid}", fattrs)
+            #print(f"get finteractants for {fid}", fattrs)
 
             interactant_fields:list[str] or str = fattrs["interactant_fields"]
-            print(f"{fid} interactant fields: {interactant_fields}, {type(interactant_fields)}")
+            print(f"{fid} interactant fields: {len(interactant_fields)}")
             if isinstance(interactant_fields, str):
-                interactant_fields = json.dumps(interactant_fields)
+                interactant_fields = json.loads(interactant_fields)
 
             for fi in interactant_fields:
                 if not self.g.G.has_node(fi):
@@ -416,7 +485,6 @@ class Guard(
             env_id,
             env_data
         )
-        print(f"Node IDs extracted: modules={len(module_ids)}, fields={len(field_ids)}, injections={len(inj_ids)}")
 
         self.create_edges(
             env_id,
@@ -559,6 +627,9 @@ class Guard(
                     else:
                         self.g.update_node({"nid": inj_id, "type": "INJECTION", })
 
+        self.handle_methods(module_ids=list(module_ids))
+
+
         print("Handling field interactants...")
         self.handle_field_interactants(
             list(field_ids),
@@ -573,10 +644,8 @@ class Guard(
             )
             print("Pattern Compiled:")
         except Exception as e:
-            print(f"Error in Errormain process: {e}")
+            print(f"Error in main process: {e}")
         print("Graph populated with fetched data.")
-
-
 
 
     def main(self, env_id:str, env_node:dict):
@@ -585,8 +654,7 @@ class Guard(
         """
         print("Main started...")
 
-        compiled_patterns: list = self.compile_pattern(env_id)
-
+        transformation_kernels: dict = self.compile_pattern()
 
         dbs = self.create_db(env_id)
 
@@ -594,10 +662,12 @@ class Guard(
 
         vm_payload = self.create_vm_cfgs(
             env_id=env_id,
-            compiled_patterns=compiled_patterns,
-            dbs=dbs,
             injection_patterns=injection_patterns,
+            dbs=dbs,
+            method_layer = self.method_layer(),
+            transformation_kernels=transformation_kernels,
         )
+
         #self.deploy_vms(vm_payload)
         print("Main... done")
 
@@ -614,21 +684,33 @@ class Guard(
     def create_vm_cfgs(
             self,
             env_id: str,
-            compiled_patterns: list,
             dbs: Any,
             injection_patterns: list,
+            method_layer: list,
+            transformation_kernels:dict
         ):
         vm_payload = {}
         env_node = self.g.get_node(env_id)
         env_node = {k:v for k,v in env_node.items() if k not in ["updated_at", "created_at"]}
         #print("add env node to world cfg:", env_node)
 
-        # CREATE VM PAYLOAD
+        # BOB BUILDER ACTION
         world_cfg = {
-            "UPDATOR_PATTERN": compiled_patterns,
             "DB": dbs,
+            "PATTERNS": json.dumps({
+                "INJECTION_PATTERN": injection_patterns,
+                "METHOD_LAYER": method_layer,
+                **transformation_kernels,
+
+            }),
+            """
+            "METHOD_OUT_DB": method_out_db,
+            "METHOD_OUT_GNN": method_out_gnn,
+            "GNN_OUT_METHOD": gnn_out_method,
+            "DB_OUT_GNN": db_out_gnn,
+            "FEATURE_STORE_STRUCT": feature_store_struct
+            """
             "AMOUNT_NODES": env_node.get("amount_of_nodes", 100),
-            "INJECTION_PATTERN": injection_patterns,
             "WORLD_CFG": json.dumps({
                 "sim_time": env_node.get("sim_time", 1),
                 "amount_nodes": env_node.get("amount_of_nodes", 1),
@@ -636,6 +718,10 @@ class Guard(
             }),
             #"ENERGY_MAP": param_pathway
         }
+        if self.testing:
+            with open(rf"C:\Users\bestb\PycharmProjects\BestBrain\test_out.json", "w", encoding="utf-8") as f:
+                f.write(json.dumps(world_cfg))
+        get_str_size(json.dumps(world_cfg))
 
         # SAVE to DB
         self.update_env_pattern(env_id=env_id, pattern=world_cfg)
@@ -653,7 +739,7 @@ class Guard(
             image=self.artifact_admin.get_latest_image(),
             container_env=container_env
         )
-        print(vm_payload)
+        #print(vm_payload)
         print("create_vm_cfgs finished... done")
         return vm_payload
 
@@ -720,7 +806,9 @@ class Guard(
     ) -> list[list[int]]:
         # exact same format
         print("set_inj_pattern...")
+
         struct = []
+
         try:
             amount_nodes = env_attrs["amount_of_nodes"]
             dims = env_attrs["dims"]
@@ -756,13 +844,11 @@ class Guard(
                     fi:int = fattrs["field_index"]
                     f_keys=fattrs.get("keys", [])
 
-
-                    trgt_index = None
                     for key_opt in trgt_keys:
                         if key_opt in f_keys:
                             # CKPT PARAM INDEX
                             param_trgt_index = f_keys.index(key_opt)
-                            print(f"{key_opt} in {fid}s params:", param_trgt_index)
+                            #print(f"{key_opt} in {fid}s params:", param_trgt_index)
 
                             # 5. Loop Injections
                             injections = self.g.get_neighbor_list_rel(
@@ -782,20 +868,16 @@ class Guard(
                                 pos_index:int or None = schema_positions.index(tuple(eval(inj_id.split("__")[0])))
 
                                 print(f"pos_index {inj_id}:", pos_index)
-                                struct.append(
-                                    (midx, fi, param_trgt_index, pos_index, inj_attrs["data"])
+                                inj_pathway = (midx, fi, param_trgt_index, pos_index, inj_attrs["data"])
+                                struct.append(inj_pathway)
+                                print(
+                                    f"set param pathway db from mod {midx} -> field {fattrs['nid']}({fi}) = {inj_pathway}"
                                 )
-                                print("applied data to struct")
                             break
-                    print(f"set param pathway db from mod {midx} -> field {fattrs['nid']}({fi}) = {trgt_index}")
             print(f"set_inj_pattern... done")
         except Exception as e:
             print("Err set_inj_pattern", e)
         return struct
-
-
-
-
 
 
 
@@ -844,33 +926,6 @@ class Guard(
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     def all_nodes_ready(self, trgt_types) -> bool:
         return all(
             attrs["ready"] is True
@@ -903,6 +958,7 @@ class Guard(
         -> uniform for all envs
         """
         db = self.get_empty_field_structure()
+
         modules = self.g.get_neighbor_list(
             node=env_id,
             target_type="MODULE",
@@ -917,7 +973,7 @@ class Guard(
                 as_dict=True,
             )
             mod_idx = m["module_index"]
-            print("CREATE DB FIELDS FETCHED:", fields)
+            print("CREATE DB FIELDS FETCHED:", len(fields))
 
             for fid, fattrs in fields.items():
                 try:
@@ -925,7 +981,7 @@ class Guard(
                          print(f"MISSING OR NONE FIELD INDEX FOR {fid}: keys: {fattrs.keys()}")
                          continue
                     fi = fattrs["field_index"]
-                    print(f"get db from mod{mod_idx} -> field {fi}")
+
                     db[mod_idx][fi] = [
                         fattrs.get("value", []),
                         fattrs.get("axis_def", [])
@@ -937,32 +993,145 @@ class Guard(
         return db
 
 
-    def compile_pattern(self, env_id):
-        print("compile_pattern...")
-        env_struct = self.get_empty_field_structure()
-        
+    def method_layer(self):
+        print("method_layer... ")
+        modules = self.g.get_nodes(
+            filter_key="type",
+            filter_value="MODULE",
+        )
+
+        mod_len_exclude_ghost = len(modules)-1
+        print("method_layer mod_len_exclude_ghost", mod_len_exclude_ghost)
+
+        # ADD ENV AND GHOST MODULE DIM
+        method_struct = [
+            []
+            for _ in range(mod_len_exclude_ghost)
+        ]
+
         try:
-            modules = self.g.get_neighbor_list_rel(
-                node=env_id,
-                trgt_rel="has_module",
-                as_dict=True,
-            )
+            print("method_layer compilation...")
+            for mid, module in modules:
 
-            print(f"modules for {env_id}", modules)
-
-            # ADD ENV AND GHOST MODULE DIM
-            env_struct.append([])
-
-            for mid, module in modules.items():
+                # ghost does not have equation
                 if "GHOST" in mid.upper(): continue
+                print("method_layer... working", mid)
 
                 m_idx = module.get("module_index")
+                print("method_layer... module_index", m_idx)
 
                 if m_idx is None:
                     print(f"Skipping module {mid} without index")
                     continue
 
-                print(f"compiler work mod {mid} at index {m_idx}")
+                # GET MODULES METHODS
+                methods = self.g.get_neighbor_list_rel(
+                    trgt_rel="has_method",
+                    node=mid,
+                    as_dict=True,
+                )
+                print("method_layer methods", methods)
+                mlen  = len(list(methods.keys()))
+                if not mlen:
+                    print("method_layer... len methods", mlen)
+                    continue
+
+                # create METHOD DIM
+                for _ in range(mlen):
+                    method_struct[m_idx].append([])
+
+                print("meq", methods, type(methods))
+
+                # Iterate Equations
+                for eq_idx, (eqid, eqattrs) in enumerate(methods.items()):
+                    # print("eqattrs", eqattrs)
+                    print(f"Equation: {eqid}")
+
+                    # PARAMS from METHOD
+                    params = eqattrs.get("params", [])
+                    if isinstance(params, str):
+                        params = json.loads(params)
+                    print(f"Params: {len(params)}")
+
+                    # ENTIRE METHOD SPECIFIC PARAMS
+                    method_struct_item = [
+                        eqattrs.get("jax_code", eqattrs.get("code")),
+                        eqattrs.get("axis_def"),
+                    ]
+                    method_struct[m_idx][eq_idx] = method_struct_item
+        except Exception as e:
+            print("Err method_layer", e)
+        pprint.pp(method_struct)
+        print("method_layer... done")
+        return method_struct
+
+
+
+    def compile_pattern(self):
+        print("compile_pattern...")
+
+        method_out_db = self.get_empty_field_structure()
+
+        # structure to transfer feature to origin in gnn
+        method_out_gnn = self.get_empty_field_structure()
+
+        # structure for parameter to equations -> do in gnn package (just send requested params)
+        gnn_out_method = self.get_empty_field_structure()
+
+        # db out gnn
+        db_out_gnn = self.get_empty_field_structure()
+
+        # MAP TO FEATURES
+        feature_store_struct = self.get_empty_field_structure()
+
+
+        modules = self.g.get_nodes(
+            filter_key="type",
+            filter_value="MODULE",
+        )
+
+        mod_len_exclude_ghost = len(modules)-1
+        print("mod_len_exclude_ghost", mod_len_exclude_ghost)
+
+
+        print("get shost mods...")
+        ghost_mod = self.g.get_node(nid="GHOST_MODULE")
+        print("ghost_mod:", ghost_mod)
+
+        gmod_idx = ghost_mod.get("module_index")
+        print("gmod_idx:", gmod_idx)
+
+        ghost_fields = self.g.get_neighbor_list_rel(
+            trgt_rel="has_field",
+            node="GHOST_MODULE",
+        )
+        print("ghost_fields:", ghost_fields)
+
+        try:
+            print("start compilation...")
+            for mid, module in modules:
+                print("compile_pattern... working", mid)
+                if "GHOST" in mid.upper(): continue
+
+                m_idx = module.get("module_index")
+                print("compile_pattern... module_index", m_idx)
+
+                if m_idx is None:
+                    print(f"Skipping module {mid} without index")
+                    continue
+
+                # GET MODULES METHODS
+                methods = self.g.get_neighbor_list_rel(
+                    trgt_rel="has_method",
+                    node=mid,
+                    as_dict=True,
+                )
+
+                if not len(methods):
+                    print("compile_pattern... len methods", len(methods))
+                    continue
+
+                print("meq", methods, type(methods))
 
                 # get module fields
                 fields = self.g.get_neighbor_list_rel(
@@ -971,150 +1140,182 @@ class Guard(
                     as_dict=True,
                 )
 
-                meq:list[dict] = json.loads(module["arsenal_struct"])
-                print("meq", meq, type(meq))
-
-                modules_param_map = [
-                    []
-                    for _ in range(len(meq))
-                ]
-
+                print("fields:", fields)
                 if len(list(fields.keys())) == 0: continue
 
-                # Iterate Fields
-                for fid, fattrs in fields.items():
-                    print(f"  Field: {fid}:{fattrs}")
-                    field_index = fattrs.get("field_index")
-                    print("field index:", field_index)
+                # Iterate Equations
+                for eq_idx, (eqid, eqattrs) in enumerate(methods.items()):
+                    # print("eqattrs", eqattrs)
+                    print(f"Equation: {eqid}")
 
-                    keys: list[str] = fattrs.get("keys", [])
-                    print("keys:", keys)
+                    # PARAMS from METHOD
+                    params = eqattrs.get("params", [])
+                    if isinstance(params, str):
+                        params = json.loads(params)
+                    print(f"Params: {len(params)}")
 
-                    if field_index is None: continue
+                    for fid, fattrs in fields.items():
+                        print(f"  Field: {fid}:{fattrs}")
+                        field_index = fattrs.get("field_index")
+                        keys: list[str] or str = fattrs.get("keys", [])
 
-                    # Iterate Equations
-                    for eq_idx, eqattrs in enumerate(meq):
-                        print("eqattrs", eqattrs)
-                        eqid = eqattrs.get("nid")
-                        print(f"    Equation: {eqid}")
+                        print("field index:", field_index)
 
-                        # ALL PARAMS MAPPED OF METHOD
-                        method_param_collector = []
-                        axis_def = []
+                        if isinstance(keys, str):
+                            keys = json.loads(keys)
+                        print("keys:", keys)
 
-                        # get all params from METHOD
-                        params = eqattrs.get("params", [])
-                        print(f"      Params: {params}")
+                        fneighbors = self.g.get_neighbor_list_rel(
+                            node=fid,
+                            trgt_rel="has_finteractant",
+                            as_dict=True
+                        )
 
-                        # LOOP EQ-PARAMS
-                        for pid in params:
-                            print("work pid", pid)
+                        if field_index is None: continue
 
-                            # SELF PARAM (Field's own module)
-                            if pid in keys:
-                                print(f"{pid} in {fid}")
-                                pindex = keys.index(pid)
+                        for o, (finid, fiattrs) in enumerate(fneighbors.items()):
+                            field_param_struct = []
 
-                                method_param_collector.append(
-                                    [
-                                        m_idx,
-                                        pindex,
-                                        field_index,
-                                    ]
-                                )
-                                print(f"        Mapped Self Param: {pid} -> {[m_idx, pindex, field_index]}")
+                            print("check interactant fnid", finid, o)
+                            ikeys = fiattrs.get("keys")
 
-                                # ensure single attrs
-                                if eq_idx == 0:
-                                    axis_def.append(fattrs["axis_def"][pindex])
+                            if isinstance(ikeys, str):
+                                print("convert ikeys", ikeys)
+                                ikeys = json.loads(ikeys)
 
-                            # param key in any diferent modules interactant field?
-                            else:
-                                print("Key in interactant")
-                                # loop neighbors of field to find specific targets
-                                fneighbors = self.g.get_neighbor_list_rel(
-                                    node=fid,
-                                    trgt_rel="has_finteractant",
-                                    as_dict=True
-                                )
-                                #print("fneighbors", fneighbors)
-                                if len(list(fneighbors.keys())) == 0: continue
+                            # LOOP EQ-PARAMS
+                            for pidx, pid in enumerate(params):
+                                print("work pid", pid)
 
-                                for o, (finid, fiattrs) in enumerate(fneighbors.items()):
-                                    print("interactant fnid", finid, o)
-                                    ikeys = fiattrs.get("keys", [])
-                                    #print("ikeys",ikeys)
-                                    if pid in ikeys:
-                                        print("interactant pid", pid, o)
+                                # SELF PARAM (Field's own module)
+                                if pid in keys:
+                                    print(f"{pid} in {fid}")
+                                    pindex = keys.index(pid)
 
-                                        nfield_index = fiattrs.get("field_index")
-                                        print("interactant nfield_index", nfield_index, o)
+                                    field_param_struct.append(
+                                        [
+                                            m_idx,
+                                            pindex,
+                                            field_index,
+                                        ]
+                                    )
+                                    print(f"Mapped Self Param: {pid} -> {[m_idx, pindex, field_index]}")
 
-                                        pindex = fiattrs["params"].index(pid)
-                                        print("interactant pindex", pindex, o)
+                                # param key in any diferent modules interactant field?
+                                elif pid in ikeys:
+                                    # collect maps for all interactants
+                                    print("Key in interactant")
+                                    print("interactant pid", pid, o)
 
-                                        # Get neighbor field's module to get its index
-                                        pmod_id = fiattrs["module_id"]
-                                        print("interactant pmod_id", pmod_id, o)
+                                    nfield_index = fiattrs.get("field_index")
+                                    print("interactant nfield_index", nfield_index, o)
 
-                                        pmod = self.g.get_node(nid=pmod_id)
-                                        print("interactant pmod", pmod, o)
+                                    pindex = ikeys.index(pid)
+                                    print("interactant pindex", pindex, o)
 
-                                        mod_index = pmod.get("module_index")
-                                        print("interactant mod_index", mod_index, o)
+                                    # Get neighbor field's module to get its index
+                                    pmod_id = fiattrs["module_id"]
+                                    print("interactant pmod_id", pmod_id, o)
 
-                                        method_param_collector.append(
-                                            [
-                                                mod_index,
-                                                pindex,
-                                                nfield_index,
-                                            ]
-                                        )
-                                        print(f"        Mapped Neighbor Param: {pid} -> {[mod_index, pindex, nfield_index]}")
-                                        # ensure single axis def for method set
-                                        if eq_idx == 0 and o == 0:
-                                            axis_def.append(fiattrs["axis_def"][pindex])
+                                    pmod = self.g.get_node(nid=pmod_id)
+                                    print("interactant pmod", pmod, o)
 
-                        # Return Map
-                        return_key = eqattrs.get("return_key")
-                        print("return_key", return_key)
-                        ret_idx = keys.index(
-                            return_key
-                        ) if return_key in keys else 0
-                        #print("ret_idx", ret_idx)
+                                    mod_index = pmod.get("module_index")
+                                    print("interactant mod_index", mod_index, o)
 
-                        return_index_map = [
-                            m_idx,
-                            ret_idx,
-                            field_index,
-                        ]
-                        #print(f"      Return Map: {return_key} -> {return_index_map}")
+                                    field_param_struct.append(
+                                        [
+                                            mod_index,
+                                            pindex,
+                                            nfield_index,
+                                        ]
+                                    )
+                                else:
+                                    print(f"param {pid} is not in interactant -> check GHOST FIELDS")
+                                    for g, (gfid, gfattrs) in enumerate(ghost_fields):
+                                        gikeys = gfattrs.get("keys")
 
-                        # save equation interaction pattern
-                        # Use eq_idx (Equation Index)
-                        pattern_entry = [
-                                eqattrs.get("docstring"),
-                                method_param_collector,
-                                return_index_map,
-                                axis_def, # collection for methods axis def
-                                eq_idx,
-                            ]
-                        modules_param_map[eq_idx].append(pattern_entry)
-                        print(f"      Pattern Entry Added: {pattern_entry}")
+                                        if isinstance(gikeys, str):
+                                            print("convert ikeys", gikeys)
+                                            gikeys = json.loads(gikeys)
+                                        if pid in gikeys:
+                                            gfield_index = gfattrs.get("field_index")
+                                            print("interactant gfield_index", gfield_index, o)
 
-                        #print(f"EQ pattern for {eqid} written")
+                                            pindex = gikeys.index(pid)
+                                            print("interactant pindex", pindex, o)
 
-                # DONE WITH MODULE'S FIELDS
-                # Append this module's pattern to env_struct
-                print(f"Saving compiled pattern to env_struct[{m_idx}]")
-                env_struct[m_idx] = modules_param_map
+                                            # ADD PARAM TO
+                                            field_param_struct.append(
+                                                [
+                                                    gmod_idx,
+                                                    pindex,
+                                                    gfield_index,
+                                                ]
+                                            )
+                                        else:
+                                            print(f"param {pid} cannot be found")
 
-            #pprint.pp(env_struct)
+
+                                    # METHOD OUT DB ENTRY
+                                    return_key = eqattrs.get("return_key")
+                                    print("return_key", return_key)
+
+                                    ret_idx = keys.index(
+                                        return_key
+                                    ) if return_key in keys else 0
+                                    method_out_db[
+                                        m_idx][field_index
+                                    ] = ret_idx
+                                    print(f"Return Map: {return_key} -> {ret_idx}")
+
+                            # MAP RESULT FEATURE TO GNN
+                            method_out_gnn[m_idx][eq_idx] = field_index
+
+                            # CREATE FEATURE DIM FOR EACH METHOD INPOUT VARIATION / FIELD
+                            feature_dim = []
+                            feature_store_struct[m_idx][eq_idx][field_index].append(feature_dim)
+
+                            # PATHWAY FOR SPECIFIC METHOD VARIATION
+                            db_out_gnn[
+                                m_idx][eq_idx][field_index
+                            ].append(
+                                field_param_struct
+                            )
+
             print("compile_pattern... done")
         except Exception as e:
             print(f"Err compile_pattern: {e}")
-        return env_struct
 
+        return {
+            "METHOD_OUT_DB": method_out_db,
+            "METHOD_OUT_GNN": method_out_gnn,
+            "GNN_OUT_METHOD": gnn_out_method,
+            "DB_OUT_GNN": db_out_gnn,
+            "FEATURE_STORE_STRUCT": feature_store_struct
+        }
+
+
+
+    def get_modules_methods(self, mid):
+        methods = {}
+        method_nodes = self.g.get_neighbor_list_rel(
+            trgt_rel="has_method",
+            node=mid,
+            as_dict=True,
+        )
+        methods.update(method_nodes)
+
+        params = self.g.get_neighbor_list_rel(
+            trgt_rel="has_param",
+            node=mid,
+            as_dict=True,
+        )
+
+        for pid, pattrs in params.items():
+            if "code" in pattrs:
+                # param
+                methods[pid] = pattrs
 
 
 
@@ -1221,3 +1422,255 @@ if __name__ == "__main__":
         env_id="env_7c87bb26138a427eb93cab27d0f5429f",
         env_data=payload["data"]["config"]["env_7c87bb26138a427eb93cab27d0f5429f"],
     )
+
+
+
+
+
+
+
+
+
+
+"""
+
+
+    def compile_pattern(self):
+        print("compile_pattern...")
+        modules = self.g.get_nodes(
+            filter_key="type",
+            filter_value="MODULE",
+        )
+
+        mod_len_exclude_ghost = len(modules)-1
+        print("mod_len_exclude_ghost", mod_len_exclude_ghost)
+
+        # ADD ENV AND GHOST MODULE DIM
+        modules_struct = [
+            []
+            for _ in range(mod_len_exclude_ghost)
+        ]
+        print("get shost mods...")
+        ghost_mod = self.g.get_node(nid="GHOST_MODULE")
+        print("ghost_mod:", ghost_mod)
+
+        gmod_idx = ghost_mod.get("module_index")
+        print("gmod_idx:", gmod_idx)
+
+        ghost_fields = self.g.get_neighbor_list_rel(
+            trgt_rel="has_field",
+            node="GHOST_MODULE",
+        )
+        print("ghost_fields:", ghost_fields)
+
+        try:
+            print("start compilation...")
+            for mid, module in modules:
+                print("compile_pattern... working", mid)
+                if "GHOST" in mid.upper(): continue
+
+                m_idx = module.get("module_index")
+                print("compile_pattern... module_index", m_idx)
+
+                if m_idx is None:
+                    print(f"Skipping module {mid} without index")
+                    continue
+
+                # GET MODULES METHODS
+                methods = self.g.get_neighbor_list_rel(
+                    trgt_rel="has_method",
+                    node=mid,
+                    as_dict=True,
+                )
+                if not len(methods):
+                    print("compile_pattern... len methods", len(methods))
+                    continue
+
+                print("meq", methods, type(methods))
+
+                # get module fields
+                fields = self.g.get_neighbor_list_rel(
+                    node=mid,
+                    trgt_rel="has_field",
+                    as_dict=True,
+                )
+                print("fields:", fields)
+                if len(list(fields.keys())) == 0: continue
+
+                # Iterate Equations
+                for eq_idx, (eqid, eqattrs) in enumerate(methods.items()):
+                    # print("eqattrs", eqattrs)
+                    print(f"Equation: {eqid}")
+
+                    # PARAMS from METHOD
+                    params = eqattrs.get("params", [])
+                    if isinstance(params, str):
+                        params = json.loads(params)
+                    print(f"Params: {len(params)}")
+
+                    # ENTIRE METHOD SPECIFIC PARAMS
+                    method_struct = [
+                        eqattrs.get("jax_code"),
+                        eq_idx,
+                        eqattrs.get("axis_def"),
+                    ]
+
+                    method_param_collector = [
+                        # array to collect all field blocks
+                        []
+                        for _ in range(len(fields))
+                    ]
+
+                    for fid, fattrs in fields.items():
+                        print(f"  Field: {fid}:{fattrs}")
+                        field_index = fattrs.get("field_index")
+                        keys: list[str] or str = fattrs.get("keys", [])
+
+                        print("field index:", field_index)
+
+                        if isinstance(keys, str):
+                            keys = json.loads(keys)
+                        print("keys:", keys)
+
+                        fneighbors = self.g.get_neighbor_list_rel(
+                            node=fid,
+                            trgt_rel="has_finteractant",
+                            as_dict=True
+                        )
+
+                        if field_index is None: continue
+
+                        for o, (finid, fiattrs) in enumerate(fneighbors.items()):
+                            field_param_struct = []
+
+                            print("check interactant fnid", finid, o)
+                            ikeys = fiattrs.get("keys")
+
+                            if isinstance(ikeys, str):
+                                print("convert ikeys", ikeys)
+                                ikeys = json.loads(ikeys)
+
+                            # LOOP EQ-PARAMS
+                            for pidx, pid in enumerate(params):
+                                print("work pid", pid)
+
+                                # SELF PARAM (Field's own module)
+                                if pid in keys:
+                                    print(f"{pid} in {fid}")
+                                    pindex = keys.index(pid)
+
+                                    field_param_struct.append(
+                                        [
+                                            m_idx,
+                                            pindex,
+                                            field_index,
+                                        ]
+                                    )
+                                    print(f"Mapped Self Param: {pid} -> {[m_idx, pindex, field_index]}")
+
+                                # param key in any diferent modules interactant field?
+                                elif pid in ikeys:
+                                    # collect maps for all interactants
+                                    print("Key in interactant")
+                                    print("interactant pid", pid, o)
+
+                                    nfield_index = fiattrs.get("field_index")
+                                    print("interactant nfield_index", nfield_index, o)
+
+                                    pindex = ikeys.index(pid)
+                                    print("interactant pindex", pindex, o)
+
+                                    # Get neighbor field's module to get its index
+                                    pmod_id = fiattrs["module_id"]
+                                    print("interactant pmod_id", pmod_id, o)
+
+                                    pmod = self.g.get_node(nid=pmod_id)
+                                    print("interactant pmod", pmod, o)
+
+                                    mod_index = pmod.get("module_index")
+                                    print("interactant mod_index", mod_index, o)
+
+                                    field_param_struct.append(
+                                        [
+                                            mod_index,
+                                            pindex,
+                                            nfield_index,
+                                        ]
+                                    )
+                                else:
+                                    print(f"param {pid} is not in interactant -> check GHOST FIELDS")
+                                    for g, (gfid, gfattrs) in enumerate(ghost_fields):
+                                        gikeys = gfattrs.get("keys")
+
+                                        if isinstance(gikeys, str):
+                                            print("convert ikeys", gikeys)
+                                            gikeys = json.loads(gikeys)
+                                        if pid in gikeys:
+                                            gfield_index = gfattrs.get("field_index")
+                                            print("interactant gfield_index", gfield_index, o)
+
+                                            pindex = gikeys.index(pid)
+                                            print("interactant pindex", pindex, o)
+
+                                            # ADD PARAM TO
+                                            field_param_struct.append(
+                                                [
+                                                    gmod_idx,
+                                                    pindex,
+                                                    gfield_index,
+                                                ]
+                                            )
+                                        else:
+                                            print(f"param {pid} cannot be found")
+
+                            # Return Map
+                            return_key = eqattrs.get("return_key")
+                            print("return_key", return_key)
+
+                            ret_idx = keys.index(
+                                return_key
+                            ) if return_key in keys else 0
+
+                            return_index_map = [
+                                m_idx,
+                                ret_idx,
+                                field_index,
+                            ]
+                            print(f"Return Map: {return_key} -> {return_index_map}")
+
+                            print("ADD PARAMS FOR EQUATION TO FIELD BLOCK")
+                            method_param_collector[
+                                field_index
+                            ].append([
+                                field_param_struct,
+                                return_index_map,
+                            ])
+
+                        print("ADD ALL FIELD BLOCKS TO METHOD STRUCT")
+                        method_struct.append(
+                            method_param_collector
+                        )
+
+                    print(f"ADD METHOD STRUCT TO MODULE[{m_idx}] STRUCT: {len(modules_struct)}")
+                    modules_struct[m_idx].append(
+                        method_struct
+                    )
+                    print("...done")
+                # DONE WITH MODULE'S FIELDS
+                # Append this module's pattern to env_struct
+                print(f"Saving compiled pattern to env_struct[{m_idx}]")
+
+            #pprint.pp(modules_struct)
+            print("compile_pattern... done")
+        except Exception as e:
+            print(f"Err compile_pattern: {e}")
+        return modules_struct
+
+
+
+"""
+
+
+
+
+

@@ -1,0 +1,22 @@
+So funktioniert es richtig:
+In der Google Cloud Console (IAM):
+
+Hier musst du keine spezielle Rolle für Gmail zuweisen.
+
+Wichtig ist nur, dass das Dienstkonto erstellt wurde und der Gmail API-Dienst im Projekt aktiviert ist.
+
+Kopiere die Client-ID (eine lange Nummer) des Dienstkontos aus dem Reiter „Details“.
+
+In der Google Admin Konsole (Der entscheidende Schritt): Die Berechtigung wird über die sogenannte „domänenweite Delegierung“ (Domain-Wide Delegation) erteilt. Das bedeutet, du sagst deinem Workspace: „Dieses Dienstkonto darf sich als mein Benutzer ausgeben.“
+
+Gehe zu admin.google.com.
+
+Navigiere zu Sicherheit > Zugriffs- und Datensteuerung > API-Steuerelemente.
+
+Klicke auf Domänenweite Delegierung verwalten.
+
+Klicke auf Neu hinzufügen und gib folgendes ein:
+
+Client-ID: Die Nummer, die du in der Cloud Console kopiert hast.
+
+OAuth-Bereiche (Scopes): https://www.googleapis.com/auth/gmail.send (damit darf es nur senden, nicht lesen).

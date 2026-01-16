@@ -4,11 +4,11 @@ import os
 import pprint
 
 from core.app_utils import TESTING, ARSENAL_PATH
-from fb_core.real_time_database import FBRTDBMgr
-from graph_visualizer.pyvis_visual import create_g_visual
+
 from code_manipulation.graph_creator import StructInspector
 from qf_utils.qf_utils import QFUtils
 from utils.graph.local_graph_utils import GUtils
+from utils.graph.visual import create_g_visual
 
 class ModuleLoader(
     StructInspector
@@ -24,10 +24,8 @@ class ModuleLoader(
             self,
             G,
             nid,
-            #fields:list[str],
     ):
         self.id=nid
-        #self.fields=fields
 
         self.g = GUtils(G=G)
         self.qfu=QFUtils(g=self.g)
@@ -37,7 +35,6 @@ class ModuleLoader(
         self.modules = {}
         self.device = "gpu" if TESTING is False else "cpu"
         self.module_g_save_path = rf"C:\Users\bestb\PycharmProjects\BestBrain\outputs\module_{self.id}_G.html" if os.name == "nt" else f"outputs/module_{self.id}_G.html"
-        self.firebase = FBRTDBMgr()
         self.finished=False
 
 
@@ -89,7 +86,7 @@ class ModuleLoader(
 
     def create_code_G(self, mid, code=None):
         print("====== create_code_G ======")
-        print(f"DEBUG: self.g is {self.g}")
+        #print(f"DEBUG: self.g is {self.g}")
         try:
             #GET MDULE ATTRS
             mattrs = self.g.G.nodes[mid]
@@ -104,7 +101,7 @@ class ModuleLoader(
                 module_name=mid
             )
 
-            self.g.print_status_G()
+            #self.g.print_status_G()
 
             # todo dest_path?=None -> return html -> upload firebase -> fetch and visualizelive frontend
             create_g_visual(
@@ -114,7 +111,6 @@ class ModuleLoader(
             print("create_code_G finished")
         except Exception as e:
             print(f"Error in create_code_G for module '{mid}':", e)
-        self.g.print_status_G()
 
 
     def extract_module_classes(self):
@@ -180,143 +176,5 @@ class ModuleLoader(
         print("finished extract_module_classes")
 
 
-    def set_arsenal_struct(self) -> list[dict]:
-        """
-        Gather parent MODULE (e.g. fermion)
-        -> get child methods
-        -> sort from
-        """
-        print("set_arsenal_struct")
-        try:
-            # get all methods for the desired task
-            print("start retrieve_arsenal_struct")
-            arsenal_struct: list[dict] = []
-            modules_params = set()
-            methods: dict[str, dict] = self.g.get_neighbor_list(
-                node=self.id,
-                target_type="METHOD",
-            )
-
-            print(f"defs found {self.id}:", methods.keys())
-
-            if methods:
-                for i, (mid, attrs) in enumerate(methods.items()):
-                    if "__init__" in mid or "main" in mid or mid.split(".")[-1].startswith("_"):
-                        continue
-
-                    params = self.g.get_neighbor_list_rel(
-                        node=mid,
-                        trgt_rel="requires_param",
-                        as_dict=True,
-                    )
-
-                    print("params set")
-                    pkeys = list(params.keys())
-                    for key in pkeys:
-                        modules_params.add(key)
-                    attrs["params"] = pkeys
-                    arsenal_struct.append(attrs)
-
-            # sort
-            self.arsenal_struct: list[dict] = self.get_execution_order(
-                method_definitions=arsenal_struct
-            )
-
-            self.set_method_exec_index()
-            self.update_module_node(list(modules_params))
-            print("set_arsenal_struct... done")
-        except Exception as e:
-            print(f"Error RELAY.retrieve_arsenal_struct: {e}")
-            return []
-
-
-    def update_module_node(self, modules_params):
-        try:
-            self.g.update_node(
-                dict(
-                    nid=self.id,
-                    arsenal_struct=self.arsenal_struct,
-                    params=modules_params,
-                ),
-            )
-            pprint.pp(self.arsenal_struct)
-            print("update_module_node... done")
-        except Exception as e:
-            print(f"Error MLOADER.update_module_node: {e}")
-            return []
-
-    def set_method_exec_index(self):
-        # add method index to node to ensure persistency in equaton handling
-        for i, item in enumerate(self.arsenal_struct):
-            self.g.update_node(
-                dict(
-                    nid=item["nid"],
-                    method_index=i,
-                )
-            )
-        print("finished retrieve_arsenal_struct")
-
-
-
-    def get_execution_order(
-            self,
-            method_definitions: list[dict]
-    ) -> list[dict]:
-        """
-        Determines the correct execution order of methods based on admin_data dependencies.
-
-        Args:
-            method_definitions: List of dictionaries, each describing a method:
-            {'method_name': str, 'return_key': str, 'parameters': List[str]}
-
-        Returns:
-            List[str]: The method names in the required dependency order.
-        """
-
-        # Identify all keys that are returned/produced by *any* method in the list.
-        internal_returns = {m['return_key'] for m in method_definitions if m.get('return_key')}
-
-        scheduled_order = []
-        # Tracks keys that have been produced by methods already scheduled.
-        produced_keys = set()
-
-        # Use a mutable copy of the input list for processing.
-        remaining_methods = method_definitions
-
-        # Loop until all methods are scheduled or a dependency cycle is found.
-        while remaining_methods:
-            ready_to_run = []
-
-            # 1. Identify all methods ready in this iteration
-            for method in remaining_methods:
-                required_params = set(method.get('params', []))
-
-                # Dependencies are the internal keys required by the method.
-                # External initial inputs (like 'mass', 'vev') are ignored here,
-                # as they are assumed to be always available from the start.
-                internal_dependencies = required_params.intersection(internal_returns)
-
-                # Check if all required internal dependencies are met by the produced keys.
-                if internal_dependencies.issubset(produced_keys):
-                    ready_to_run.append(method)
-
-            # Break if no method can run (indicates a cycle or incomplete definition)
-            if not ready_to_run:
-                break
-
-            # 2. Schedule the ready methods and update the state
-            for method in ready_to_run:
-                scheduled_order.append(
-                    method
-                )
-
-                # Update the set of produced keys
-                if method.get('return_key'):
-                    produced_keys.add(method['return_key'])
-
-                # Remove the method from the remaining list
-                remaining_methods.remove(method)
-
-        return scheduled_order
 
 

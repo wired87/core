@@ -57,7 +57,7 @@ class GaugeCreator(GaugeUtils):
                     nid = f"{ntype}__{px_id}"
 
                 attrs = self.get_g_params_core(
-                    pos,#
+                    pos,
                     nid,
                     ntype,
                     field_key,
@@ -106,7 +106,6 @@ class GaugeCreator(GaugeUtils):
             ntype,
             dim
     ):
-        print("gfield")
         field_value=self.field_value(dim=dim)
 
         const = {

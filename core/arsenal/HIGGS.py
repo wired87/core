@@ -3,17 +3,16 @@ import jax.numpy as jnp
 from jax import jit, vmap
 
 
-sqrt2 = jnp.sqrt(2.0)
-
 
 @jit
-def lambda_H(mass: jnp.ndarray, vev: jnp.ndarray) -> jnp.ndarray:
+def calc_lambda_H(mass: jnp.ndarray, vev: jnp.ndarray) -> jnp.ndarray:
     # λ_H = m^2 / (2 v^2)
-    return (mass ** 2) / (2.0 * vev ** 2)
+    lambda_H = (mass ** 2) / (2.0 * vev ** 2)
+    return lambda_H
 
 
 @jit
-def dV_dh(
+def calc_dV_dh(
         vev: jnp.ndarray,
         lambda_H: jnp.ndarray,
         h: jnp.ndarray
@@ -24,15 +23,10 @@ def dV_dh(
     return dV_dh
 
 
-@jit
-def _higgs_potential(mass: jnp.ndarray, h: jnp.ndarray, vev: jnp.ndarray, laplacian_h: jnp.ndarray) -> jnp.ndarray:
-    m2 = mass ** 2
-    # note: original code used laplacian_h factors in higher terms; keep same structure
-    return 0.5 * m2 * h ** 2 + laplacian_h * vev * h ** 3 + 0.25 * laplacian_h * h ** 4
 
 
 @jit
-def laplacian_h(
+def calc_laplacian_h(
     h: jnp.ndarray,
     pm_axes,
     d,
@@ -74,15 +68,13 @@ def laplacian_h(
         dt,
     )
 
-    return jnp.sum(result)
+    laplacian_h = jnp.sum(result)
+    return laplacian_h
 
 
 
-# --------------------
-# dmu_psi
-# --------------------
 @jit
-def dmu_h(
+def calc_dmu_h(
         h,  # Aktuelles Gitter (Psi(t))
         prev,  # Gitter des vorherigen Zeitschritts (Psi(t-dt))
         d,  # Räumlicher Gitterabstand d
@@ -131,23 +123,17 @@ def dmu_h(
     )
 
     # Konvertierung des Array-Ergebnisses des vmap-Kerns in eine Liste von Arrays
-    spatial_list = list(dmu_spatial)
+    dmu_h = list(dmu_spatial)
 
     # Zeitlichen Term an erster Stelle einfügen
-    spatial_list.insert(0, time_res)
+    dmu_h.insert(0, time_res)
 
-    return spatial_list
+    return dmu_h
 
-
-
-
-@jit
-def _mass_term(h: jnp.ndarray, mass: jnp.ndarray) -> jnp.ndarray:
-    return - (mass ** 2) * h
 
 
 @jit
-def h(
+def calc_h(
     h: jnp.ndarray,
     mass: jnp.ndarray,
     prev: jnp.ndarray,
@@ -156,18 +142,23 @@ def h(
     dt: jnp.ndarray
   ) -> jnp.ndarray:
 
+    def _mass_term(h: jnp.ndarray, mass: jnp.ndarray) -> jnp.ndarray:
+        return - (mass ** 2) * h
+
     mass_term = _mass_term(h, mass)
     dt2 = jnp.asarray(dt) ** 2
-    h_new = 2.0 * h - prev + dt2 * (laplacian_h + mass_term - dV_dh)
-    return h_new
+    h = 2.0 * h - prev + dt2 * (laplacian_h + mass_term - dV_dh)
+    return h
 
 @jit
-def phi(h: jnp.ndarray, vev: jnp.ndarray) -> jnp.ndarray:
+def calc_phi(h: jnp.ndarray, vev: jnp.ndarray) -> jnp.ndarray:
     # returns 2-component phi as in original: [0, (vev + h)/sqrt(2)]
-    return jnp.stack([0.0, (vev + h) / sqrt2])
+    sqrt2 = jnp.sqrt(2.0)
+    phi = jnp.stack([0.0, (vev + h) / sqrt2])
+    return phi
 
 @jit
-def energy_density(
+def calc_energy_density(
     dmu_h: jnp.ndarray,
     mass: jnp.ndarray,
     h: jnp.ndarray,
@@ -175,10 +166,16 @@ def energy_density(
     laplacian_h: jnp.ndarray
 ) -> jnp.ndarray:
 
+    def _higgs_potential(mass: jnp.ndarray, h: jnp.ndarray, vev: jnp.ndarray, laplacian_h: jnp.ndarray) -> jnp.ndarray:
+        m2 = mass ** 2
+        # note: original code used laplacian_h factors in higher terms; keep same structure
+        return 0.5 * m2 * h ** 2 + laplacian_h * vev * h ** 3 + 0.25 * laplacian_h * h ** 4
+
     kinetic = 0.5 * (dmu_h[0] ** 2)
     gradient = 0.5 * jnp.sum(dmu_h[1:] ** 2)
     potential = _higgs_potential(mass, h, vev, laplacian_h)
-    return kinetic + gradient + potential
+    energy_density = kinetic + gradient + potential
+    return energy_density
 
 """
 

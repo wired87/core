@@ -1,14 +1,8 @@
-"""
-
-Request daa from DB and return them
-
-"""
 import json
-
 
 class DataDistributor:
 
-    def __init__(self, parent, testing, user_id, db_manager):
+    def __init__(self, parent, testing, user_id):
         self.parent=parent
         self.test_data = [
             {"id": 1, "age": 25, "name": "Alice", "city": "Berlin", "active": True, "score": 88.5},
@@ -23,7 +17,6 @@ class DataDistributor:
 
         self.user_id=user_id
 
-        self.db_manager=db_manager
 
 
     async def send_data(self, data={}):

@@ -52,6 +52,9 @@ class ModuleCreator(
         print("load_sm...")
         new_modules = []
         for module_file in os.listdir(ARSENAL_PATH):
+            if os.path.isdir(os.path.join(ARSENAL_PATH, module_file)) or module_file.startswith("__"):
+                continue
+
             if not self.g.G.has_node(module_file):
                 mod_id = module_file.split(".")[0]
                 new_modules.append(mod_id)

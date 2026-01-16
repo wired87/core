@@ -2,13 +2,11 @@
 Websocket logic around the creation process
 """
 
-import asyncio
 import json
 import os
 import threading
 
 from bm.settings import TEST_ENV_ID
-from fb_core.real_time_database import FBRTDBMgr
 from utils.dj_websocket.handler import ConnectionManager
 
 class WorldCreationWf:
@@ -36,28 +34,8 @@ class WorldCreationWf:
         )
         self.env_id_map = set()
         # Classe
-        self.db_manager = FBRTDBMgr()
-        self.db_manager.set_root_ref(self.database)
+        #self.db_manager.set_root_ref(self.database)
         self.testing = testing
-
-
-
-
-
-    def node_cfg_process(self, data):
-        node_cfg = data.get("node_cfg")
-        env_id = data.get("env_id")
-        # extend env_id
-        env_cfg_path = f"users/{self.user_id}/env/{env_id}/cfg/"
-        for ncfg in node_cfg:
-            self.db_manager.upsert_data(
-                path=env_cfg_path,
-                data={
-                    ncfg["id"]: ncfg
-                },
-            )
-        print(f"NCFG for {env_id} set")
-
 
 
 
@@ -265,3 +243,4 @@ class WorldCreationWf:
         else:
             # Return an empty list or None
             return []
+

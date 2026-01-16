@@ -5,38 +5,42 @@ from jax import jit, vmap, lax
 import jax.numpy as jnp
 
 @jit
-def gg_coupling(
+def calc_gg_coupling(
         _g,
         _field_value,
         g,
         field_value,
-        g_neighbors_gg,
 ):
 
     def _wrapper(
-            field_v_n,
-            g_n,
+            _g,
+            _field_value,
+            field_value,
+            g,
     ):
         # symmetric effective coupling strength
-        g_eff = 0.5 * (g + g_n)
+        g_eff = 0.5 * (g + _g)
 
         # simplified antisymmetric field interaction term: [Aμ, Aν]
-        j_pair = g_eff * (field_value * field_v_n - field_v_n * field_value)
+        j_pair = g_eff * (_field_value * field_value - field_value * _field_value)
         return j_pair
 
-    vmapped_res = vmap(_wrapper, in_axes=(
+    gg_coupling = vmap(_wrapper, in_axes=(
         0, 0, 0, None, None
     ))(
-        *g_neighbors_gg,
+        _g,
+        _field_value,
+        field_value,
+        g,
     )
-    return vmapped_res
+    return gg_coupling
 
 
 
 
 
 @jax.jit
-def gf_coupling(
+def calc_gf_coupling(
         neighbor_f, # psi, psi_bar,
         field_value,
         g,
@@ -120,8 +124,8 @@ def gf_coupling(
         index=index_map,
         gluon_index=gluon_index,
     )
-    j_nu = jax.numpy.sum(vmapped_func, axis=0)
-    return j_nu
+    gf_coupling = jax.numpy.sum(vmapped_func, axis=0)
+    return gf_coupling
 
 
 
@@ -139,7 +143,7 @@ def j_nu(
 
 
 @jit
-def field_value(
+def calc_field_value(
         dt,
         dmu_fmunu,
         j_nu,
@@ -148,13 +152,13 @@ def field_value(
     """
     ∂_μ F^{μν} = j^ν
     """
-    field_v_new = field_value + dt * (dmu_fmunu - j_nu)
-    return field_v_new
+    field_value = field_value + dt * (dmu_fmunu - j_nu)
+    return field_value
 
 
 
 @jit
-def fmunu(
+def calc_fmunu(
     dmu
 ):
     """
@@ -174,12 +178,12 @@ def fmunu(
     term1 = dmu_s[:amount_dirs, :4]
     term2 = dmu_s[:4, :amount_dirs].T
 
-    F = term1 - term2
-    return F
+    fmunu = term1 - term2
+    return fmunu
 
 
 @jit
-def dmuG(
+def calc_dmuG(
         field_value,  # komplettes grid Aktuelles Gitter
         prev,  # Gitter des vorherigen Zeitschritts (Psi(t-dt))
         d,  # Räumlicher Gitterabstand d
@@ -234,16 +238,16 @@ def dmuG(
     )
 
     # Konvertierung des Array-Ergebnisses des vmap-Kerns in eine Liste von Arrays
-    spatial_list = list(dmu_spatial)
+    dmuG = list(dmu_spatial)
 
     # Zeitlichen Term an erster Stelle einfügen
-    spatial_list.insert(0, time_res)
+    dmuG.insert(0, time_res)
 
-    return spatial_list
+    return dmuG
 
 
 @jit
-def dmu_fmunu(
+def calc_dmu_fmunu(
         fmunu,  # Aktuelles Gitter (Psi(t))
         prev_fmunu,  # Gitter des vorherigen Zeitschritts (Psi(t-dt))
         d,  # Räumlicher Gitterabstand d
@@ -298,12 +302,12 @@ def dmu_fmunu(
     )
 
     # Konvertierung des Array-Ergebnisses des vmap-Kerns in eine Liste von Arrays
-    spatial_list = list(dmu_spatial)
+    dmu_fmunu = list(dmu_spatial)
 
     # Zeitlichen Term an erster Stelle einfügen
-    spatial_list.insert(0, time_res)
+    dmu_fmunu.insert(0, time_res)
 
-    return spatial_list
+    return dmu_fmunu
 
 
 

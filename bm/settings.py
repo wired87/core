@@ -1,27 +1,12 @@
-import io
 import sys
 from pathlib import Path
 import os
 from datetime import timedelta
-import logging
 
 import dotenv
-import matplotlib
-from django.utils.module_loading import import_string
 
-from bm.logging_custom import cpr
 
-import numpy as np
-try:
-    import jax
-    import jax.numpy as jnp
-except ImportError:
-    from unittest.mock import MagicMock
-    mock_jax = MagicMock()
-    mock_jax.numpy = np
-    sys.modules["jax"] = mock_jax
-    sys.modules["jax.numpy"] = np
-    jnp = np
+
 
 dotenv.load_dotenv()
 
@@ -43,7 +28,7 @@ if os.name == "nt":
     TEST_USER_ID = "rajtigesomnlhfyqzbvx"
     REQUEST_URL = "http://127.0.0.1:8000/"
     GCP_TOKEN =r"C:\Users\wired\OneDrive\Desktop\Projects\bm\ggoogle\g_auth\token.json"
-    matplotlib.use("Agg")
+    #matplotlib.use("Agg")
     TEST_ENV_ID="env_rajtigesomnlhfyqzbvx_zddioeaduhvnyphluwvu"# one dim for demo_G
     ALLOWED_HOSTS = ["*"]
     WS_URL = "ws://127.0.0.1:8000/"
@@ -51,7 +36,7 @@ if os.name == "nt":
     FIREBASE_CREDENTIALS = r"C:\\Users\\wired\OneDrive\\Desktop\\Projects\\Brainmaster\\_google\\g_auth\\firebase_creds.json"
 
 else:
-    matplotlib.use("Agg")
+    #matplotlib.use("Agg")
     DEBUG = False
     TEST_USER_ID = "rajtigesomnlhfyqzbvx" # todo
     TEST_ENV_ID="env_rajtigesomnlhfyqzbvx_zddioeaduhvnyphluwvu"

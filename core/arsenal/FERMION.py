@@ -3,7 +3,7 @@ from jax import jit, vmap
 
 
 @jit
-def yterm(y, psi, psi_bar, h):
+def calc_yterm(y, psi, psi_bar, h):
     """
     Time evolution (for sim)
     Uses Kinetic derivation & coupling term of neighbor gauges
@@ -15,7 +15,7 @@ def yterm(y, psi, psi_bar, h):
         yterm = -y * neighbor_h * jnp.vdot(psi_bar, psi)
         return yterm
 
-    vmapped_func = vmap(_yukawa_term, in_axes=(
+    yterm = vmap(_yukawa_term, in_axes=(
         0,0,0,0
     ))(
         y,
@@ -24,22 +24,22 @@ def yterm(y, psi, psi_bar, h):
         h
     )
 
-    return vmapped_func
+    return yterm
 
 
 # --------------------
 # psi_bar s(konjugierter Spinor)
 # --------------------
 @jit
-def psi_bar(psi, gamma):
-    res = psi.conj().T @ gamma[0]
-    return res
+def calc_psi_bar(psi, gamma):
+    psi_bar = psi.conj().T @ gamma[0]
+    return psi_bar
 
 # --------------------
 # dmu_psi
 # --------------------
 @jit
-def dmu_psi(
+def calc_dmu_psi(
         psi,  # entire gitter
         prev,  # Gitter des vorherigen Zeitschritts (Psi(t-dt))
         d,  # Räumlicher Gitterabstand d
@@ -93,19 +93,19 @@ def dmu_psi(
     )
 
     # Konvertierung des Array-Ergebnisses des vmap-Kerns in eine Liste von Arrays
-    spatial_list = list(dmu_spatial)
+    dmu_psi = list(dmu_spatial)
 
     # Zeitlichen Term an erster Stelle einfügen
-    spatial_list.insert(0, time_res)
+    dmu_psi.insert(0, time_res)
 
-    return spatial_list
+    return dmu_psi
 
 
 # --------------------
 # dirac_process
 # --------------------
 @jit
-def dirac(psi, dmu, mass, gterm, yterm, gamma, gamma0_inv, i):
+def calc_dirac(psi, dmu_psi, mass, gterm, yterm, gamma, gamma0_inv, i):
     """
     Time evolution (for sim)
     Uses Kinetic derivation & coupling term of neighbor gauges
@@ -121,28 +121,28 @@ def dirac(psi, dmu, mass, gterm, yterm, gamma, gamma0_inv, i):
     vmapped_func = vmap(_wrapper, in_axes=(0,))
     compiled_kernel = jit(vmapped_func)
 
-    spatial = spatial + jnp.sum(compiled_kernel(dmu), axis=0)
+    spatial = spatial + jnp.sum(compiled_kernel(dmu_psi), axis=0)
     spatial = spatial + gterm + yterm
 
     mass_term = -1j * mass * psi
-    dirac_result = -gamma0_inv @ (spatial + mass_term)
+    dirac = -gamma0_inv @ (spatial + mass_term)
 
     #jax.debug.print(" dirac_process result: {dirac}", dirac=dirac_result)
-    return dirac_result
+    return dirac
 
 
 # --------------------
 # psi update
 # --------------------
 @jit
-def psi(psi, dt, dirac):
-    updated = psi + dt * dirac
+def calc_psi(psi, dt, dirac):
+    psi = psi + dt * dirac
     #jax.debug.print("🔁 psi_update: {updated}", updated=updated)
-    return updated
+    return psi
 
 
 @jit
-def gterm(psi, i, g_neighbors):
+def calc_gterm(psi, i, field_value, g, T):
     """
     Vectorized neighbor coupling calculation.
     g_neighbors: array-like with entries (g, field_value, T)
@@ -169,7 +169,7 @@ def gterm(psi, i, g_neighbors):
         in_axes=(0, None, 0)
     )
     compiled_kernel = jit(vmapped)(
-        *g_neighbors
+        field_value, g, T
     )
 
     gterm = jnp.sum(compiled_kernel, axis=0)

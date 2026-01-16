@@ -6,7 +6,6 @@ from tempfile import TemporaryDirectory
 from typing import List
 
 from bm.settings import TEST_USER_ID
-from fb_core.real_time_database import FBRTDBMgr
 
 from type import NodeCFGType
 from utils.deserialize import deserialize
@@ -52,7 +51,6 @@ class EnvCreatorProcess:
         # CLASSES
         self.utils = Utils()
 
-        self.db_manager = FBRTDBMgr()
         self.file_store = TemporaryDirectory()
 
 

@@ -1,0 +1,356 @@
+# WebSocket Payload Structure - Status Object Pattern
+
+## Standard Structure
+
+All WebSocket responses follow this structure:
+
+```json
+{
+    "type": str,           // Message type identifier
+    "status": {            // Status object (all status-related info)
+        "state": str,      // "success" | "error" | "message"
+        "error": str       // Error message (only present if state is "error")
+    },
+    "data": ...,           // Pure case-specific data (no status info)
+    "timestamp": str,      // ISO format timestamp
+    // Optional: count, etc. at top level
+}
+```
+
+## Injection Manager Responses
+
+### 1. SET_INJ
+
+**Success:**
+```json
+{
+    "type": "set_inj",
+    "status": {
+        "state": "success"
+    },
+    "data": {
+        "injection_id": "inj_123"
+    },
+    "timestamp": "2025-12-26T07:20:00.123456"
+}
+```
+
+**Error:**
+```json
+{
+    "type": "set_inj",
+    "status": {
+        "state": "error",
+        "error": "Missing inj_object"
+    },
+    "data": null,
+    "timestamp": "2025-12-26T07:20:00.123456"
+}
+```
+
+---
+
+### 2. DEL_INJ
+
+**Success:**
+```json
+{
+    "type": "del_inj",
+    "status": {
+        "state": "success"
+    },
+    "data": {
+        "injection_id": "inj_123"
+    },
+    "timestamp": "2025-12-26T07:20:00.123456"
+}
+```
+
+**Error:**
+```json
+{
+    "type": "del_inj",
+    "status": {
+        "state": "error",
+        "error": "Missing injection_id"
+    },
+    "data": null,
+    "timestamp": "2025-12-26T07:20:00.123456"
+}
+```
+
+---
+
+### 3. GET_INJ_USER
+
+**Success:**
+```json
+{
+    "type": "get_inj_user",
+    "status": {
+        "state": "success"
+    },
+    "data": [
+        {
+            "id": "inj_1",
+            "user_id": "user_123",
+            "data": [[0, 10, 20], [1.0, 2.0, 3.0]],
+            "ntype": "excitatory",
+            "created_at": "2025-12-25T19:30:00"
+        }
+    ],
+    "count": 1,
+    "timestamp": "2025-12-26T07:20:00.123456"
+}
+```
+
+**Error:**
+```json
+{
+    "type": "get_inj_user",
+    "status": {
+        "state": "error",
+        "error": "Exception message"
+    },
+    "data": [],
+    "timestamp": "2025-12-26T07:20:00.123456"
+}
+```
+
+---
+
+### 4. GET_INJ_LIST
+
+**Success:**
+```json
+{
+    "type": "get_inj_list",
+    "status": {
+        "state": "success"
+    },
+    "data": [
+        /* injection objects */
+    ],
+    "count": 3,
+    "timestamp": "2025-12-26T07:20:00.123456"
+}
+```
+
+**Error:**
+```json
+{
+    "type": "get_inj_list",
+    "status": {
+        "state": "error",
+        "error": "inj_ids must be a list"
+    },
+    "data": [],
+    "timestamp": "2025-12-26T07:20:00.123456"
+}
+```
+
+---
+
+## Frontend Usage
+
+### Status Object Checking
+
+```javascript
+ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    
+    // Check status object
+    if (msg.status.state === "success") {
+        console.log('✓ Success');
+        handleSuccess(msg);
+    } else if (msg.status.state === "error") {
+        console.error('✗ Error:', msg.status.error);
+        handleError(msg);
+    }
+};
+```
+
+### Complete Handler Example
+
+```javascript
+ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    
+    // Universal status check
+    const { state, error } = msg.status;
+    
+    if (state === 'success') {
+        switch(msg.type) {
+            case 'set_inj':
+            case 'del_inj':
+                // Operation responses - data contains specific fields
+                console.log('Injection ID:', msg.data.injection_id);
+                updateUI(msg.data);
+                break;
+                
+            case 'get_inj_user':
+            case 'get_inj_list':
+                // List responses - data is array directly
+                console.log(`Received ${msg.count} injections`);
+                displayInjections(msg.data);
+                break;
+        }
+    } else if (state === 'error') {
+        showError(error);
+    }
+};
+```
+
+### Type-Specific Handler
+
+```javascript
+function handleSetInjResponse(msg) {
+    if (msg.status.state === 'success') {
+        console.log('Injection saved:', msg.data.injection_id);
+        // msg.data = {injection_id: "..."}
+    } else {
+        console.error('Save failed:', msg.status.error);
+        // msg.data = null
+    }
+}
+
+function handleGetInjUserResponse(msg) {
+    if (msg.status.state === 'success') {
+        // msg.data = array of injection objects
+        const injections = msg.data;
+        console.log(`Got ${msg.count} injections`);
+        injections.forEach(inj => {
+            renderInjection(inj);
+        });
+    } else {
+        console.error('Fetch failed:', msg.status.error);
+        // msg.data = []
+    }
+}
+```
+
+---
+
+## Key Principles
+
+### ✅ Status Object Contains:
+- **`state`**: Always present ("success" | "error" | "message")
+- **`error`**: Only present when state is "error"
+- Future: Could add `message`, `code`, `details`, etc.
+
+### ✅ Data Field Contains:
+- **Pure case-specific data only**
+- **NO status-related information**
+- **Operations (set/del)**: Object with relevant fields or `null`
+  - Success: `{injection_id: "..."}`
+  - Error: `null`
+- **Lists (get)**: Array of objects or empty array
+  - Success: Array of injections
+  - Error: `[]` (empty array)
+
+### ✅ Clear Separation of Concerns:
+```javascript
+// Status info:
+const isSuccess = msg.status.state === 'success';
+const errorMessage = msg.status.error;
+
+// Data access:
+const injectionId = msg.data?.injection_id;  // operations
+const injections = msg.data;  // lists (array directly)
+```
+
+---
+
+## Pattern Comparison
+
+### Operation Response (set_inj, del_inj)
+
+```json
+// Success
+{
+    "status": {"state": "success"},
+    "data": {"injection_id": "123"}
+}
+
+// Error
+{
+    "status": {"state": "error", "error": "reason"},
+    "data": null
+}
+```
+
+### List Response (get_inj_user, get_inj_list)
+
+```json
+// Success
+{
+    "status": {"state": "success"},
+    "data": [...],  // array directly
+    "count": 5
+}
+
+// Error
+{
+    "status": {"state": "error", "error": "reason"},
+    "data": []
+}
+```
+
+---
+
+## Benefits
+
+1. **Clean Separation**: Status info in status object, data is pure
+2. **Type-Safe**: `msg.status.state` is always present
+3. **Error Details**: All error info grouped in status object
+4. **Extensible**: Can add more status fields without polluting data
+5. **Null-Safe**: Errors clearly indicate no data with `null` or `[]`
+
+---
+
+## Complete Example
+
+```javascript
+// Helper function
+function isSuccess(msg) {
+    return msg.status.state === 'success';
+}
+
+// Usage
+ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    
+    if (isSuccess(msg)) {
+        // Access pure data
+        if (Array.isArray(msg.data)) {
+            // List response
+            renderList(msg.data);
+        } else if (msg.data) {
+            // Operation response with data
+            console.log('ID:', msg.data.injection_id);
+        }
+    } else {
+        // Access error from status
+        showNotification(msg.status.error, 'error');
+    }
+};
+
+// Specific handlers
+ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    const handlers = {
+        set_inj: (msg) => {
+            if (isSuccess(msg)) {
+                addInjectionToUI(msg.data.injection_id);
+            }
+        },
+        get_inj_user: (msg) => {
+            if (isSuccess(msg)) {
+                displayInjections(msg.data);  // array
+            }
+        }
+    };
+    
+    handlers[msg.type]?.(msg);
+};
+```

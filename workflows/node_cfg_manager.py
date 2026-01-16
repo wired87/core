@@ -6,14 +6,12 @@ class NodeCfgManager:
     def __init__(
             self,
             user_id,
-            db_manager,
             cluster_url,
             utils,
             parent,
 
     ):
         self.parent=parent
-        self.db_manager=db_manager
         self.cluster_url=cluster_url
         self.user_id=user_id
         self.utils=utils

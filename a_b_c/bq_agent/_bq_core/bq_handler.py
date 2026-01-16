@@ -279,11 +279,14 @@ class BQGroundZero:
 
             result = job.result()
 
-            if conv_to_dict is True:
-                result = [dict(row) for row in result]
-            
             print("BQ Query Result finished")
-            print("Return", result)
+            if result:
+                try:
+                    if conv_to_dict is True:
+                        result = [dict(row) for row in result]
+                    print("Return", len(result))
+                except Exception as e:
+                    print("Query result has no len:", e)
 
             return result
         except Exception as e:
@@ -573,7 +576,7 @@ class BQCore(BQGroundZero):
 
         except Exception as e:
             print(f"Erro ensure_table_exists:{e}")
-        print(f"Table {table_ref} with schema {schema} exists")
+        print(f"Table {table_ref} exists")
         return table_ref, schema
 
 

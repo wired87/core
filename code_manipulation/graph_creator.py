@@ -1,13 +1,8 @@
 import ast
-
-import re
 from typing import Union, Optional
 
-from core.app_utils import USER_ID, RUNNABLE_MODULES
-
-from core.module_manager.create_runnable import create_runnable
+from qf_utils.qf_utils import QFUtils
 from utils.graph.local_graph_utils import GUtils
-
 
 def _get_docstring(node: Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef]) -> str:
     """Extracts docstring from function or class node."""
@@ -31,6 +26,7 @@ class StructInspector(ast.NodeVisitor):
         self.current_class: Optional[str] = None
         self.g = GUtils(G=G)
 
+        self.qfu = QFUtils(G=G)
     # B. Visit Methods (Sync/Async)
     def visit_FunctionDef(self, node: ast.FunctionDef):
         self._process_function(node)
@@ -60,10 +56,11 @@ class StructInspector(ast.NodeVisitor):
                 return_key = self.extract_return_statement_expression(
                     method_node=node,
                 )
-
+                print(f"RETURN KEY FOR METHOD {method_name}", return_key)
                 # VALID RETURN VARIABEL NAMES
-                if len(return_key.split(" ")) > 0:
+                if len(return_key.split(" ")) == 0:
                     return_key=method_id
+
                 entire_def = ast.unparse(node)
 
                 data = {
@@ -75,8 +72,8 @@ class StructInspector(ast.NodeVisitor):
                     'returns': return_type,
                     'docstring': docstring,
                     "code": entire_def,
+                    "module_id": self.module_name,
                 }
-
 
                 # 1. METHOD Node
                 self.g.add_node(
@@ -90,7 +87,7 @@ class StructInspector(ast.NodeVisitor):
                     src=self.module_name,
                     trt=method_id,
                     attrs=dict(
-                        rel='has_param',
+                        rel='has_method',
                         trgt_layer='METHOD',
                         src_layer='MODULE',
                     )
@@ -108,11 +105,13 @@ class StructInspector(ast.NodeVisitor):
     def process_method_params(self, node, method_id):
         # 3. Process Parameters
         #print("process_method_params node", node, type(method_id))
+
         for arg in node.args.args:
             try:
                 if arg.arg == 'self': continue
                 param_name = arg.arg
                 param_type = _get_type_name(arg.annotation)
+
                 print("ADD PARAM:", param_name)
                 # PARAM
                 self.g.add_node(
@@ -150,18 +149,18 @@ class StructInspector(ast.NodeVisitor):
 
     def extract_return_statement_expression(self, method_node: ast.FunctionDef) -> Optional[str]:
         """
-        Extracts the source code representation of the expression being returned.
-        This is the programmatic way to get the 'return statement including key'.
+        Extracts the name/identifier of the returned expression, stripped of whitespace.
         """
         for node in ast.walk(method_node):
             try:
-                if isinstance(node, ast.Return):
-                    # Check if a value is returned (i.e., not a simple 'return')
-                    if node.value is not None:
-                        return ast.unparse(node.value).strip()
+                if isinstance(node, ast.Return) and node.value is not None:
+                    # ast.unparse converts the AST node back into a string
+                    # .strip() removes any leading/trailing whitespace or newlines
+                    return ast.unparse(node.value).strip()
             except Exception as e:
-                print("Err extract_return_statement_expression",e)
-        return None
+                # It's often better to log this or use 'pass' if you want it silent
+                print(f"Err extract_return_statement_expression: {e}")
+        return ""
 
 
 
