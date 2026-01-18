@@ -79,9 +79,9 @@ class GaugeUtils(FieldUtils):
                     # Tr([T^c][T^a,T^b]) = i f^{abc} * (Normfaktor)
                     trace_val = np.trace(T[c] @ commutator)
                     # Für SU(N) üblich normiert auf 2*i
-                    f_abc[a, b, c] = (1 / (2j)) * trace_val
+                    f_abc[a, b, c] = np.real((1 / (2j)) * trace_val)
 
-        return np.imag(f_abc)
+        return f_abc
 
 
 

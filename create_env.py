@@ -255,7 +255,7 @@ class EnvCreatorProcess:
             "SG_DB_ID": env_id,
             #"GEMINI_API_KEY": os.environ["GEMINI_API_KEY"],
             **{
-                k: (json.dumps(v) if not isinstance(v, str) else v)
+                k: v #(json.dumps(v) if not isinstance(v, str) else v)
                 for k, v in cfg.items()
             },
         }

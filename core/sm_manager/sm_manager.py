@@ -282,9 +282,12 @@ class SMManager:
                     "keys": keys,
                     "values": values,
                     "axis_def": axis_def,
+                    "module_id": attrs.get(
+                        "module_id",
+                        attrs["parent"][0]
+                    ),
                     "interactant_fields": interactant_fields,
                 }
-                #print("add payload:", field_data)
                 field_rows.append(field_data)
 
             elif ntype == "PARAM":
