@@ -174,7 +174,7 @@ class FermUtils(
             #print("p T", T)
 
         elif ntype == "z_boson":
-            T3 = self.g_generator[2]
+            T3 = self.T[2]
             Y = 0.5 * np.identity(2, dtype=complex)
             T = np.cos(theta_w) * T3 - np.sin(theta_w) * Y
 

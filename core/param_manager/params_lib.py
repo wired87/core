@@ -52,10 +52,14 @@ class ParamsManager(BQCore):
             if "is_constant" in p:
                 p["const"] = p["is_constant"]
 
+            if "value" in p:
+                p["value"] = json.dumps(p["value"])
+
             #set axis param
-            p["axis_def"] = self.get_axis_param(
-                p["const"]
-            )
+            if "axis_def" not in p or p.get("axis_def") is None and "const" in p:
+                p["axis_def"] = self.get_axis_param(
+                    p["const"]
+                )
 
             # Ensure embedding is list of floats if present
             if "embedding" in p and p["embedding"]:
@@ -206,7 +210,7 @@ class ParamsManager(BQCore):
             batch_data.append({
                 "id": p_name, # Use name as ID for standard params
                 "name": p_name,
-                "type": p_type,
+                "param_type": p_type,
                 "description": f"Standard Model Parameter: {p_name}"
             })
 

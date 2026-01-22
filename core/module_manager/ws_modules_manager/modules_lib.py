@@ -8,8 +8,8 @@ from typing import Dict, Any, List, Optional
 from google.cloud import bigquery
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 
-from core.module_manager.module_etractor.extractor import RawModuleExtractor
 from core.fields_manager.fields_lib import fields_manager
+from core.file_manager import RawModuleExtractor
 
 from core.qbrain_manager import QBrainTableManager
 

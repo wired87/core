@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Tuple
 from core.sm.higgs.phi_utils import HiggsUtils
 from qf_utils.field_utils import FieldUtils
 from _ray_core.utils.ray_validator import RayValidator
-from utils._np.serialize_complex import check_serialize_dict
+from utils.serialize_complex import check_serialize_dict
 
 
 # NOTE: Assume check_serialize_dict/restore_selfdict handle conversion between

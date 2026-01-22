@@ -8,10 +8,14 @@ Handles schema definitions and table creation for all QBRAIN tables.
 import json
 from datetime import datetime
 from typing import Dict, Any, List
+import os
+import dotenv
+
+dotenv.load_dotenv()
+from google import genai
+from google.cloud import bigquery
 
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
-
-from google.cloud import bigquery
 
 class QBrainTableManager(BQCore):
     """
@@ -21,122 +25,277 @@ class QBrainTableManager(BQCore):
 
     DATASET_ID = "QBRAIN"
     
-    # Complete QBRAIN schema - all tables
-    TABLES_SCHEMA = {
-        "users": {
-            "uid": "STRING",
-            "email": "STRING",
-            "created_at": "TIMESTAMP",
-            "updated_at": "TIMESTAMP",
-            "status": "STRING",
-            "sm_stack_status": "STRING"
+    MANAGERS_INFO = [
+        {
+            "manager_name": "QBrainTableManager",
+            "description": "Centralized table management for the entire QBRAIN dataset. Handles schema definitions and table creation/verification.",
+            "default_table": None,
+            "schema": None
         },
-        "payment": {
-            "id": "STRING",
-            "uid": "STRING",
-            "payment_type": "STRING",
-            "created_at": "TIMESTAMP",
-            "updated_at": "TIMESTAMP",
-            "stripe_customer_id": "STRING",
-            "stripe_subscription_id": "STRING",
-            "stripe_payment_intent_id": "STRING",
-            "stripe_payment_method_id": "STRING"
+        {
+            "manager_name": "UserManager",
+            "description": "Manages user data, records, payments, and standard stack initialization in BigQuery.",
+            "default_table": "users",
+            "schema": {
+                "uid": "STRING",
+                "email": "STRING",
+                "created_at": "TIMESTAMP",
+                "updated_at": "TIMESTAMP",
+                "status": "STRING",
+                "sm_stack_status": "STRING"
+            },
+            "additional_tables": [
+                {
+                    "table_name": "payment",
+                    "schema": {
+                        "id": "STRING",
+                        "uid": "STRING",
+                        "payment_type": "STRING",
+                        "created_at": "TIMESTAMP",
+                        "updated_at": "TIMESTAMP",
+                        "stripe_customer_id": "STRING",
+                        "stripe_subscription_id": "STRING",
+                        "stripe_payment_intent_id": "STRING",
+                        "stripe_payment_method_id": "STRING"
+                    }
+                }
+            ]
         },
-
-        "sessions": {
-            "id": "INTEGER",
-            "user_id": "STRING",
-            "created_at": "TIMESTAMP",
-            "updated_at": "TIMESTAMP",
-            "is_active": "BOOLEAN",
-            "last_activity": "TIMESTAMP",
-            "status": "STRING",
+        {
+            "manager_name": "SessionManager",
+            "description": "Manages user sessions, their lifecycles, and hierarchal links to environments, modules, and injections.",
+            "default_table": "sessions",
+            "schema": {
+                "id": "INTEGER",
+                "user_id": "STRING",
+                "created_at": "TIMESTAMP",
+                "updated_at": "TIMESTAMP",
+                "is_active": "BOOLEAN",
+                "last_activity": "TIMESTAMP",
+                "status": "STRING",
+            }
         },
-
-        "injections": {
-            "id": "STRING",
-            "user_id": "STRING",  
-            "data": "STRING",
-            "description": "STRING",
-            "created_at": "TIMESTAMP",
-            "updated_at": "TIMESTAMP",
+        {
+            "manager_name": "EnvManager",
+            "description": "Manages simulation environments, including their creation, deletion, model associations, and retrieval of linked data.",
+            "default_table": "envs",
+            "schema": {
+                "id": "STRING",
+                "user_id": "STRING",
+                "logs": "JSON",
+                "description": "STRING",
+                "created_at": "TIMESTAMP",
+                "updated_at": "TIMESTAMP",
+                "status": "STRING",
+                "pattern": "STRING", # use for ml 
+                "model": "STRING",
+            }
         },
-
-        "envs": {
-            "id": "STRING",
-            "user_id": "STRING",
-            "logs": "JSON",
-            "description": "STRING",
-            "created_at": "TIMESTAMP",
-            "updated_at": "TIMESTAMP",
-            "status": "STRING",
-            "pattern": "STRING", # use for ml 
-            "model": "STRING",
+        {
+            "manager_name": "ModuleWsManager",
+            "description": "Manages system modules, including upload, retrieval, and linking to sessions and methods.",
+            "default_table": "modules",
+            "schema": {
+                "id": "STRING",
+                "user_id": "STRING",
+                "files": "JSON",
+                "file_type": "STRING",
+                "description": "STRING",
+                "created_at": "TIMESTAMP",
+                "updated_at": "TIMESTAMP",
+                "status": "STRING",
+                "binary_data": "STRING",
+                "methods": "STRING",
+                "fields": "STRING",
+            }
         },
+        {
+            "manager_name": "FieldsManager",
+            "description": "Manages fields (data containers), their parameters, and interaction links between fields.",
+            "default_table": "fields",
+            "schema": {
+                "id": "STRING",
+                "keys": "STRING",
+                "values": "STRING",
+                "axis_def": "STRING",
+                "user_id": "STRING",
+                "module_id": "STRING",
+                "status": "STRING",
+                "description": "STRING",
+                "interactant_fields": "STRING",
+                "created_at": "TIMESTAMP",
+                "updated_at": "TIMESTAMP",
+            }
+        },
+        {
+            "manager_name": "MethodManager",
+            "description": "Manages computational methods, equations, and code snippets, including JAX generation and execution.",
+            "default_table": "methods",
+            "schema": {
+                "id": "STRING",
+                "user_id": "STRING",
+                "origin": "STRING",
+                "description": "STRING",
+                "equation": "STRING",
+                "status": "STRING",
+                "params": "STRING",
+                "axis_def": "STRING",
+                "return_key": "STRING",
+                "created_at": "TIMESTAMP",
+                "updated_at": "TIMESTAMP",
+                "code": "STRING",
+                "jax_code": "STRING",
+                "module_id": "STRING",
+            }
+        },
+        {
+            "manager_name": "ParamsManager",
+            "description": "Manages global and local parameters used by methods and fields, including standard model constants.",
+            "default_table": "params",
+            "schema": {
+                "id": "STRING",
+                "param_type": "STRING",
+                "user_id": "STRING",
+                "value": "STRING",
+                "origin": "STRING",
+                "description": "STRING",
+                "embedding": "ARRAY<FLOAT64>",
+                "status": "STRING",
+                "const": "BOOL",
+                "created_at": "TIMESTAMP",
+                "updated_at": "TIMESTAMP",
+            }
+        },
+        {
+            "manager_name": "InjectionManager",
+            "description": "Manages energy injection patterns and their association with environments and sessions.",
+            "default_table": "injections",
+            "schema": {
+                "id": "STRING",
+                "user_id": "STRING",  
+                "data": "STRING",
+                "description": "STRING",
+                "created_at": "TIMESTAMP",
+                "updated_at": "TIMESTAMP",
+            }
+        },
+        {
+            "manager_name": "FileManager",
+            "description": "Handles file processing, extraction of code/configs (using RawModuleExtractor), and automated upsert of extracted entities.",
+             "default_table": None,
+             "schema": None
+        },
+        {
+            "manager_name": "ModelManager",
+            "description": "Manages AI model interactions, specifically querying models associated with environments.",
+             "default_table": None,
+             "schema": None
+        },
+        {
+            "manager_name": "OrchestratorManager",
+            "description": "Manages orchestration of simulations using Hopfield Network dynamics for high-level coordination and optimization.",
+             "default_table": None,
+             "schema": None
+        },
+        {
+            "manager_name": "SMManager",
+            "description": "Manages the Standard Model (SM) stack, initializing default graph structures and linking them to user environments.",
+             "default_table": None,
+             "schema": None
+        },
+        {
+            "manager_name": "DataManager",
+            "description": "Handles raw data conversion and interaction with real-time databases and visualization/training actors.",
+             "default_table": None,
+             "schema": None
+        }
+    ]
+    
+    @property
+    def TABLES_SCHEMA(self):
+        """
+        Dynamically construct TABLES_SCHEMA from MANAGERS_INFO.
+        """
+        schemas = {}
+        for manager in self.MANAGERS_INFO:
+            if manager.get("default_table") and manager.get("schema"):
+                schemas[manager["default_table"]] = manager["schema"]
+            
+            if manager.get("additional_tables"):
+                for table_def in manager["additional_tables"]:
+                    schemas[table_def["table_name"]] = table_def["schema"]
         
-        "modules": {
-            "id": "STRING",
-            "user_id": "STRING",
-            "files": "JSON",
-            "file_type": "STRING",
-            "description": "STRING",
-            "created_at": "TIMESTAMP",
-            "updated_at": "TIMESTAMP",
-            "status": "STRING",
-            "binary_data": "STRING",
-            "methods": "STRING",
-            "fields": "STRING",
-        },
-
-        "fields": {
-            "id": "STRING",
-            "keys": "STRING",
-            "values": "STRING",
-            "axis_def": "STRING",
-            "user_id": "STRING",
-            "module_id": "STRING",
-            "status": "STRING",
-            "description": "STRING",
-            "interactant_fields": "STRING",
-            "created_at": "TIMESTAMP",
-            "updated_at": "TIMESTAMP",
-        },
-
-        "params": {
-            "id": "STRING",
-            "type": "STRING",
-            "user_id": "STRING",
-            "origin": "STRING",
-            "description": "STRING",
-            "embedding": "ARRAY<FLOAT64>",
-            "status": "STRING",
-            "const": "BOOL",
-            "created_at": "TIMESTAMP",
-            "updated_at": "TIMESTAMP",
-        },
-
-        "methods": {
-            "id": "STRING",
-            "user_id": "STRING",
-            "origin": "STRING",
-            "description": "STRING",
-            "equation": "STRING",
-            "status": "STRING",
-            "params": "STRING",
-            "axis_def": "STRING",
-            "created_at": "TIMESTAMP",
-            "updated_at": "TIMESTAMP",
-            "code": "STRING",
-            "jax_code": "STRING",
-            "module_id": "STRING",
-        },
-    }
+        return schemas
 
     def __init__(self):
         """Initialize QBrainTableManager with QBRAIN dataset."""
         super().__init__(dataset_id=self.DATASET_ID)
         self.ds_ref = f"{self.pid}.{self.DATASET_ID}"
         print(f"QBrainTableManager initialized with dataset: {self.DATASET_ID}")
+        
+        try:
+            self.genai_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+        except Exception as e:
+            print(f"Warning: Failed to initialize GenAI client: {e}")
+            self.genai_client = None
+
+    def _generate_embedding(self, text: str) -> List[float]:
+        """
+        Generate embedding for text using Google GenAI.
+        """
+        if not self.genai_client:
+            return []
+            
+        try:
+            # Using text-embedding-004 as standard embedding model
+            result = self.genai_client.models.embed_content(
+                model="text-embedding-004",
+                contents=text,
+            )
+            return result.embeddings[0].values
+        except Exception as e:
+            print(f"Error generating embedding: {e}")
+            return []
+
+    def _generate_description(self, item: Dict[str, Any], table_name: str) -> str:
+        """
+        Generate a short description for an item using Google GenAI.
+        """
+        if not self.genai_client:
+            return ""
+
+        try:
+            # Find manager info for context
+            manager_desc = "Unknown Table"
+            for info in self.MANAGERS_INFO:
+                if info.get("default_table") == table_name:
+                    manager_desc = info.get("description", "")
+                    break
+            
+            # Construct prompt
+            item_str = json.dumps({k: v for k, v in item.items() if k not in ["embedding", "binary_data"]}, default=str)
+            prompt = f"""
+            Generate a concise description (max 300 chars) for this database item.
+            
+            Context:
+            Table: {table_name}
+            Table Purpose: {manager_desc}
+            
+            Item Data:
+            {item_str}
+            
+            Description:
+            """
+            
+            response = self.genai_client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt
+            )
+            
+            return response.text.strip()[:300]
+        except Exception as e:
+            print(f"Error generating description: {e}")
+            return ""
 
     def get_users_entries(self, user_id: str, table, select: str = "*"):
         """
@@ -638,6 +797,13 @@ class QBrainTableManager(BQCore):
 
 
 
+    def get_managers_info(self) -> List[Dict[str, str]]:
+        """
+        Get information about all manager classes.
+        """
+        return self.MANAGERS_INFO
+
+
     def update_env_pattern(self, env_id: str, pattern_data: dict, user_id: str):
         """
         Updates the 'pattern' column for a specific environment in the 'envs' table.
@@ -671,9 +837,12 @@ class QBrainTableManager(BQCore):
             if isinstance(items, dict):
                 items = [items]
 
+            checked_embedding_col = False
+            
             for item in items:
                 if "parent" in item:
                     item.pop("parent")
+                
                 # Fields that must be strings in BQ but are often handled as dicts in code
                 for key in item.keys():
                     # Check if the table_name and key exist in TABLES_SCHEMA before accessing
@@ -685,7 +854,34 @@ class QBrainTableManager(BQCore):
                                 print(f"Warning: Failed to serialize field {key}: {e}")
 
 
-                # 2. Timestamps & Status
+                """
+                # 3. Description Generation
+                if "description" not in item or not item["description"]:
+                    new_desc = self._generate_description(item, table_name)
+                    if new_desc:
+                        item["description"] = new_desc
+
+                # 4. Check/Create embedding column (Lazy check)
+                if "embedding" in item and item["embedding"] and not checked_embedding_col:
+                    try:
+                        # We only check if we actually have an embedding to save
+                        table_ref = f"{self.pid}.{self.DATASET_ID}.{table_name}"
+                        table = self.bqclient.get_table(table_ref)
+                        
+                        has_embedding_col = any(f.name == "embedding" for f in table.schema)
+                        
+                        if not has_embedding_col:
+                            print(f"Adding missing 'embedding' column to table {table_name}...")
+                            query = f"ALTER TABLE `{table_ref}` ADD COLUMN IF NOT EXISTS embedding ARRAY<FLOAT64>"
+                            self.bqclient.query(query).result()
+                            print(f"✓ Added column embedding to {table_name}")
+                        
+                        checked_embedding_col = True
+                    except Exception as e:
+                         pass
+                         # print(f"Warning verifying embedding column: {e}")
+                """
+                # 5. Timestamps & Status
                 now = datetime.now().isoformat()
                 if "created_at" not in item:
                     item["created_at"] = now
@@ -693,7 +889,7 @@ class QBrainTableManager(BQCore):
                 if "status" not in item:
                     item["status"] = "active"
 
-            # 3. Update or Insert
+            # 5. Update or Insert
             if keys:
                 if self.upsert_copy(table_name, keys, items[0]):
                     return True
@@ -750,3 +946,30 @@ if __name__ == "__main__":
     qbrain_manager = QBrainTableManager()
     qbrain_manager.reset_tables(["fields"])
 
+r"""
+
+# 2. Embedding Generation
+# If embedding column is null/missing, generate it from content
+if "embedding" not in item or item["embedding"] is None:
+    try:
+        # Construct content string from relevant fields (excluding metadata)
+        # We use values that are strings or easy to serialize
+        content_parts = []
+        for k, v in item.items():
+            if k not in ["id", "embedding", "created_at", "updated_at", "user_id", "status", "project_id", "dataset_id"]:
+                if v and isinstance(v, (str, int, float, bool, list, dict)):
+                    content_parts.append(f"{k}: {v}")
+        
+        if content_parts:
+            content_str = "\n".join(content_parts)
+            # Truncate if too long? Text-embedding-004 handles 2048 tokens. 
+            # Let's assume reasonable size for now.
+            embedding = self._generate_embedding(content_str)
+            if embedding:
+                item["embedding"] = embedding
+                
+    except Exception as e:
+        print(f"Warning: Failed to generate embedding: {e}")
+
+
+"""

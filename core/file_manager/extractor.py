@@ -9,7 +9,7 @@ import dotenv
 import filetype
 
 from core.module_manager.mcreator import ModuleCreator
-from core.module_manager.module_etractor.extraction_prompts import EXTRACT_EQUATIONS_PROMPT, CONV_EQ_CODE_TO_JAX_PROMPT
+from core.file_manager.extraction_prompts import EXTRACT_EQUATIONS_PROMPT, CONV_EQ_CODE_TO_JAX_PROMPT
 from qf_utils.qf_utils import QFUtils
 
 dotenv.load_dotenv()
@@ -143,6 +143,7 @@ class RawModuleExtractor:
     def jax_predator(self, code):
         prompt = CONV_EQ_CODE_TO_JAX_PROMPT
         prompt += f"""\n\nPYTHON CODE: {code}"""
+
         try:
              response = self.model.generate_content(prompt)
              text = response.text.strip()
@@ -184,11 +185,27 @@ class RawModuleExtractor:
         )
 
         params = {
-            p["trgt"]: p["attrs"]["type"]
+            p["trgt"]: p["attrs"].get("type", "Any")
             for p in params_edges.values()
         }
+        
+        # EXTRACT METHODS
+        method_edges = self.mcreator.qfu.g.get_neighbor_list(
+            node=mid,
+            target_type="METHOD",
+        )
+        methods = [m["attrs"] for m in method_edges.values()]
+
+        # EXTRACT FIELDS (CLASS_VAR)
+        field_edges = self.mcreator.qfu.g.get_neighbor_list(
+            node=mid,
+            target_type="CLASS_VAR",
+        )
+        fields = [f["attrs"] for f in field_edges.values()]
 
         print(f"Module params identified: {params}")
+        print(f"Module methods identified: {len(methods)}")
+        print(f"Module fields identified: {len(fields)}")
 
         # 4. Optimize
         print("4. Optimizing with JAX...")
@@ -197,6 +214,8 @@ class RawModuleExtractor:
         # 5. Return Data
         data= {
             "params": params,
+            "methods": methods,
+            "fields": fields,
             "code": code,
             "jax_code": jax_code,
         }

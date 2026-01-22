@@ -308,19 +308,34 @@ def handle_set_method(payload):
 
     method_data["code"] = equation
 
+
+    # generat jax code
+    if "jax_code" not in  method_data:
+        method_data["jax_code"] = file_manager.jax_predator(method_data["code"])
+
     # Ensure ID
     if "id" not in method_data or not method_data["id"]:
         method_data["id"] = generate_numeric_id()
         
     # Process Params if list
     if isinstance(params, list):
+         origins = method_data.get("origins")
+         if isinstance(origins, list):
+             key_counts = {}
+             for i, key in enumerate(params):
+                 if i < len(origins):
+                     origin = origins[i]
+                     if key in key_counts:
+                         if origin != "self":
+                             params[i] = "_" * key_counts[key] + key
+                     key_counts[key] = key_counts.get(key, 0) + 1
          method_data["params"] = json.dumps(params)
          
     # Generate JAX Code
     if equation:
         print(f"Generating JAX code for equation: {equation}")
         try:
-            jax_code = file_manager._jax_predator(equation)
+            jax_code = file_manager.jax_predator(equation)
             method_data["jax_code"] = jax_code
             print("JAX Code generated:", jax_code)
         except Exception as e:

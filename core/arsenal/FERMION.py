@@ -15,7 +15,8 @@ def calc_yterm(y, psi, psi_bar, h):
         yterm = -y * neighbor_h * jnp.vdot(psi_bar, psi)
         return yterm
 
-    yterm = vmap(_yukawa_term, in_axes=(
+    yterm = vmap(
+        _yukawa_term, in_axes=(
         0,0,0,0
     ))(
         y,

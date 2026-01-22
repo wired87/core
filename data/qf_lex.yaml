@@ -159,7 +159,7 @@ color_charge:
   origin: null
   dtype: list
 
-g_generator:
+T:
   symbol: null
   value:
     -

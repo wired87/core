@@ -6,30 +6,32 @@ import jax.numpy as jnp
 
 @jit
 def calc_gg_coupling(
-        _g,
-        _field_value,
+        g_,
+        field_value_,
         g,
         field_value,
 ):
 
     def _wrapper(
-            _g,
-            _field_value,
+            g_,
+            field_value_,
             field_value,
             g,
     ):
         # symmetric effective coupling strength
-        g_eff = 0.5 * (g + _g)
+        g_eff = 0.5 * (g_ + g)
 
         # simplified antisymmetric field interaction term: [Aμ, Aν]
-        j_pair = g_eff * (_field_value * field_value - field_value * _field_value)
+        j_pair = g_eff * (field_value * field_value_ - field_value_ * field_value)
         return j_pair
 
-    gg_coupling = vmap(_wrapper, in_axes=(
+    gg_coupling = vmap(
+        _wrapper,
+        in_axes=(
         0, 0, 0, None, None
     ))(
-        _g,
-        _field_value,
+        g_,
+        field_value_,
         field_value,
         g,
     )
@@ -41,16 +43,16 @@ def calc_gg_coupling(
 
 @jax.jit
 def calc_gf_coupling(
-        neighbor_f, # psi, psi_bar,
-        field_value,
-        g,
-        gluon_index=None,
+    psi, # psi, psi_bar,psi_bar
+    psi_bar,
+    field_value,
+    g,
+    gluon_index=None,
 ):
     index_map = [
         0, 1, 2, 3
     ]
 
-    @jax.jit
     def _j_nu_mu(
         psi,
         psi_bar,
@@ -59,7 +61,7 @@ def calc_gf_coupling(
         o_operator,
         gamma,
         gluon_index=None,
-        qindex=None,
+        quark_index=None,
     ):
         def _j_nu_gluon_quark(
             psi,
@@ -67,7 +69,7 @@ def calc_gf_coupling(
             gamma_mu,
             o_operator,
             g,
-            qindex,
+            quark_index,
         ):
             j_nu = 0
             # for a in range(3):
@@ -75,7 +77,7 @@ def calc_gf_coupling(
                 psi_b = psi[b]  # shape: (4,)
                 # psi_bar_a = psi_bar[a]  # shape: (4,)
                 spinor_scalar = psi_bar @ gamma_mu @ psi_b  # → Skalar
-                color_factor = o_operator[qindex, b]  # → Skalar
+                color_factor = o_operator[quark_index, b]  # → Skalar
                 j_nu += spinor_scalar * color_factor
             j_nu *= g
             return j_nu
@@ -91,14 +93,14 @@ def calc_gf_coupling(
             return j_nu
 
         j_nu = lax.cond(
-            gluon_index and qindex,
+            gluon_index and quark_index,
             lambda: _j_nu_gluon_quark(
                 psi,
                 psi_bar,
                 gamma[index],
                 o_operator,
                 g,
-                qindex,
+                quark_index,
             ),
             lambda: _j_nu_non_qg(
                 psi,
@@ -118,7 +120,8 @@ def calc_gf_coupling(
         None,
         None,
     ))(
-        *neighbor_f,
+        psi,
+        psi_bar,
         field_value,
         g,
         index=index_map,
@@ -126,12 +129,6 @@ def calc_gf_coupling(
     )
     gf_coupling = jax.numpy.sum(vmapped_func, axis=0)
     return gf_coupling
-
-
-
-
-
-
 
 @jit
 def j_nu(
@@ -159,7 +156,7 @@ def calc_field_value(
 
 @jit
 def calc_fmunu(
-    dmu
+    dmuG
 ):
     """
     Calculates the antisymmetric tensor F from the derivative tensor dmu.
@@ -167,11 +164,11 @@ def calc_fmunu(
     This is an optimized version using vectorized JAX operations for GPU batch processing.
     It assumes dmu is a JAX array of shape (26, 26) or (26, 26, 1).
     """
-    amount_dirs = 14  # As per user request, file originally had 13
+    amount_dirs = 13  # As per user request, file originally had 13
 
     # Squeeze to handle shapes like (26, 26, 1) -> (26, 26)
     # This makes the code robust to whether the input has a trailing dimension of 1
-    dmu_s = jnp.squeeze(dmu)
+    dmu_s = jnp.squeeze(dmuG)
 
     # F[mu, nu] = dmu[mu, nu] - dmu[nu, mu]
     # Vectorized implementation for batch processing:
@@ -196,7 +193,6 @@ def calc_dmuG(
     """
 
     # 1. Funktion für die räumliche Zentraldifferenz
-    @jit
     def _d_spatial(field_forward, field_backward, d_space):
         """Berechnet (Psi_{i+1} - Psi_{i-1}) / (2.0 * d) für das gesamte Array."""
         return (field_forward - field_backward) / (2.0 * d_space)
@@ -206,7 +202,6 @@ def calc_dmuG(
         """Berechnet (Psi(t) - Psi(t-dt)) / dt für das gesamte Array."""
         return (field_current - field_prev) / d_time
 
-    # --- Räumliche Ableitungen (Batch-Verarbeitung der 13 Paare) ---
 
     def _calc_spatial_derivative(dir_p, dir_m):
         # np und nm sind die VOLLSTÄNDIGEN verschobenen Gitter-Arrays

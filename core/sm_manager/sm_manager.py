@@ -298,6 +298,7 @@ class SMManager:
                     "origin": "SM",
                     "const": attrs.get("const"),
                     "axis_def": attrs.get("axis_def"),
+                    "value": attrs.get("value"),
                 }
                 param_rows.append(param_data)
 

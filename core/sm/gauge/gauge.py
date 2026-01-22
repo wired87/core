@@ -1,6 +1,6 @@
 from _ray_core.utils.ray_validator import RayValidator
 from core.sm.gauge.gauge_utils import GaugeUtils
-from utils._np.serialize_complex import deserialize_complex, check_serialize_dict
+from utils.serialize_complex import deserialize_complex, check_serialize_dict
 from itertools import product
 
 
