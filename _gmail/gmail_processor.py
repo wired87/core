@@ -325,3 +325,131 @@ class GmailProcessor:
             </body>
             </html>
         """
+
+    def get_welcome_content(self, user_name: str) -> str:
+        return f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{
+                        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+                        margin: 0;
+                        padding: 0;
+                        background-color: #f8fafc;
+                        color: #1e293b;
+                    }}
+                    .email-container {{
+                        max-width: 600px;
+                        margin: 40px auto;
+                        background-color: #ffffff;
+                        border-radius: 16px;
+                        overflow: hidden;
+                        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+                        border: 1px solid #e2e8f0;
+                    }}
+                    .header {{
+                        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+                        color: #ffffff;
+                        padding: 40px 30px;
+                        text-align: center;
+                    }}
+                    .header h1 {{
+                        margin: 0;
+                        font-size: 28px;
+                        font-weight: 700;
+                        letter-spacing: -0.5px;
+                    }}
+                    .content {{
+                        padding: 40px 30px;
+                        line-height: 1.7;
+                    }}
+                    .welcome-text {{
+                        font-size: 18px;
+                        color: #334155;
+                        margin-bottom: 24px;
+                    }}
+                    .feature-list {{
+                        margin: 30px 0;
+                        padding: 0;
+                        list-style: none;
+                    }}
+                    .feature-item {{
+                        display: flex;
+                        align-items: center;
+                        margin-bottom: 16px;
+                        font-size: 16px;
+                        color: #475569;
+                    }}
+                    .feature-icon {{
+                        margin-right: 12px;
+                        color: #3b82f6;
+                        font-size: 20px;
+                    }}
+                    .footer {{
+                        background-color: #f1f5f9;
+                        color: #64748b;
+                        padding: 30px;
+                        text-align: center;
+                        font-size: 13px;
+                        border-top: 1px solid #e2e8f0;
+                    }}
+                    .btn {{
+                        display: block;
+                        width: fit-content;
+                        margin: 30px auto;
+                        background-color: #2563eb;
+                        color: #ffffff;
+                        padding: 14px 32px;
+                        border-radius: 8px;
+                        text-decoration: none;
+                        font-weight: 600;
+                        font-size: 16px;
+                        transition: background-color 0.2s;
+                    }}
+                    .btn:hover {{
+                        background-color: #1d4ed8;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="email-container">
+                    <div class="header">
+                        <h1>Welcome to NeuralVerse</h1>
+                    </div>
+                    <div class="content">
+                        <p class="welcome-text">Hi {user_name},</p>
+                        <p>We're thrilled to have you on board! You've just unlocked access to the next generation of AI-powered modeling and simulation.</p>
+                        
+                        <div class="feature-list">
+                            <div class="feature-item">
+                                <span class="feature-icon">⚡</span>
+                                <span>deploy advanced bots in seconds</span>
+                            </div>
+                            <div class="feature-item">
+                                <span class="feature-icon">📊</span>
+                                <span>Real-time analytics and insights</span>
+                            </div>
+                            <div class="feature-item">
+                                <span class="feature-icon">🛡️</span>
+                                <span>Enterprise-grade security</span>
+                            </div>
+                        </div>
+
+                        <a href="#" class="btn">Get Started</a>
+
+                        <p style="margin-top: 30px; font-size: 14px; color: #94a3b8;">
+                            If you have any questions, our support team is always here to help.
+                        </p>
+                    </div>
+                    <div class="footer">
+                        <p>&copy; {datetime.now().year} NeuralVerse. All rights reserved.</p>
+                        <p>
+                            <a href="#" style="color: #64748b; text-decoration: underline;">Privacy Policy</a> • 
+                            <a href="#" style="color: #64748b; text-decoration: underline;">Terms of Service</a>
+                        </p>
+                    </div>
+                </div>
+            </body>
+            </html>
+        """

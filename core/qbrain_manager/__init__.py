@@ -945,31 +945,3 @@ class QBrainTableManager(BQCore):
 if __name__ == "__main__":
     qbrain_manager = QBrainTableManager()
     qbrain_manager.reset_tables(["fields"])
-
-r"""
-
-# 2. Embedding Generation
-# If embedding column is null/missing, generate it from content
-if "embedding" not in item or item["embedding"] is None:
-    try:
-        # Construct content string from relevant fields (excluding metadata)
-        # We use values that are strings or easy to serialize
-        content_parts = []
-        for k, v in item.items():
-            if k not in ["id", "embedding", "created_at", "updated_at", "user_id", "status", "project_id", "dataset_id"]:
-                if v and isinstance(v, (str, int, float, bool, list, dict)):
-                    content_parts.append(f"{k}: {v}")
-        
-        if content_parts:
-            content_str = "\n".join(content_parts)
-            # Truncate if too long? Text-embedding-004 handles 2048 tokens. 
-            # Let's assume reasonable size for now.
-            embedding = self._generate_embedding(content_str)
-            if embedding:
-                item["embedding"] = embedding
-                
-    except Exception as e:
-        print(f"Warning: Failed to generate embedding: {e}")
-
-
-"""

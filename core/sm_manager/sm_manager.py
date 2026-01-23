@@ -13,6 +13,7 @@ from core.fields_manager.fields_lib import fields_manager
 from core.user_manager.user import UserManager
 from core.qbrain_manager import QBrainTableManager
 
+
 class SMManager:
     def __init__(self):
         self.module_db_manager = module_manager
@@ -45,10 +46,6 @@ class SMManager:
         Upsert standard nodes and edges from QFUtils to BigQuery tables.
         """
         print("PROCESSING STANDARD MANAGER WORKFLOW")
-
-        """if self.check_sm_exists() is True:
-            print(f"USERS {user_id} SM stack already enabled...")
-            return"""
 
         # Create module stack
         qf = self._initialize_graph()
@@ -258,6 +255,9 @@ class SMManager:
                 }
                 modules.append(module_data)
 
+
+
+            # FIELDS
             elif ntype == "FIELD":
                 # Upsert Field
                 keys = attrs.get("keys") or attrs.get("field_keys")
@@ -290,10 +290,12 @@ class SMManager:
                 }
                 field_rows.append(field_data)
 
+
+            # PARAMS
             elif ntype == "PARAM":
                 param_data = {
                     "id": nid,
-                    "type": attrs.get("type"),
+                    "param_type": attrs.get("param_type"),
                     "description": "",
                     "origin": "SM",
                     "const": attrs.get("const"),
@@ -303,7 +305,6 @@ class SMManager:
                 param_rows.append(param_data)
 
             elif ntype == "METHOD":
-                #
                 param_ids = qf.g.get_neighbor_list_rel(
                     node=nid,
                     trgt_rel="requires_param",

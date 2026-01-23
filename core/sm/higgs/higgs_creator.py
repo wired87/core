@@ -30,6 +30,7 @@ class HiggsCreator(HiggsUtils):
         except Exception as e:
             print(f"Err higgs_attrs: {e}")
 
+
     def higgs_params_batch(self, dim, just_vals=False, just_k=False) -> dict or list:
         #phi = self.init_phi(h)
         try:

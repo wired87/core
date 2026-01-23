@@ -30,6 +30,9 @@ def test_workflow():
     email_html = processor.get_email("Heading", "Body Heading", "Body Text")
     print("Email HTML generated successfully.")
 
+    welcome_content = processor.get_welcome_content("Test User")
+    print("Welcome content generated successfully.")
+
     # Test sending email (will skip if service not initialized)
     if processor.service:
         print("Service initialized, attempting to send email...")
