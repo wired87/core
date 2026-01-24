@@ -553,7 +553,7 @@ class Relay(
         print("Starting Simulation Process with payload:", payload)
         try:
             # 1. Call Guard Process
-            self.guard.sim_start_process(payload)
+            self.guard.sim_start_process(payload, )
             
             # Update env status to IN_PROGRESS and notify frontend
             env_id = payload.get("data", {}).get("env_id") or payload.get("auth", {}).get("env_id")

@@ -2,7 +2,7 @@ import json
 import pprint
 
 from itertools import product
-from typing import Any
+
 
 import numpy as np
 
@@ -17,11 +17,10 @@ from core.module_manager.ws_modules_manager import ModuleWsManager
 from core.param_manager.params_lib import ParamsManager
 from core.qbrain_manager import QBrainTableManager
 from core.user_manager import UserManager
-from data import ENV
 
 from core.module_manager.mcreator import ModuleCreator
 from qf_utils.all_subs import ALL_SUBS
-from utils.get_shape import get_modular_shape
+from utils.get_shape import get_modular_shape, extract_complex
 from utils.str_size import get_str_size
 from utils.xtract_trailing_numbers import extract_trailing_numbers
 from workflows.deploy_sim import DeploymentHandler
@@ -274,9 +273,6 @@ class Guard(
         # FETCH ENV CONSTANTS
         env_constants = self.qb.row_from_id(keys, table="params")
 
-        # create complex map fro db result
-        complex_map = [True if v["param_type"] == "complex" else False for v in env_constants]
-
         # VALUE
         values = [v["value"] for v in env_constants]
 
@@ -298,7 +294,6 @@ class Guard(
                 keys=keys,
                 values=values,
                 axis_def=axis_def,
-                complex_map=complex_map,
                 **res,
             )
         )
@@ -395,7 +390,6 @@ class Guard(
                 )
 
 
-
     def handle_field_interactants(self, field_ids:list[str], env_id:str):
         """
         Include Ghost fields as last options for parameter collection
@@ -418,7 +412,8 @@ class Guard(
             if len(missing_fields) > 0:
                 res = self.qb.row_from_id(
                     missing_fields,
-                    table=self.env_manager.TABLE_ID)
+                    table=self.env_manager.TABLE_ID
+                )
                 fetched_modules = {item["id"]: item for item in res}
 
                 print("fetched_modules")
@@ -561,17 +556,11 @@ class Guard(
                     )
 
                     # create complex map for tbhe db indexing
-                    complex_map = [
-                        True
-                        if v["param_type"] == "complex"
-                        else False for v in env_constants
-                    ]
 
                     self.g.update_node(
                         dict(
                             nid=fid,
                             type="FIELD",
-                            complex_map=complex_map,
                             **fattrs
                         )
                     )
@@ -725,7 +714,8 @@ class Guard(
             filter_value="MODULE",
         )
 
-        db_payload = self.create_db(modules, env_node["amount_nodes"]) # single param lvl -> todo grid: scale vertical
+        self.DB = self.create_db(
+            modules, env_node["amount_of_nodes"]) # single param lvl -> todo grid: scale vertical
 
         edge_db_to_method_variation_struct = self.set_edge_db_to_method()
 
@@ -739,12 +729,12 @@ class Guard(
 
         # create iterator last
         iterators = self.set_iterator_from_humans()
-        iterators["DB_FIELD_CONTROLLER"] = db_payload["DB_FIELD_CONTROLLER"]
+        iterators["DB_FIELD_CONTROLLER"] = self.DB["DB_FIELD_CONTROLLER"]
         iterators["method_controller"] = method_controller
 
         components = {
             "method_to_db": method_to_db,
-            **db_payload,
+            "DB": self.DB,
             "iterators": iterators,
             "methods": methods,
             "injection_patterns": injection_patterns,
@@ -1029,37 +1019,42 @@ class Guard(
         )
         print("handle_mod_stack finished successfully")
 
-
     def create_db(self, modules, amount_nodes):
         """
-        collect all nodes values and stack with axis def
-        -> uniform for all envs
+        Collect all node values and stack them into a flat DB
+        -> uniform layout for all environments
         """
-        print("create_db...")
+        print("[create_db] start")
 
+        # --- initialize base structures ---
         db = self.get_empty_field_structure()
         axis = self.get_empty_field_structure()
         shapes = self.get_empty_field_structure()
-        complex_vals = self.get_empty_field_structure()
+        item_len_collection = self.get_empty_field_structure()
+        param_len_collection = self.get_empty_field_structure()
 
-        self.DB = []
-        self.AXIS = []
-        self.SHAPE = []
-        self.CONTROLLER = []
-        self.PADDING: int = 0
-        self.ITEM_LEN_DB_CONTROLLER = []
-        self.COMPLEX_MAP = []
+        # flat DB dict
+        DB = {
+            "DB": [],
+            "AXIS": [],
+            #"DB_FIELD_CONTROLLER": [],
+            #"DB_PADDING": [],
+            "ITEM_LEN_DB_CONTROLLER": [],
+            "DB_SHAPE": [],
+            "AMOUNT_PARAMS_PER_FIELD": [],
+            "DB_PARAM_CONTROLLER": [],
+        }
 
         try:
+            # --- iterate modules ---
             for mid, m in modules:
                 m_idx = m.get("module_index")
 
-                # get module specific fields
                 if "GHOST" in mid.upper():
-                    print(f"Skipping {mid}")
+                    print(f"[create_db] skip ghost module: {mid}")
                     continue
 
-                print("create_db work mod", mid, m_idx)
+                print(f"[create_db] module={mid}, idx={m_idx}")
 
                 fields = self.g.get_neighbor_list_rel(
                     node=mid,
@@ -1067,89 +1062,68 @@ class Guard(
                     as_dict=True
                 )
 
+                # --- iterate fields ---
                 for fid, fattrs in fields.items():
                     fidx = fattrs.get("field_index")
+                    print(f"  [field] apply pattern -> module={m_idx}, field={fidx}")
 
-                    print("apply db pattern to", m_idx, fidx)
-
+                    # axis definition
                     xdef = fattrs.get("axis_def", [])
                     if isinstance(xdef, str):
-                        xdef = json.loads(fattrs.get("axis_def", []))
+                        xdef = json.loads(xdef)
 
+                    # values
                     vals = fattrs.get("values", [])
                     if isinstance(vals, str):
-                        vals = json.loads(fattrs.get("values", []))
+                        vals = json.loads(vals)
 
-                    _complex = fattrs.get("complex_map", [])
-                    if isinstance(_complex, str):
-                        _complex = json.loads(fattrs.get("complex_map", []))
-
-                    # extract shape
                     shape_struct = []
-                    for v in vals:
+                    collected_values = []
+                    vals_item_lens = []
+
+                    # --- process values ---
+                    for vi, v in enumerate(vals):
                         shape = get_modular_shape(v)
                         shape_struct.append(shape)
 
-                    db[m_idx][fidx] = vals
+                        # flatten any shape
+                        val_len = []
+                        extract_complex(v, collected_values, val_len)
+                        vals_item_lens.append(len(val_len))
+
+                        print(f"[val {vi}] shape={shape}, len={len(val_len)}")
+
+                    # --- assign per module / field ---
+                    db[m_idx][fidx] = collected_values
                     axis[m_idx][fidx] = xdef
                     shapes[m_idx][fidx] = shape_struct
-                    complex_vals[m_idx][fidx] = _complex
+                    item_len_collection[m_idx][fidx] = vals_item_lens
+                    param_len_collection[m_idx][fidx] = len(vals)
 
-            #
-            self.CONTROLLER = [len(o) for item in db for o in item]
 
-            # Extend on single param base
-            self.DB.extend(o for item in db for o in item)
-            self.AXIS.extend(o for item in axis for o in item)
-            self.SHAPE.extend(o for item in shapes for o in item)
-            self.COMPLEX_MAP.extend(o for item in complex_vals for o in item)
+            for m_db, m_axis, m_shape, m_len, plen_item in zip(db, axis, shapes, item_len_collection, param_len_collection):
+                for f_db, f_axis, f_shape, f_len, plen_field in zip(m_db, m_axis, m_shape, m_len, plen_item):
+                    DB["DB"].extend(f_db)
+                    DB["AXIS"].extend(f_axis)
+                    DB["DB_SHAPE"].extend(f_shape)
 
-            # calc len final db entries per item
-            for i, (item, cpx) in enumerate(zip(self.DB, self.COMPLEX_MAP)):
-                # Sicherstellen, dass wir die Struktur-Größe haben
-                # Wenn item [2, 2] ist (Pauli), dann ist prod = 4
-                if isinstance(item, (list, tuple, np.ndarray)):
-                    # np.prod berechnet das Produkt aller Dimensionen
-                    structure_size = int(np.prod(item))
-                else:
-                    # Skalar (einzelner Wert)
-                    structure_size = 1
+                    # int len param in db (e.g. 3 for "000")
+                    DB["DB_PARAM_CONTROLLER"].append(f_len)
 
-                # Jetzt die Skalierung (AXIS) anwenden
-                if self.AXIS[i] == 0:  # LOOP / DYNAMISCH
-                    # Jeder Knoten bekommt die volle Struktur
-                    item_len = structure_size * amount_nodes
-                else:  # CONST / STATISCH
-                    # Nur einmal vorhanden
-                    item_len = structure_size
+                    # int len param / f
+                    DB["AMOUNT_PARAMS_PER_FIELD"].append(plen_field)
 
-                # paste double item len for complex values
-                item_len = item_len if not cpx else item_len * 2
+            # --- finalize DB ---
+            print("DB before serialization:", DB["DB"])
+            DB["DB"] = np.array(DB["DB"], dtype=np.complex64).tobytes()
 
-                self.ITEM_LEN_DB_CONTROLLER.append(item_len)
-
-            self.PADDING: int = max([
-                max(item)
-                for item in self.DB
-                if isinstance(item, (list, np.array))
-            ])
+            print("[create_db] done")
 
         except Exception as e:
-            print(f"Err create_db:", e)
+            print("[create_db][ERROR]", e)
 
-        print("create_db... done")
-
-        return {
-            "DB": self.DB,
-            "AXIS": self.AXIS,
-            "DB_FIELD_CONTROLLER": self.CONTROLLER,
-            "DB_PADDING": self.PADDING,
-            "ITEM_LEN_DB_CONTROLLER": self.ITEM_LEN_DB_CONTROLLER,
-            "DB_COMPLEX": self.COMPLEX_MAP,
-            "DB_SHAPE": self.SHAPE,
-        }
-
-
+        pprint.pp(DB)
+        return DB
 
     def method_layer(self):
         print("method_layer... ")
@@ -1282,12 +1256,15 @@ class Guard(
                             return_key
                         ) if return_key in keys else 0
                         rindex = keys.index(return_key)
+
+                        fmod = self.g.get_node(nid=fattrs["module_id"])
+
                         # RESULT -> DB -> WORKS
                         return_key_map.append(
                             self.get_db_index(
+                                fmod["module_index"],
                                 field_index,
                                 rindex,
-
                             )
                         )
                         print(f"Return Map: {return_key} -> {ret_idx}")
@@ -1429,9 +1406,9 @@ class Guard(
 
                                 field_eq_param_struct.append(
                                     self.get_db_index(
+                                        module["module_index"],
                                         field_index,
                                         pindex,
-
                                     )
                                 )
 
@@ -1454,17 +1431,19 @@ class Guard(
 
                                     # param key in interactant field?
                                     if pid in ikeys:
+                                        fmod = self.g.get_node(nid=fiattrs.get("module_id"))
+
                                         # collect maps for all interactants
                                         #print("interactant pid", pid, o)
 
                                         nfield_index = fiattrs.get("field_index")
-                                        #print("interactant nfield_index", nfield_index, o)
 
                                         pindex = ikeys.index(pid)
                                         #print("interactant pindex", pindex, o)
 
                                         param_collector.append(
                                             self.get_db_index(
+                                                fmod["module_index"],
                                                 nfield_index,
                                                 pindex,
 
@@ -1478,7 +1457,7 @@ class Guard(
                                 print(f"param {pid} is not in interactant -> check GHOST FIELDS")
                                 for g, (gfid, gfattrs) in enumerate(ghost_fields):
                                     gikeys = gfattrs.get("keys")
-
+                                    gmod = self.g.get_node(nid=gfattrs.get("module_id"))
                                     if isinstance(gikeys, str):
                                         print("convert ikeys", gikeys)
                                         gikeys = json.loads(gikeys)
@@ -1493,6 +1472,7 @@ class Guard(
                                         # ADD PARAM TO
                                         param_collector.append(
                                             self.get_db_index(
+                                                gmod["module_index"],
                                                 gfield_index,
                                                 pindex,
 
@@ -1514,9 +1494,9 @@ class Guard(
 
                                 param_collector.append(
                                     self.get_db_index(
+                                        module["module_index"],
                                         field_index,
                                         fattrs["keys"].index(pid),
-
                                     )
                                 )
                                 print(f"Added ghost param {pid} to {fid}")
@@ -1549,7 +1529,6 @@ class Guard(
         }
 
         modules = self.g.get_nodes(filter_key="type", filter_value="MODULE")
-        ghost_mod = self.g.get_node(nid="GHOST_MODULE")
         ghost_fields = self.g.get_neighbor_list_rel(trgt_rel="has_field", node="GHOST_MODULE")
 
         try:
@@ -1593,14 +1572,14 @@ class Guard(
                             param_collector = []
 
                             # 1. Check: Gehört der Parameter zum Feld selbst?
-                            if clean_pid in keys and not is_prefixed and params_origin[pidx] not in ["neighbor",                                                        "interactant"]:
+                            if clean_pid in keys and not is_prefixed and params_origin[pidx] not in ["neighbor", "interactant"]:
                                 pindex = keys.index(clean_pid)
 
                                 field_eq_param_struct.append(
                                     self.get_db_index(
+                                        module["module_index"],
                                         field_index,
                                         pindex,
-
                                     )
                                 )
                                 collected = True
@@ -1616,9 +1595,9 @@ class Guard(
                                         pmod = self.g.get_node(nid=fiattrs["module_id"])
                                         param_collector.append(
                                             self.get_db_index(
+                                                pmod["modul_index"],
                                                 nfield_index,
                                                 pindex,
-
                                             ))
                                         collected = True
 
@@ -1627,14 +1606,16 @@ class Guard(
                                     for gfid, gfattrs in ghost_fields:
                                         gikeys = gfattrs.get("keys", [])
                                         gfield_index = gfattrs.get("field_index", [])
+                                        pmod = self.g.get_node(nid="GHOST_MODULE")
+
                                         if isinstance(gikeys, str): gikeys = json.loads(gikeys)
                                         if clean_pid in gikeys:
                                             pindex = gikeys.index(clean_pid)
                                             param_collector.append(
                                                 self.get_db_index(
+                                                    pmod["modul_index"],
                                                     gfield_index,
                                                     pindex,
-
                                                 )
                                             )
                                             collected = True
@@ -1843,6 +1824,7 @@ class Guard(
             modules_struct = [
                 [] for _ in range(len(modules))
             ]
+
             print("modules_struct initialized size:", len(modules_struct))
 
             for i, (mid, m) in enumerate(modules):
@@ -1879,16 +1861,14 @@ class Guard(
 
 
 
-    def get_db_index(self, field_idx, param_in_field_idx):
-        start_index_db = sum(self.DB_FIELD_CONTROLLER[:field_idx])
+    def get_db_index(self, mod_idx, field_idx, param_in_field_idx):
+        # get_db_index
+        return (
+            mod_idx,
+            field_idx,
+            param_in_field_idx,
+        )
 
-        # 2. Calc param idx within field on sum params
-        trgt_index_db = start_index_db + param_in_field_idx
-
-        # ITEM_LEN_DB_CONTROLLER = list len items per param
-        final_index = np.sum(self.ITEM_LEN_DB_CONTROLLER[:trgt_index_db])
-
-        return final_index
 
 if __name__ == "__main__":
     import networkx as nx

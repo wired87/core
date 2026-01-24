@@ -627,8 +627,6 @@ class BQCore(BQGroundZero):
             print("No rows to process.")
 
 
-
-
     def insert_col(self, table_id: str, column_name: str, column_type: str):
         """
         Checks if a column exists in the BigQuery table. If not, it creates it.

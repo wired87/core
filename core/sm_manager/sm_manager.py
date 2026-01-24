@@ -290,7 +290,6 @@ class SMManager:
                 }
                 field_rows.append(field_data)
 
-
             # PARAMS
             elif ntype == "PARAM":
                 param_data = {
