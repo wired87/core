@@ -48,7 +48,6 @@ from core.module_manager.ws_modules_manager.modules_lib import handle_rm_link_se
 from core.sm_manager.sm_manager import handle_enable_sm
 from qf_utils.qf_utils import QFUtils
 
-from _chat.log_sum import LogAIExplain
 
 from workflows.data_distirbutor import DataDistributor
 from workflows.deploy_sim import DeploymentHandler
@@ -552,38 +551,25 @@ class Relay(
         """
         print("Starting Simulation Process with payload:", payload)
         try:
-            # 1. Call Guard Process
-            self.guard.sim_start_process(payload, )
-            
-            # Update env status to IN_PROGRESS and notify frontend
-            env_id = payload.get("data", {}).get("env_id") or payload.get("auth", {}).get("env_id")
-            if env_id:
-                print(f"Updating status for env {env_id} to IN_PROGRESS")
+            for k, v in  payload["data"]["config"].items():
+                self.guard.main(
+                    env_id=k,
+                    env_data=v
+                )
+
                 try:
-                    # Update status
-                    self.user_manager.qb.set_item(
-                        "envs", 
-                        {"status": "IN_PROGRESS"}, 
-                        keys={"id": env_id, "user_id": self.user_id}
+                    updated_env = self.env_manager.retrieve_send_user_specific_env_table_rows(
+                        self.user_id
                     )
-                    
-                    # Fetch updated entry
-                    updated_env = self.user_manager.qb.row_from_id(
-                        nid=env_id,
-                        table="envs",
-                        user_id=self.user_id
-                    )
-                    
-                    if updated_env:
-                        # Send to frontend
-                        await self.send(text_data=json.dumps({
-                            "type": "GET_USERS_ENVS",
-                            "data": {"envs": updated_env}
-                        }))
-                        print(f"Sent IN_PROGRESS status for env {env_id}")
+
+                    await self.send(text_data=json.dumps({
+                        "type": "GET_USERS_ENVS",
+                        "data": updated_env
+                    }))
+
                 except Exception as ex:
                     print(f"Error updating env status: {ex}")
-            
+
             # 2. Deactivate Session
             if hasattr(self, 'session_id') and self.session_id:
                 print(f"Deactivating session {self.session_id} after successful sim start")
@@ -601,7 +587,9 @@ class Relay(
                 "data": {} 
             }
             
-            await self.send(text_data=json.dumps(response))
+            await self.send(
+                text_data=json.dumps(response)
+            )
             await self.send_session()
 
             print("Sim start process completed successfully.")

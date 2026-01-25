@@ -1,4 +1,4 @@
-
+import json
 import logging
 import random
 from datetime import datetime
@@ -25,9 +25,12 @@ class EnvManager(BQCore):
     TABLE_ID = "envs"
 
     def __init__(self):
+        print("EnvManager.__init__ started")
         """Initialize EnvManager."""
         super().__init__(dataset_id=self.DATASET_ID)
+        print("EnvManager.__init__ super init done")
         self.qb = QBrainTableManager()
+        print("EnvManager.__init__ QB init done")
         self.session_link_tref = f"session_to_envs"
 
     def _ensure_env_table(self):
@@ -139,9 +142,7 @@ class EnvManager(BQCore):
                  row["data"] = json.dumps(row["data"])
              except Exception as e:
                  print(f"Error serializing env data: {e}")
-        
-        # qb.set_item handles timestamps and status if missing
-        
+
         self.qb.set_item(self.TABLE_ID, row, keys={"id": row.get("id"), "user_id": user_id})
 
     def link_session_env(self, session_id: str, env_id: str, user_id: str):
@@ -366,7 +367,9 @@ class EnvManager(BQCore):
 
 
 # Instantiate
+print("Instantiating global env_manager")
 env_manager = EnvManager()
+print("Global env_manager instantiated")
 
 def handle_get_env(payload):
     """

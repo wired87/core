@@ -154,7 +154,7 @@ class FermCreator(FermUtils):
             yterm=0,
             gf_coupling=psi,
             gg_coupling=psi,
-            dmu_psi=self.dmu(dim),
+            dmu_psi=self.dmu(pos),
             psi=psi,
             dirac=psi,
             psi_bar=psi,

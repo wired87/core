@@ -8,7 +8,7 @@ import io
 import re
 
 from google.api import policy_pb2
-from google.api_core.exceptions import NotFound
+from google.api_core.exceptions import NotFound, Conflict
 from google.cloud.bigquery.table import _EmptyRowIterator
 
 from google.cloud import bigquery
@@ -17,6 +17,8 @@ from a_b_c.bq_agent._bq_core import BQ_DATASET_ID
 from core.app_utils import GCP_ID
 from auth.load_sa_creds import load_service_account_credentials
 
+
+_bq_client_singleton = None
 
 class BQGroundZero:
 
@@ -27,12 +29,25 @@ class BQGroundZero:
     DEFAULT_TIMESTAMP = "CURRENT_TIMESTAMP()"
 
     def __init__(self, dataset_id=None):
+        global _bq_client_singleton
+        print("BQGroundZero.__init__ started")
         self.pid = GCP_ID
         self.ds_id = dataset_id or BQ_DATASET_ID
         self.ds_ref = f"{GCP_ID}.{self.ds_id}"
-        self.bqclient = bigquery.Client(
-            credentials=load_service_account_credentials()
-        )
+        
+        if _bq_client_singleton:
+            print("Using shared BQ client")
+            self.bqclient = _bq_client_singleton
+        else:
+            print("Loading creds...")
+            creds = load_service_account_credentials()
+            print(f"Creds loaded: {creds is not None}")
+            print("Initializing bigquery.Client...")
+            self.bqclient = bigquery.Client(
+                credentials=creds
+            )
+            _bq_client_singleton = self.bqclient
+            print("bigquery.Client initialized")
 
 
     def ensure_dataset_exists(self, ds_name=None):
@@ -174,7 +189,6 @@ class BQGroundZero:
 
     def table_schema_query(self, table):
         return f"""
-        
         SELECT
             column_name, data_type
         FROM
@@ -327,8 +341,11 @@ class BQCore(BQGroundZero):
                 print(f"Table '{table_id}' not found. Creating with provided schema.")
                 bq_schema_fields = self.convert_dict_shema_bq(schema)
                 new_table = bigquery.Table(table_ref, schema=bq_schema_fields)
-                self.bqclient.create_table(new_table)
-                print(f"Table '{table_id}' created successfully.")
+                try:
+                    self.bqclient.create_table(new_table)
+                    print(f"Table '{table_id}' created successfully.")
+                except Conflict:
+                    print(f"Table '{table_id}' already exists (Conflict).")
             else:
                 print(f"Table '{table_id}' not found. Creation is disabled.")
         except Exception as e:
@@ -571,8 +588,10 @@ class BQCore(BQGroundZero):
         except NotFound:
             print(f"Table {table_name} not found, creating...")
             table = bigquery.Table(table_ref, schema=schema)
-
-            self.bqclient.create_table(table)
+            try:
+                self.bqclient.create_table(table)
+            except Conflict:
+                print(f"Table {table_name} already exists (Conflict).")
 
         except Exception as e:
             print(f"Erro ensure_table_exists:{e}")

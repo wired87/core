@@ -11,11 +11,17 @@ from typing import Dict, Any, List
 import os
 import dotenv
 
-dotenv.load_dotenv()
-from google import genai
-from google.cloud import bigquery
+from utils.str_size import get_str_size
 
+print("QBrainManager: Importing dotenv...")
+dotenv.load_dotenv()
+print("QBrainManager: Importing genai... SKIPPED")
+# from google import genai
+print("QBrainManager: Importing bigquery...")
+from google.cloud import bigquery
+print("QBrainManager: Importing BQCore...")
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
+print("QBrainManager: Imports done")
 
 class QBrainTableManager(BQCore):
     """
@@ -234,6 +240,8 @@ class QBrainTableManager(BQCore):
         print(f"QBrainTableManager initialized with dataset: {self.DATASET_ID}")
         
         try:
+            print("Importing genai locally...")
+            from google import genai
             self.genai_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
         except Exception as e:
             print(f"Warning: Failed to initialize GenAI client: {e}")
@@ -809,22 +817,26 @@ class QBrainTableManager(BQCore):
         Updates the 'pattern' column for a specific environment in the 'envs' table.
         Uses upsert_copy to maintain history.
         """
-        print(f"Update Env Pattern for {env_id}")
-        table_name = "envs"
-        keys = {"id": env_id, "user_id": user_id}
-        
-        # pattern_data is likely a dict, so we convert it to JSON string
-        # BQ schema for 'pattern' is STRING.
-        pattern_str = json.dumps(pattern_data)
-        
-        updates = {"pattern": pattern_str}
-        
-        success = self.upsert_copy(table_name, keys, updates)
-        if success:
-            print(f"Successfully updated pattern for env {env_id}")
-        else:
-            print(f"Failed to update pattern for env {env_id}")
-        return success
+        try:
+            print(f"Update Env Pattern for {env_id}")
+            table_name = "envs"
+            keys = {"id": env_id, "user_id": user_id}
+
+            # pattern_data is likely a dict, so we convert it to JSON string
+            # BQ schema for 'pattern' is STRING.
+            pattern_str = json.dumps(pattern_data)
+            get_str_size(pattern_str)
+
+            updates = {"pattern": pattern_str}
+
+            success = self.upsert_copy(table_name, keys, updates)
+            if success:
+                print(f"Successfully updated pattern for env {env_id}")
+            else:
+                print(f"Failed to update pattern for env {env_id}")
+            return success
+        except Exception as e:
+            print(f"Error updating pattern for env {env_id}", e)
 
     def set_item(self, table_name: str, items: Dict[str, Any] or list[dict], keys: Dict[str, Any] = None) -> bool:
         """

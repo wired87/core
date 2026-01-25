@@ -1,11 +1,10 @@
+import base64
 import json
 import pprint
 
 from itertools import product
 
-
 import numpy as np
-
 from bob_builder.artifact_registry.artifact_admin import ArtifactAdmin
 from core.env_manager import EnvManager
 
@@ -21,7 +20,6 @@ from core.user_manager import UserManager
 from core.module_manager.mcreator import ModuleCreator
 from qf_utils.all_subs import ALL_SUBS
 from utils.get_shape import get_modular_shape, extract_complex
-from utils.str_size import get_str_size
 from utils.xtract_trailing_numbers import extract_trailing_numbers
 from workflows.deploy_sim import DeploymentHandler
 
@@ -45,6 +43,10 @@ class Guard(
     # todo cross module param edge map
     """
     nodes -> guard: extedn admin_data
+
+    todo: curretnly all dims implemented within single db inject-> create db / d whcih captures jsut sinfle point
+
+    #
     """
 
     def __init__(
@@ -76,8 +78,8 @@ class Guard(
         self.qb=QBrainTableManager()
         print("DEBUG: QBrainTableManager initialized")
         self.world_cfg=None
-        self.artifact_admin = ArtifactAdmin()
         print("DEBUG: ArtifactAdmin initialized")
+        self.artifact_admin = ArtifactAdmin()
 
         self.time = 0
 
@@ -157,10 +159,11 @@ class Guard(
 
                 injections = field_data.get("injections", {})
                 for pos, inj_id in injections.items():
-                    # add clean inj id
+                    # add clean inj_id (inj_id = id in db from pattern)
                     inj_ids.add(inj_id)
 
                     inj_id = f"{pos}__{inj_id}"
+                    print("ADD INJECTION", inj_id)
                     self.g.add_node(
                         {
                             "nid": inj_id,
@@ -222,6 +225,9 @@ class Guard(
                     )
         self.g.print_status_G()
         print("create_edges... done")
+
+
+
 
 
     def check_create_ghost_mod(self, env_id):
@@ -320,48 +326,6 @@ class Guard(
         print("handle_env... done")
 
 
-
-    def handle_methods(self, module_ids:list[str]):
-        print("handle_methods...")
-        for mid in module_ids:
-            mod_node = self.g.get_node(nid=mid)
-            mmethods = mod_node["methods"]
-
-            if isinstance(mmethods, str):
-                mmethods = json.loads(mmethods)
-
-            print("mod_node methods", mmethods)
-
-            methods = self.qb.row_from_id(
-                nid=mmethods,
-                table=self.method_manager.METHODS_TABLE,
-            )
-            print("methods", methods)
-
-            methods = {
-                item["id"]: item
-                for item in methods
-            }
-            print("methods1", methods)
-
-            for k, (method_id, method_data) in enumerate(methods.items()):
-                self.g.add_node({
-                    "nid": method_id,
-                    "type": "METHOD",
-                    **method_data,
-                })
-
-                # MODULE -> METHOD
-                self.g.add_edge(
-                    mid,
-                    method_id,
-                    attrs={
-                        "rel": "has_method",
-                        "src_layer": "MODULE",
-                        "trgt_layer": "METHOD",
-                    }
-                )
-        print("handle_methods... done")
 
 
 
@@ -492,7 +456,55 @@ class Guard(
         print("update_edges... done")
 
 
-    def sim_start_process(self, env_id, env_data):
+    def main(self, env_id, env_data):
+        self.data_handler(env_id, env_data)
+        components = self.converter(env_id)
+        self.handle_deployment(env_id, components)
+        print("main... done")
+
+
+    def handle_deployment(self, env_id, components):
+        print("handle_deployment...")
+        try:
+            world_cfg = self.create_vm_cfgs(env_id)
+            # SAVE CFG
+            self.module_db_manager.qb.update_env_pattern(
+                env_id=env_id,
+                pattern_data=components,
+                user_id=self.user_id
+            )
+            if self.testing is False:
+                # Etend env var cfg structure
+                container_env = self.deployment_handler.env_creator.create_env_variables(
+                    env_id=env_id,
+                    cfg=world_cfg
+                )
+
+                # get cfg
+                vm_payload = self.deployment_handler.get_vm_cfg(
+                    instance_name=env_id,
+                    testing=self.testing,
+                    image=self.artifact_admin.get_latest_image(),
+                    container_env=container_env
+                )
+
+                self.deploy_vms(vm_payload)
+
+                # Update status
+                self.user_manager.qb.set_item(
+                    "envs",
+                    {"status": "IN_PROGRESS"},
+                    keys={"id": env_id, "user_id": self.user_id}
+                )
+            else:
+                print("save file local...")
+                with open(r"C:\Users\bestb\PycharmProjects\BestBrain\test_out.json", "w") as f:
+                    f.write(json.dumps(components))
+        except Exception as e:
+            print("Err handle_deployment:", e)
+        print("handle_deployment... done")
+
+    def data_handler(self, env_id, env_data):
         """
         1. Parse payload to get IDs.
         2. Batch fetch data.
@@ -547,13 +559,6 @@ class Guard(
                         except Exception as e:
                             print(f"Error parsing interactant_fields for {fid}: {e}")
 
-
-                    # handle comlex conversion
-                    # FETCH ENV CONSTANTS
-                    env_constants = self.qb.row_from_id(
-                        fattrs["keys"],
-                        table="params",
-                    )
 
                     # create complex map for tbhe db indexing
 
@@ -665,7 +670,8 @@ class Guard(
                     else:
                         self.g.update_node({"nid": inj_id, "type": "INJECTION", })
 
-        #self.handle_methods(module_ids=list(module_ids))
+        self.handle_methods(module_ids=list(module_ids))
+
 
         print("Handling field interactants...")
         self.handle_field_interactants(
@@ -676,16 +682,7 @@ class Guard(
         # ETEND FIELDS PARAMS WITH RETURN KEYS
         self.extend_fields_keys()
 
-        try:
-            print("Calling main...")
-            self.main(
-                env_id,
-                env_node=self.g.get_node(env_id)
-            )
-            print("Pattern Compiled:")
-        except Exception as e:
-            print(f"Error in main process: {e}")
-        print("Graph populated with fetched data.")
+        print("data_hanadler... done")
 
 
     def add_field_index(self, fid):
@@ -703,23 +700,25 @@ class Guard(
             return key, int(numbers)
 
 
-    def main(self, env_id:str, env_node:dict):
+    def converter(self, env_id:str):
         """
         CREATE/COLL ECT PATTERNS FOR ALL ENVS AND CREATE VM
         """
         print("Main started...")
-
+        env_node = self.g.get_node(env_id)
         modules: list = self.g.get_nodes(
             filter_key="type",
             filter_value="MODULE",
         )
 
         self.DB = self.create_db(
-            modules, env_node["amount_of_nodes"]) # single param lvl -> todo grid: scale vertical
+            modules,
+            env_node["amount_of_nodes"]
+        ) # single param lvl -> todo grid: scale vertical
 
-        edge_db_to_method_variation_struct = self.set_edge_db_to_method()
+        db_to_method = self.set_edge_db_to_method()
 
-        methods, method_controller = self.method_layer()
+        methods, method_controller = self.method_layer(modules)
 
         method_to_db = self.set_edge_method_to_db(
             modules,
@@ -729,27 +728,23 @@ class Guard(
 
         # create iterator last
         iterators = self.set_iterator_from_humans()
-        iterators["DB_FIELD_CONTROLLER"] = self.DB["DB_FIELD_CONTROLLER"]
         iterators["method_controller"] = method_controller
 
+        self.DB["DB"] = base64.b64encode(self.DB["DB"]).decode("utf-8")
+
         components = {
+            "DB": json.dumps(self.DB),
+            "ITERATORS": iterators,
+            "METHODS": methods,
+            "INJECTIONS": injection_patterns,
+            "db_to_method": db_to_method,
             "method_to_db": method_to_db,
-            "DB": self.DB,
-            "iterators": iterators,
-            "methods": methods,
-            "injection_patterns": injection_patterns,
-            "edge_db_to_method_variation_struct": edge_db_to_method_variation_struct,
         }
+
         print("components created")
         pprint.pp(components)
-
-        vm_payload = self.create_vm_cfgs(
-            env_id=env_id,
-            **components
-        )
-
-        #self.deploy_vms(vm_payload)
         print("Main... done")
+        return components
 
 
     def deploy_vms(self, vm_payload):
@@ -772,83 +767,23 @@ class Guard(
 
         # BOB BUILDER ACTION
         world_cfg = {
-
             **cfg,
-
-            "WORLD_CFG": {
-                "sim_time": env_node.get("sim_time", 1),
-                "amount_nodes": env_node.get("amount_of_nodes", 1),
-                "dims": env_node.get("dims", 3),
-            },
+            "ENV_ID": env_id,
+            "START_TIME": env_node.get("sim_time", 1),
+            "AMOUNT_NODES": env_node.get("amount_of_nodes", 1),
+            "DIMS": env_node.get("dims", 3),
         }
+
         cfg_str = json.dumps(world_cfg)
 
-        #cfg_bytes = bytes(cfg_str.encode("utf-8"))
-
-        if self.testing:
-            with open(rf"C:\Users\bestb\PycharmProjects\BestBrain\test_out.json", "w", encoding="utf-8") as f:
-                f.write(cfg_str)
-
-        get_str_size(cfg_str)
-
-        # SAVE to DB
-        self.update_env_pattern(env_id=env_id, pattern=world_cfg)
-
-        # Etend env var cfg structure
-        container_env = self.deployment_handler.env_creator.create_env_variables(
-            env_id=env_id,
-            cfg=world_cfg
-        )
-
-        # get cfg
-        vm_payload = self.deployment_handler.get_vm_cfg(
-            instance_name=env_id,
-            testing=self.testing,
-            image=self.artifact_admin.get_latest_image(),
-            container_env=container_env
-        )
-        #print(vm_payload)
-        print("create_vm_cfgs finished... done")
-        return vm_payload
+        return cfg_str
 
 
-    def update_env_pattern(self, env_id, pattern):
-        try:
-            self.module_db_manager.qb.update_env_pattern(
-                env_id=env_id,
-                pattern_data=pattern,
-                user_id=self.user_id
-            )
-        except Exception as e:
-            print(f"Error updating env pattern: {e}")
+
 
     def get_state(self):
         return len(self.fields) and self.world_cfg
 
-
-
-
-    def set_wcfg(self, world_cfg):
-        self.world_cfg = world_cfg
-
-        amount_nodes = world_cfg["amount_of_nodes"]
-
-        schema_grid = [
-            (x, y, z)
-            for x in range(amount_nodes)
-            for y in range(amount_nodes)
-            for z in range(amount_nodes)
-        ]
-
-        node = {
-            "nid": world_cfg["env_id"],
-            "cfg": world_cfg,
-            "params": self.create_env(world_cfg),
-            "schema_grid": schema_grid,
-            "type": "ENV",
-        }
-        self.g.add_node(node)
-        return node
 
 
     def handle_module_ready(
@@ -875,7 +810,11 @@ class Guard(
         # exact same format
         print("set_inj_pattern...")
 
-        struct = []
+        INJECTOR = {
+            "time":[],
+            "indices":[],
+            "values":[],
+        }
 
         try:
             amount_nodes = env_attrs["amount_of_nodes"]
@@ -928,24 +867,43 @@ class Guard(
                                 print(f"INJs for FIELD {fid}:", len(injections))
 
                             if not injections or not len(injections):
-                                #print(f"no injections for field {fid}")
                                 continue
 
                             for inj_id, inj_attrs in injections:
                                 print("work inj_id:", inj_id)
-                                pos_index:int or None = schema_positions.index(tuple(eval(inj_id.split("__")[0])))
 
-                                print(f"pos_index {inj_id}:", pos_index)
-                                inj_pathway = (midx, fi, param_trgt_index, pos_index, inj_attrs["data"])
+                                # set the index within the extracted value slice of the 1d db
+
+                                pos_index_slice:int or None = schema_positions.index(
+                                    tuple(eval(inj_id.split("__")[0]))
+                                )
+
+                                print(f"pos_index {inj_id}:", pos_index_slice)
+
+                                ### BAUSTELLE
+                                for time, data in zip(inj_attrs["data"][0], inj_attrs["data"][1]):
+                                    if time not in INJECTOR["time"]:
+                                        INJECTOR["time"].append(time)
+                                        INJECTOR["indices"].append([])
+                                        INJECTOR["values"].append([])
+                                    tidx = INJECTOR["time"].index(time)
+                                    INJECTOR["indices"][tidx].append((midx, fi, param_trgt_index, pos_index_slice))
+                                    INJECTOR["values"][tidx].append(data)
+
+
+                                ###
+
+                                """inj_pathway = (midx, fi, param_trgt_index, pos_index_slice, inj_attrs["data"])
                                 struct.append(inj_pathway)
+                                """
                                 print(
-                                    f"set param pathway db from mod {midx} -> field {fattrs['nid']}({fi}) = {inj_pathway}"
+                                    f"set param pathway db from mod {midx} -> field {fattrs['nid']}({fi})"
                                 )
                             break
             print(f"set_inj_pattern... done")
         except Exception as e:
             print("Err set_inj_pattern", e)
-        return struct
+        return INJECTOR
 
 
 
@@ -992,8 +950,6 @@ class Guard(
             return pindex_map_fields
 
 
-
-
     def all_nodes_ready(self, trgt_types) -> bool:
         return all(
             attrs["ready"] is True
@@ -1037,9 +993,6 @@ class Guard(
         DB = {
             "DB": [],
             "AXIS": [],
-            #"DB_FIELD_CONTROLLER": [],
-            #"DB_PADDING": [],
-            "ITEM_LEN_DB_CONTROLLER": [],
             "DB_SHAPE": [],
             "AMOUNT_PARAMS_PER_FIELD": [],
             "DB_PARAM_CONTROLLER": [],
@@ -1065,7 +1018,7 @@ class Guard(
                 # --- iterate fields ---
                 for fid, fattrs in fields.items():
                     fidx = fattrs.get("field_index")
-                    print(f"  [field] apply pattern -> module={m_idx}, field={fidx}")
+                    print(f"[field] apply pattern -> module={m_idx}, field={fidx}")
 
                     # axis definition
                     xdef = fattrs.get("axis_def", [])
@@ -1107,8 +1060,8 @@ class Guard(
                     DB["AXIS"].extend(f_axis)
                     DB["DB_SHAPE"].extend(f_shape)
 
-                    # int len param in db (e.g. 3 for "000")
-                    DB["DB_PARAM_CONTROLLER"].append(f_len)
+                    # int len param in db unscaled (e.g. 3 for "000")
+                    DB["DB_PARAM_CONTROLLER"].extend(f_len)
 
                     # int len param / f
                     DB["AMOUNT_PARAMS_PER_FIELD"].append(plen_field)
@@ -1125,13 +1078,57 @@ class Guard(
         pprint.pp(DB)
         return DB
 
-    def method_layer(self):
-        print("method_layer... ")
 
-        modules = self.g.get_nodes(
-            filter_key="type",
-            filter_value="MODULE",
-        )
+
+
+    def handle_methods(self, module_ids:list[str]):
+        print("handle_methods...")
+        for mid in module_ids:
+            mod_node = self.g.get_node(nid=mid)
+            mmethods = mod_node["methods"]
+
+            if isinstance(mmethods, str):
+                mmethods = json.loads(mmethods)
+
+            print("mod_node methods", mmethods)
+
+            methods = self.qb.row_from_id(
+                nid=mmethods,
+                table=self.method_manager.METHODS_TABLE,
+            )
+            print("methods", methods)
+
+            methods = {
+                item["id"]: item
+                for item in methods
+            }
+            print("methods1", methods)
+
+            for k, (method_id, method_data) in enumerate(methods.items()):
+                self.g.add_node({
+                    "nid": method_id,
+                    "type": "METHOD",
+                    **method_data,
+                })
+
+                # MODULE -> METHOD
+                self.g.add_edge(
+                    mid,
+                    method_id,
+                    attrs={
+                        "rel": "has_method",
+                        "src_layer": "MODULE",
+                        "trgt_layer": "METHOD",
+                    }
+                )
+        print("handle_methods... done")
+
+
+
+
+
+    def method_layer(self, modules):
+        print("method_layer... ")
 
         mod_len_exclude_ghost = len(modules) -1
         print("method_layer mod_len_exclude_ghost", mod_len_exclude_ghost)
@@ -1182,7 +1179,6 @@ class Guard(
                         params = json.loads(params)
                     print(f"Params: {len(params)}")
 
-
                     method_struct[midx].append(
                         eqattrs.get("jax_code", eqattrs.get("code"))
                     )
@@ -1190,12 +1186,10 @@ class Guard(
             # flatten
             method_struct = [item for sublist in method_struct for item in sublist]
 
-
-
         except Exception as e:
             print("Err method_layer", e)
-        #pprint.pp(method_struct)
-        print("method_layer... done")
+
+        print(f"method_layer... done with {len(method_struct)} methods")
         return method_struct, method_controller
 
 
@@ -1279,7 +1273,7 @@ class Guard(
         # todo for field index includ again
 
         # db out gnn
-        edge_db_to_method_variation_struct = []
+        db_to_method = []
 
         # um Variationen und Gleichung zusammen zu mappen brauchen wir
         modules = self.g.get_nodes(
@@ -1457,7 +1451,7 @@ class Guard(
                                 print(f"param {pid} is not in interactant -> check GHOST FIELDS")
                                 for g, (gfid, gfattrs) in enumerate(ghost_fields):
                                     gikeys = gfattrs.get("keys")
-                                    gmod = self.g.get_node(nid=gfattrs.get("module_id"))
+
                                     if isinstance(gikeys, str):
                                         print("convert ikeys", gikeys)
                                         gikeys = json.loads(gikeys)
@@ -1469,6 +1463,7 @@ class Guard(
                                         pindex = gikeys.index(pid)
                                         print("interactant pindex", pindex, o)
 
+                                        gmod = self.g.get_node(nid="GHOST_MODULE")
                                         # ADD PARAM TO
                                         param_collector.append(
                                             self.get_db_index(
@@ -1507,13 +1502,13 @@ class Guard(
                         print(f"finished field_eq_param_struct for {fid}:")
                         print(len(field_eq_param_struct))
 
-                        # range im edge_db_to_method_variation_struct pro def ->
-                        edge_db_to_method_variation_struct.append(field_eq_param_struct)
+                        # range im db_to_method pro def ->
+                        db_to_method.append(field_eq_param_struct)
 
             print("set_edge_db_to_method... done")
         except Exception as e:
             print(f"Err set_edge_db_to_method: {e}")
-        return edge_db_to_method_variation_struct
+        return db_to_method
 
 
 
@@ -1595,7 +1590,7 @@ class Guard(
                                         pmod = self.g.get_node(nid=fiattrs["module_id"])
                                         param_collector.append(
                                             self.get_db_index(
-                                                pmod["modul_index"],
+                                                pmod["module_index"],
                                                 nfield_index,
                                                 pindex,
                                             ))
@@ -1613,7 +1608,7 @@ class Guard(
                                             pindex = gikeys.index(clean_pid)
                                             param_collector.append(
                                                 self.get_db_index(
-                                                    pmod["modul_index"],
+                                                    pmod["module_index"],
                                                     gfield_index,
                                                     pindex,
                                                 )
@@ -1886,7 +1881,7 @@ if __name__ == "__main__":
 
     guard = Guard(qfu, g, user_id)
 
-    guard.sim_start_process(
+    guard.main(
         env_id="env_7c87bb26138a427eb93cab27d0f5429f",
         env_data=payload["data"]["config"]["env_7c87bb26138a427eb93cab27d0f5429f"],
     )

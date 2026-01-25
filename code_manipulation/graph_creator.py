@@ -191,7 +191,7 @@ class StructInspector(ast.NodeVisitor):
             except Exception as e:
                 print("Err Agign ", e)
 
-    def convert_module_to_graph(self, code_content, module_name):
+    def convert_module_to_graph(self, code_content:str, module_name):
         """
         Parses code content, runs the inspector, and returns the graph admin_data.
         Takes code as a string input, as required by ast.parse.
