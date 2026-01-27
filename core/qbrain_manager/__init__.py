@@ -12,16 +12,12 @@ import os
 import dotenv
 
 from utils.str_size import get_str_size
+from google import genai
 
-print("QBrainManager: Importing dotenv...")
 dotenv.load_dotenv()
-print("QBrainManager: Importing genai... SKIPPED")
-# from google import genai
-print("QBrainManager: Importing bigquery...")
+
 from google.cloud import bigquery
-print("QBrainManager: Importing BQCore...")
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
-print("QBrainManager: Imports done")
 
 class QBrainTableManager(BQCore):
     """
@@ -240,8 +236,6 @@ class QBrainTableManager(BQCore):
         print(f"QBrainTableManager initialized with dataset: {self.DATASET_ID}")
         
         try:
-            print("Importing genai locally...")
-            from google import genai
             self.genai_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
         except Exception as e:
             print(f"Warning: Failed to initialize GenAI client: {e}")

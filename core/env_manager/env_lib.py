@@ -25,12 +25,8 @@ class EnvManager(BQCore):
     TABLE_ID = "envs"
 
     def __init__(self):
-        print("EnvManager.__init__ started")
-        """Initialize EnvManager."""
         super().__init__(dataset_id=self.DATASET_ID)
-        print("EnvManager.__init__ super init done")
         self.qb = QBrainTableManager()
-        print("EnvManager.__init__ QB init done")
         self.session_link_tref = f"session_to_envs"
 
     def _ensure_env_table(self):

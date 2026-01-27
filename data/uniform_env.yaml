@@ -7,7 +7,6 @@ G: 6.67430e-11
 #M: 5.972e24 # default from earth -> useless in a bare/vacuum env
 speed_light: 299792458
 planck_constant: 6.626e-34
-init: True
 theta_W: 28.7
 
 d: 50

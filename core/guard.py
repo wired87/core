@@ -19,6 +19,7 @@ from core.user_manager import UserManager
 
 from core.module_manager.mcreator import ModuleCreator
 from qf_utils.all_subs import ALL_SUBS
+from utils._np.expand_array import expand_structure
 from utils.get_shape import get_modular_shape, extract_complex
 from utils.xtract_trailing_numbers import extract_trailing_numbers
 from workflows.deploy_sim import DeploymentHandler
@@ -241,7 +242,7 @@ class Guard(
         self.g.add_node(dict(
             nid=ghost_mod_id,
             type="MODULE",
-            module_index=len(modules),
+            module_index=len(modules), # last module
             status="ghost",
         ))
 
@@ -256,17 +257,6 @@ class Guard(
             }
         )
 
-        # Link Env -> Module ->
-        # TREAT AS FIELD FOR PARAM GATHERING
-        self.g.add_edge(
-            ghost_mod_id,
-            env_id,
-            attrs={
-                "rel": "has_field",
-                "src_layer": "MODULE",
-                "trgt_layer": "FIELD",
-            }
-        )
         print("check_create_ghost_mod... done")
 
 
@@ -283,7 +273,7 @@ class Guard(
         values = [v["value"] for v in env_constants]
 
         # AXIS
-        axis_def = [v.get("axis_def", None) for v in env_constants]
+        axis_def = [None for _ in env_constants]
 
         # FETCH ENV
         res = self.qb.row_from_id(
@@ -310,6 +300,7 @@ class Guard(
             trgt_rel="has_field",
         )
 
+        print("GHOST_MOD FIELDS", fields, len(fields))
 
         print("ADD ENV FIELD")
         self.g.add_node(
@@ -323,35 +314,17 @@ class Guard(
                 field_index=len(fields),
             )
         )
+        self.g.add_edge(
+            "GHOST_MODULE",
+            env_id,
+            attrs={
+                "rel": "has_field",
+                "src_layer": "MODULE",
+                "trgt_layer": "FIELD",
+            }
+        )
         print("handle_env... done")
 
-
-
-
-
-
-    def handle_fields(self, module_ids:list[str]):
-        for mid in module_ids:
-            mod_node = self.g.get_node(nid=mid)
-            fields = self.qb.row_from_id(
-                list(mod_node["fields"]),
-                table=self.field_manager.FIELDS_TABLE
-            )
-            fields = {
-                item["id"]: item
-                for item in fields
-            }
-            for k, (field_id, field_data) in enumerate(fields.items()):
-                # MODULE -> FIELD
-                self.g.add_edge(
-                    mid,
-                    field_id,
-                    attrs={
-                        "rel": "has_field",
-                        "src_layer": "MODULE",
-                        "trgt_layer": "FIELD",
-                    }
-                )
 
 
     def handle_field_interactants(self, field_ids:list[str], env_id:str):
@@ -523,10 +496,11 @@ class Guard(
             env_id,
             env_data
         )
-
         print("Edges created.")
-        self.check_create_ghost_mod(env_id)
 
+
+
+        self.check_create_ghost_mod(env_id)
         self.handle_env(env_id)
         print("Env handled.")
 
@@ -716,9 +690,9 @@ class Guard(
             env_node["amount_of_nodes"]
         ) # single param lvl -> todo grid: scale vertical
 
-        db_to_method = self.set_edge_db_to_method()
+        db_to_method_struct:dict = self.set_edge_db_to_method(modules)
 
-        methods, method_controller = self.method_layer(modules)
+        method_struct:dict = self.method_layer(modules)
 
         method_to_db = self.set_edge_method_to_db(
             modules,
@@ -728,21 +702,20 @@ class Guard(
 
         # create iterator last
         iterators = self.set_iterator_from_humans()
-        iterators["method_controller"] = method_controller
 
-        self.DB["DB"] = base64.b64encode(self.DB["DB"]).decode("utf-8")
+
 
         components = {
-            "DB": json.dumps(self.DB),
-            "ITERATORS": iterators,
-            "METHODS": methods,
-            "INJECTIONS": injection_patterns,
-            "db_to_method": db_to_method,
-            "method_to_db": method_to_db,
+            **self.DB,
+            **iterators,
+            **method_struct,
+            **injection_patterns,
+            **db_to_method_struct,
+            "METHOD_TO_DB": method_to_db,
         }
 
         print("components created")
-        pprint.pp(components)
+        #pprint.pp(components)
         print("Main... done")
         return components
 
@@ -811,9 +784,9 @@ class Guard(
         print("set_inj_pattern...")
 
         INJECTOR = {
-            "time":[],
-            "indices":[],
-            "values":[],
+            "INJECTOR_TIME":[],
+            "INJECTOR_INDICES":[],
+            "INJECTOR_VALUES":[],
         }
 
         try:
@@ -854,8 +827,7 @@ class Guard(
                     for key_opt in trgt_keys:
                         if key_opt in f_keys:
                             # CKPT PARAM INDEX
-                            param_trgt_index = f_keys.index(key_opt)
-                            #print(f"{key_opt} in {fid}s params:", param_trgt_index)
+                            field_rel_param_trgt_index = f_keys.index(key_opt)
 
                             # 5. Loop Injections
                             injections = self.g.get_neighbor_list_rel(
@@ -878,24 +850,19 @@ class Guard(
                                     tuple(eval(inj_id.split("__")[0]))
                                 )
 
-                                print(f"pos_index {inj_id}:", pos_index_slice)
 
                                 ### BAUSTELLE
                                 for time, data in zip(inj_attrs["data"][0], inj_attrs["data"][1]):
-                                    if time not in INJECTOR["time"]:
-                                        INJECTOR["time"].append(time)
-                                        INJECTOR["indices"].append([])
-                                        INJECTOR["values"].append([])
-                                    tidx = INJECTOR["time"].index(time)
-                                    INJECTOR["indices"][tidx].append((midx, fi, param_trgt_index, pos_index_slice))
-                                    INJECTOR["values"][tidx].append(data)
+                                    if time not in INJECTOR["INJECTOR_TIME"]:
+                                        INJECTOR["INJECTOR_TIME"].append(time)
+                                        INJECTOR["INJECTOR_INDICES"].append([])
+                                        INJECTOR["INJECTOR_VALUES"].append([])
+                                        
+                                    tidx = INJECTOR["INJECTOR_TIME"].index(time)
+                                    INJECTOR["INJECTOR_INDICES"][tidx].append((midx, fi, field_rel_param_trgt_index, pos_index_slice))
+                                    INJECTOR["INJECTOR_VALUES"][tidx].append(data)
 
 
-                                ###
-
-                                """inj_pathway = (midx, fi, param_trgt_index, pos_index_slice, inj_attrs["data"])
-                                struct.append(inj_pathway)
-                                """
                                 print(
                                     f"set param pathway db from mod {midx} -> field {fattrs['nid']}({fi})"
                                 )
@@ -975,6 +942,9 @@ class Guard(
         )
         print("handle_mod_stack finished successfully")
 
+
+
+
     def create_db(self, modules, amount_nodes):
         """
         Collect all node values and stack them into a flat DB
@@ -1003,10 +973,6 @@ class Guard(
             for mid, m in modules:
                 m_idx = m.get("module_index")
 
-                if "GHOST" in mid.upper():
-                    print(f"[create_db] skip ghost module: {mid}")
-                    continue
-
                 print(f"[create_db] module={mid}, idx={m_idx}")
 
                 fields = self.g.get_neighbor_list_rel(
@@ -1015,6 +981,8 @@ class Guard(
                     as_dict=True
                 )
 
+                keys = list(fields.keys())
+                print(f">>>{mid} create_db FIELDS", keys, len(keys))
                 # --- iterate fields ---
                 for fid, fattrs in fields.items():
                     fidx = fattrs.get("field_index")
@@ -1042,7 +1010,9 @@ class Guard(
                         # flatten any shape
                         val_len = []
                         extract_complex(v, collected_values, val_len)
-                        vals_item_lens.append(len(val_len))
+                        vals_item_lens.append(
+                            len(val_len)
+                        )
 
                         print(f"[val {vi}] shape={shape}, len={len(val_len)}")
 
@@ -1060,24 +1030,24 @@ class Guard(
                     DB["AXIS"].extend(f_axis)
                     DB["DB_SHAPE"].extend(f_shape)
 
-                    # int len param in db unscaled (e.g. 3 for "000")
+                    # int len single param in db unscaled (e.g. 3 for "000")
                     DB["DB_PARAM_CONTROLLER"].extend(f_len)
-
+                    # AMOUNT_PARAMS_PER_FIELD
                     # int len param / f
                     DB["AMOUNT_PARAMS_PER_FIELD"].append(plen_field)
 
             # --- finalize DB ---
             print("DB before serialization:", DB["DB"])
-            DB["DB"] = np.array(DB["DB"], dtype=np.complex64).tobytes()
+
+            DB["DB"] = base64.b64encode(
+                np.array(DB["DB"], dtype=np.complex64).tobytes()
+            ).decode("utf-8")
 
             print("[create_db] done")
 
         except Exception as e:
             print("[create_db][ERROR]", e)
-
-        pprint.pp(DB)
         return DB
-
 
 
 
@@ -1125,21 +1095,16 @@ class Guard(
 
 
 
-
-
     def method_layer(self, modules):
         print("method_layer... ")
 
         mod_len_exclude_ghost = len(modules) -1
         print("method_layer mod_len_exclude_ghost", mod_len_exclude_ghost)
-
-        method_struct = [
-            [] for _ in range(mod_len_exclude_ghost)
-        ]
-
-        method_controller = [
-            0 for _ in range(mod_len_exclude_ghost)
-        ]
+        method_struct = {
+            "METHOD_PARAM_LEN_CTLR": [[] for _ in range(mod_len_exclude_ghost)],
+            "METHODS": [[] for _ in range(mod_len_exclude_ghost)],
+            "METHODS_PER_MOD_LEN_CTLR": [0 for _ in range(mod_len_exclude_ghost)],
+        }
 
         try:
             print("method_layer compilation...")
@@ -1160,7 +1125,7 @@ class Guard(
                     as_dict=True,
                 )
 
-                mlen  = len(list(methods.keys()))
+                mlen = len(list(methods.keys()))
                 if not mlen:
                     print("method_layer... len methods", mlen)
                     continue
@@ -1168,29 +1133,40 @@ class Guard(
                 print("method_layer eqs", type(methods))
 
                 # len methods per module
-                method_controller[midx] = mlen
+                method_struct["METHODS_PER_MOD_LEN_CTLR"][midx] = mlen
 
                 # Iterate Equations
                 for eq_idx, (eqid, eqattrs) in enumerate(methods.items()):
-
                     # PARAMS from METHOD
                     params = eqattrs.get("params", [])
                     if isinstance(params, str):
                         params = json.loads(params)
                     print(f"Params: {len(params)}")
 
-                    method_struct[midx].append(
+                    method_struct["METHOD_PARAM_LEN_CTLR"][midx].append(
+                        len(params)
+                    )
+
+                    method_struct["METHODS"][midx].append(
                         eqattrs.get("jax_code", eqattrs.get("code"))
                     )
 
             # flatten
-            method_struct = [item for sublist in method_struct for item in sublist]
+            flattened_methods = []
+            for sublist in method_struct["METHODS"]:
+                flattened_methods.extend(sublist)
+            method_struct["METHODS"] = flattened_methods
+
+            flatten_ctlr = []
+            for sublist in method_struct["METHOD_PARAM_LEN_CTLR"]:
+                flatten_ctlr.extend(sublist)
+            method_struct["METHOD_PARAM_LEN_CTLR"] = flatten_ctlr
 
         except Exception as e:
             print("Err method_layer", e)
-
-        print(f"method_layer... done with {len(method_struct)} methods")
-        return method_struct, method_controller
+        pprint.pp(method_struct)
+        print(f"method_layer... done")
+        return method_struct
 
 
     def set_edge_method_to_db(self, modules):
@@ -1219,7 +1195,7 @@ class Guard(
                     print("set_edge_db_to_method... len methods 0")
                     continue
 
-                print("set_edge_db_to_method meq", type(methods))
+                #print("set_edge_db_to_method meq", type(methods))
 
                 # get module fields
                 fields = self.g.get_neighbor_list_rel(
@@ -1232,23 +1208,11 @@ class Guard(
                     # print("eqattrs", eqattrs)
                     print(f"Equation: {eqid}")
 
-                    # PARAMS from METHOD
-                    params = eqattrs.get("params", [])
-                    print("methods params", params)
-
-                    # PARAMS from METHOD
-                    return_key = eqattrs.get("return_key", [])
-                    print(f"methods {eqid} return_key", return_key)
-
                     for field_index, (fid, fattrs) in enumerate(fields.items()):
                         keys: list[str] or str = fattrs.get("keys", [])
 
                         return_key = eqattrs.get("return_key")
-                        print("return_key", return_key)
 
-                        ret_idx = keys.index(
-                            return_key
-                        ) if return_key in keys else 0
                         rindex = keys.index(return_key)
 
                         fmod = self.g.get_node(nid=fattrs["module_id"])
@@ -1261,19 +1225,22 @@ class Guard(
                                 rindex,
                             )
                         )
-                        print(f"Return Map: {return_key} -> {ret_idx}")
+                        #print(f"Return Map: {return_key} -> {ret_idx}")
         except Exception as e:
             print("Err set_edge_method_to_db", e)
             pass
         return return_key_map
 
 
-    def set_edge_db_to_method(self):
+    def set_edge_db_to_method(self, modules):
         print("set_edge_db_to_method...")
         # todo for field index includ again
-
+        mlen = len(modules)-1
         # db out gnn
-        db_to_method = []
+        db_to_method = {
+            "DB_TO_METHOD_EDGES": self.get_empty_method_structure(set_zero=False),
+            "DB_CTL_VARIATION_LEN_PER_EQUATION": [[] for _ in range(mlen)],
+        }
 
         # um Variationen und Gleichung zusammen zu mappen brauchen wir
         modules = self.g.get_nodes(
@@ -1320,7 +1287,6 @@ class Guard(
                     continue
 
                 print("set_edge_db_to_method meq", type(methods))
-                #
                 # get module fields
                 fields = self.g.get_neighbor_list_rel(
                     node=mid,
@@ -1336,7 +1302,7 @@ class Guard(
                 for eq_idx, (eqid, eqattrs) in enumerate(methods.items()):
                     # print("eqattrs", eqattrs)
                     print(f"Equation: {eqid}")
-
+                    EQ_AMOUNT_VRIATIONS = 0
                     # PARAMS from METHOD
                     params = eqattrs.get("params", [])
                     print("methods params", params)
@@ -1350,13 +1316,9 @@ class Guard(
 
                     if isinstance(params, str):
                         params = json.loads(params)
-                    print(f"Params: {len(params)}")
+                    #print(f"Params: {len(params)}")
 
                     for field_index, (fid, fattrs) in enumerate(fields.items()):
-                        #print(f"Field: {fid}", field_index)
-
-                        fidx = module.get("field_index")
-                        print("fidx", fidx)
 
                         # Space to save all variations for all inteactions for all equations
                         field_eq_param_struct = []
@@ -1408,7 +1370,7 @@ class Guard(
 
                                 collected=True
 
-                                print(f"Mapped Self Param: {pid} -> {fid}")
+                                #print(f"Mapped Self Param: {pid} -> {fid}")
 
                             else:
                                 print(f"param {pid} not in {fid} keys")
@@ -1440,12 +1402,9 @@ class Guard(
                                                 fmod["module_index"],
                                                 nfield_index,
                                                 pindex,
-
                                             )
                                         )
-
                                         collected =True
-                                        #print(f"param {pid} found in ", finid)
 
 
                                 print(f"param {pid} is not in interactant -> check GHOST FIELDS")
@@ -1477,8 +1436,10 @@ class Guard(
 
                                     else:
                                         print(f"param {pid} cannot be found in neighbor {gfid} for ", fid)
-                                field_eq_param_struct.append(param_collector)
 
+                                    #
+                                    if collected is True:
+                                        field_eq_param_struct.append(param_collector)
 
                             if collected is False:
                                 print(f"PARAM {pid} COULD NOT BE FOUND in {fid} or its interactants... ERR")
@@ -1495,32 +1456,53 @@ class Guard(
                                     )
                                 )
                                 print(f"Added ghost param {pid} to {fid}")
-
-                        # ADD EQ BLOCK TO FIELD 8 SO EACH FIELD HAS A SPACE FOR EACH EQ
-                        # identify longest list
+                                field_eq_param_struct.append(param_collector)
 
                         print(f"finished field_eq_param_struct for {fid}:")
-                        print(len(field_eq_param_struct))
+                        print("field_eq_param_struct", len(field_eq_param_struct))
 
-                        # range im db_to_method pro def ->
-                        db_to_method.append(field_eq_param_struct)
+                        expand_field_eq_variation_struct = expand_structure(
+                            struct=field_eq_param_struct
+                        )
 
+                        print("expand DB_TO_METHOD_EDGES")
+
+                        # flat expand edge struct
+                        for item in expand_field_eq_variation_struct:
+                            db_to_method["DB_TO_METHOD_EDGES"][eq_idx].extend(item)
+                            # todo calc just / len(method_param) to sort them
+
+                        print("expand_field_eq_variation_struct", len(expand_field_eq_variation_struct))
+                        EQ_AMOUNT_VRIATIONS += len(field_eq_param_struct)
+
+                    db_to_method[
+                        "DB_CTL_VARIATION_LEN_PER_EQUATION"
+                    ][m_idx].append(EQ_AMOUNT_VRIATIONS)
+
+            flatten_variations = []
+            for item in db_to_method["DB_TO_METHOD_EDGES"]:
+                flatten_variations.extend(item)
+            db_to_method["DB_TO_METHOD_EDGES"] = flatten_variations
+
+            # extend all mdules
+            flatten_amount_variations = []
+            for item in db_to_method["DB_CTL_VARIATION_LEN_PER_EQUATION"]:
+                flatten_amount_variations.extend(item)
+            db_to_method["DB_CTL_VARIATION_LEN_PER_EQUATION"] = flatten_amount_variations
             print("set_edge_db_to_method... done")
+
         except Exception as e:
             print(f"Err set_edge_db_to_method: {e}")
+        print("db_to_method", db_to_method)
         return db_to_method
 
 
-
     def set_iterator_from_humans(self, ):
-        print("set_iterator_from_humans: Compiling GPU execution skeleton...")
 
         iterator = {
-            "modules": [],  # Anzahl Gleichungen pro Modul [n1, n2, ...]
-            "len_params_per_method": [],  # Anzahl Parameter pro Gleichung [p1, p2, ...]
-            "fields": [],  # Anzahl Felder pro Modul [f1, f2, ...]
-            "field_variations": [],  # Anzahl Variationen (Interaktionen) pro Feld [v1, v2, ...]
-            "db_params": [],  # Param-Indizes (Mapping zu flacher DB)
+            "MODULES": [],  # Anzahl Gleichungen pro Modul [n1, n2, ...]
+            "FIELD_VARIATIONS": [],
+            "FIELDS": [],  # Anzahl Felder pro Modul [f1, f2, ...]
         }
 
         modules = self.g.get_nodes(filter_key="type", filter_value="MODULE")
@@ -1534,11 +1516,11 @@ class Guard(
                 # A. Felder des Moduls sammeln
                 fields = self.g.get_neighbor_list_rel(node=mid, trgt_rel="has_field", as_dict=True)
                 len_fields = len(fields)
-                iterator["fields"].append(len_fields)
+                iterator["FIELDS"].append(len_fields)
 
                 # B. Methoden (Gleichungen) des Moduls sammeln
                 methods = self.g.get_neighbor_list_rel(trgt_rel="has_method", node=mid, as_dict=True)
-                iterator["modules"].append(len(methods))
+                iterator["MODULES"].append(len(methods))
 
                 for eq_idx, (eqid, eqattrs) in enumerate(methods.items()):
                     # Parameter-Definitionen der Gleichung
@@ -1547,7 +1529,6 @@ class Guard(
                     params_origin = eqattrs.get("origin", None) or ["" for _ in range(len(params))]
 
                     # Pro Gleichung: Wie viele Parameter erwartet sie insgesamt?
-                    iterator["len_params_per_method"].append(len(params))
 
                     for fid, fattrs in fields.items():
                         # Vorbereitung der Keys des aktuellen Feldes
@@ -1621,25 +1602,14 @@ class Guard(
                         # Identifiziert die maximale Tiefe (Anzahl der Interaktanten) für dieses Feld
                         list_params = [x for x in field_eq_param_struct if isinstance(x, list)]
                         num_variations = len(max(list_params, key=len)) if list_params else 1
-                        iterator["field_variations"].append(num_variations)
+                        iterator["FIELD_VARIATIONS"].append(num_variations)
 
-                        # Erstellung der flachen Mapping-Struktur [Variation1_Params, Variation2_Params, ...]
-                        for v_idx in range(num_variations):
-                            variation_row = []
-                            for p_entry in field_eq_param_struct:
-                                if isinstance(p_entry, list):
-                                    variation_row.append(p_entry[v_idx] if v_idx < len(p_entry) else p_entry[0])
-                                else:
-                                    variation_row.append(p_entry)
-                            iterator["db_params"].extend(variation_row)
-
-            print("set_iterator_from_humans: GPU Skeleton successfully compiled.")
+            #print("set_iterator_from_humans: GPU Skeleton successfully compiled.")
             return iterator
 
         except Exception as e:
             print(f"Error in set_iterator_from_humans: {e}")
             raise e
-
 
 
     def extend_fields_keys(self):
@@ -1765,16 +1735,13 @@ class Guard(
             filter_value="MODULE",
         )
         try:
-            # 1. Calculate Max Module Index
-            for mid, m in modules:
-                print(f">>>module {mid}", m["module_index"])
 
             #nit with size max_index + 1
             modules_struct = []
             print("modules_struct initialized size:", len(modules_struct))
 
             for i, (mid, m) in enumerate(modules):
-                if not include_ghost_mod:
+                if include_ghost_mod is None or include_ghost_mod is False:
                     if "GHOST" in mid.upper(): continue
 
                 print(f"m_idx for {mid}:{i}")
@@ -1787,69 +1754,18 @@ class Guard(
                     trgt_rel="has_field",
                     as_dict=True,
                 )
-
+                keys = list(fields.keys())
                 print(f"get_empty_field_structure fields for {mid}")
 
                 field_struct = []
-                for _ in range(len(fields)):
+                for _ in range(len(keys)):
                     field_struct.append([])
 
-                print(f"field_struct created for {mid}")
+                print(f">>>{mid} field_struct:", keys, len(keys))
 
                 # SET EMPTY FIELDS STRUCT AT MODULE INDEX
                 modules_struct.append(field_struct)
-            pprint.pp(modules_struct)
             print("get_empty_field_structure... done")
-            return modules_struct
-        except Exception as e:
-            print("Err get_empty_field struct:", e)
-
-
-    def get_empty_method_structure(self, include_ghost_mod=True, set_none=False):
-        modules: list = self.g.get_nodes(
-            filter_key="type",
-            filter_value="MODULE",
-        )
-        try:
-            # 1. Calculate Max Module Index
-            for midx, (mid, m) in enumerate(modules):
-                print(f">>>module {mid}", midx)
-
-            #nit with size max_index + 1
-            modules_struct = [
-                [] for _ in range(len(modules))
-            ]
-
-            print("modules_struct initialized size:", len(modules_struct))
-
-            for i, (mid, m) in enumerate(modules):
-                print("get_empty_method_structure", mid)
-                if not include_ghost_mod:
-                    if "GHOST" in mid.upper(): continue
-
-                m_idx = m.get("module_index")
-                print(f"m_idx for {mid}:{m_idx}")
-                if m_idx is None:
-                    continue
-
-                # get module fields
-                fields = self.g.get_neighbor_list_rel(
-                    node=mid,
-                    trgt_rel="has_field",
-                    as_dict=True,
-                )
-
-                print(f"get_empty_field_structure fields for {mid}")
-
-                field_struct = [
-                    None if set_none is False else []
-                    for _ in range(len(fields))
-                ]
-                print(f"field_struct created for {mid}")
-                # SET EMPTY FIELDS STRUCT AT MODULE INDEX
-                modules_struct[m_idx] = field_struct
-
-            print("modules_struct... done")
             return modules_struct
         except Exception as e:
             print("Err get_empty_field struct:", e)
@@ -1863,6 +1779,24 @@ class Guard(
             field_idx,
             param_in_field_idx,
         )
+
+
+
+    def get_empty_method_structure(self, set_zero=True, ):
+        methods: list = self.g.get_nodes(
+            filter_key="type",
+            filter_value="METHOD",
+        )
+        try:
+            print("modules_struct... done")
+            return [
+                0 if set_zero is True else []
+                for _ in methods
+            ]
+        except Exception as e:
+            print("Err get_empty_field struct:", e)
+
+
 
 
 if __name__ == "__main__":
@@ -1886,9 +1820,19 @@ if __name__ == "__main__":
         env_data=payload["data"]["config"]["env_7c87bb26138a427eb93cab27d0f5429f"],
     )
 
-"""
-WELCOME TO THE WASTE LANDS...
-"""
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

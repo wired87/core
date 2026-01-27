@@ -29,25 +29,15 @@ class BQGroundZero:
     DEFAULT_TIMESTAMP = "CURRENT_TIMESTAMP()"
 
     def __init__(self, dataset_id=None):
-        global _bq_client_singleton
-        print("BQGroundZero.__init__ started")
+        #print("BQGroundZero.__init__ started")
         self.pid = GCP_ID
         self.ds_id = dataset_id or BQ_DATASET_ID
         self.ds_ref = f"{GCP_ID}.{self.ds_id}"
         
-        if _bq_client_singleton:
-            print("Using shared BQ client")
-            self.bqclient = _bq_client_singleton
-        else:
-            print("Loading creds...")
-            creds = load_service_account_credentials()
-            print(f"Creds loaded: {creds is not None}")
-            print("Initializing bigquery.Client...")
-            self.bqclient = bigquery.Client(
-                credentials=creds
-            )
-            _bq_client_singleton = self.bqclient
-            print("bigquery.Client initialized")
+        creds = load_service_account_credentials()
+        self.bqclient = bigquery.Client(
+            credentials=creds
+        )
 
 
     def ensure_dataset_exists(self, ds_name=None):

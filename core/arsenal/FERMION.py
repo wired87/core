@@ -119,7 +119,7 @@ def calc_dirac(psi, dmu_psi, mass, gterm, yterm, gamma, gamma0_inv, i):
         dmu_x = gamma_item @ mu
         return dmu_x
 
-    vmapped_func = vmap(_wrapper, in_axes=(0,))
+    vmapped_func = vmap(_wrapper, in_axes=(0))
     compiled_kernel = jit(vmapped_func)
 
     spatial = spatial + jnp.sum(compiled_kernel(dmu_psi), axis=0)
@@ -161,7 +161,7 @@ def calc_gterm(psi, i, field_value, g, T):
             return gterm
 
         # vmap over mu axis (first axis of field_value)
-        four_terms = vmap(_single_mu_term, in_axes=(0,))(field_value)
+        four_terms = vmap(_single_mu_term, in_axes=(0))(field_value)
         return jnp.sum(four_terms, axis=0)
 
     # vmap across neighbors
