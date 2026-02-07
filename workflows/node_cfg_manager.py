@@ -9,13 +9,12 @@ class NodeCfgManager:
             cluster_url,
             utils,
             parent,
-
     ):
+        #
         self.parent=parent
         self.cluster_url=cluster_url
         self.user_id=user_id
         self.utils=utils
-
         self.cfg_store = {}
         print("nodecfg manager inisitlized")
 

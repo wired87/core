@@ -222,3 +222,79 @@ class RawModuleExtractor:
         print("data extracted:")
         pprint.pp(data)
         return data
+
+    def process_bytes(self, mid: str, file_contents: list[bytes]):
+        """
+        Main workflow for raw bytes: process files -> extract params -> extract equations -> optimize.
+        Returns extracted data structure.
+        """
+        G = nx.Graph()
+        self.mcreator = ModuleCreator(
+            G=G,
+            qfu=QFUtils(G=G),
+        )
+
+        # 1. Prepare parts directly from bytes
+        # Assuming all are PDFs or text for now, or use classification logic if needed.
+        # Reusing _classify_files logic but adapting for direct bytes input if needed,
+        # or just wrapping them directly if we trust the source.
+        # Let's reuse _prepare_content_parts but pass the bytes directly as if they were strings
+        # (since _classify_files handles bytes too).
+        
+        # However, _classify_files expects a list of strings/bytes.
+        parts, classified_files = self._prepare_content_parts(file_contents)
+        print("1. Files prepared from bytes.")
+
+        # 3. Extract Equations
+        print("2. Extracting equations...")
+        code = self.extract_equations(parts)
+        
+        # MODULE STUFF
+        print("3. Processing module graph...")
+        self.mcreator.create_modulator(
+            mid, code
+        )
+
+        params_edges = self.mcreator.qfu.g.get_neighbor_list(
+            node=mid,
+            target_type="PARAM",
+        )
+
+        params = {
+            p["trgt"]: p["attrs"].get("type", "Any")
+            for p in params_edges.values()
+        }
+        
+        # EXTRACT METHODS
+        method_edges = self.mcreator.qfu.g.get_neighbor_list(
+            node=mid,
+            target_type="METHOD",
+        )
+        methods = [m["attrs"] for m in method_edges.values()]
+
+        # EXTRACT FIELDS (CLASS_VAR)
+        field_edges = self.mcreator.qfu.g.get_neighbor_list(
+            node=mid,
+            target_type="CLASS_VAR",
+        )
+        fields = [f["attrs"] for f in field_edges.values()]
+
+        print(f"Module params identified: {params}")
+        print(f"Module methods identified: {len(methods)}")
+        print(f"Module fields identified: {len(fields)}")
+
+        # 4. Optimize
+        print("4. Optimizing with JAX...")
+        jax_code = self.jax_predator(code)
+        
+        # 5. Return Data
+        data= {
+            "params": params,
+            "methods": methods,
+            "fields": fields,
+            "code": code,
+            "jax_code": jax_code,
+        }
+        print("data extracted:")
+        pprint.pp(data)
+        return data

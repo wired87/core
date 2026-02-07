@@ -1,4 +1,4 @@
-from _chat.prompts.explanation_bestbrain import EXPLANATION
+from chat_manger.prompts.explanation_bestbrain import EXPLANATION
 
 
 def get_welcome_prompt(

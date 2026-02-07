@@ -5,9 +5,9 @@ from jax import jit, vmap
 
 
 @jit
-def calc_lambda_H(mass: jnp.ndarray, vev: jnp.ndarray) -> jnp.ndarray:
+def calc_lambda_H(_mass: jnp.ndarray, vev: jnp.ndarray) -> jnp.ndarray:
     # λ_H = m^2 / (2 v^2)
-    lambda_H = (mass ** 2) / (2.0 * vev ** 2)
+    lambda_H = (_mass ** 2) / (2.0 * vev ** 2)
     return lambda_H
 
 
@@ -28,7 +28,7 @@ def calc_dV_dh(
 @jit
 def calc_laplacian_h(
     h: jnp.ndarray,
-    pm_axes,
+    p_axes, m_axes,
     d,
     dt,
     # neighbor_pm_val_same_type:list[list, list],
@@ -62,7 +62,8 @@ def calc_laplacian_h(
         None,
         None,
     ))(
-        *pm_axes,
+        p_axes,
+        m_axes,
         h,
         d,
         dt,
@@ -76,10 +77,10 @@ def calc_laplacian_h(
 @jit
 def calc_dmu_h(
         h,  # Aktuelles Gitter (Psi(t))
-        prev,  # Gitter des vorherigen Zeitschritts (Psi(t-dt))
+        prev_h,  # Gitter des vorherigen Zeitschritts (Psi(t-dt))
         d,  # Räumlicher Gitterabstand d
         dt,  # Zeitschrittweite
-        pm_axes: tuple[list[tuple], list[tuple]],  # ([+dirs], [-dirs])
+        p_axes, m_axes
 ):
 
     # 1. Funktion für die räumliche Zentraldifferenz
@@ -113,12 +114,12 @@ def calc_dmu_h(
     )
 
     # JIT-Kompilierung des VMAP-Kerns
-    dmu_spatial = vmapped_func(*pm_axes)  # Liefert ein Array von 13 Ableitungs-Arrays
+    dmu_spatial = vmapped_func(p_axes, m_axes)  # Liefert ein Array von 13 Ableitungs-Arrays
 
     # --- Zeitliche Ableitung ---
     time_res = _d_time(
         field_current=h,
-        field_prev=prev,
+        field_prev=prev_h,
         d_time=dt
     )
 
@@ -135,19 +136,19 @@ def calc_dmu_h(
 @jit
 def calc_h(
     h: jnp.ndarray,
-    mass: jnp.ndarray,
-    prev: jnp.ndarray,
+    _mass: jnp.ndarray,
+    prev_h: jnp.ndarray,
     laplacian_h: jnp.ndarray,
     dV_dh: jnp.ndarray,
     dt: jnp.ndarray
   ) -> jnp.ndarray:
 
-    def _mass_term(h: jnp.ndarray, mass: jnp.ndarray) -> jnp.ndarray:
-        return - (mass ** 2) * h
+    def _mass_term(h: jnp.ndarray, _mass: jnp.ndarray) -> jnp.ndarray:
+        return - (_mass ** 2) * h
 
-    mass_term = _mass_term(h, mass)
+    mass_term = _mass_term(h, _mass)
     dt2 = jnp.asarray(dt) ** 2
-    h = 2.0 * h - prev + dt2 * (laplacian_h + mass_term - dV_dh)
+    h = 2.0 * h - prev_h + dt2 * (laplacian_h + mass_term - dV_dh)
     return h
 
 @jit
@@ -160,53 +161,19 @@ def calc_phi(h: jnp.ndarray, vev: jnp.ndarray) -> jnp.ndarray:
 @jit
 def calc_energy_density(
     dmu_h: jnp.ndarray,
-    mass: jnp.ndarray,
+    _mass: jnp.ndarray,
     h: jnp.ndarray,
     vev: jnp.ndarray,
     laplacian_h: jnp.ndarray
 ) -> jnp.ndarray:
 
-    def _higgs_potential(mass: jnp.ndarray, h: jnp.ndarray, vev: jnp.ndarray, laplacian_h: jnp.ndarray) -> jnp.ndarray:
-        m2 = mass ** 2
+    def _higgs_potential(_mass: jnp.ndarray, h: jnp.ndarray, vev: jnp.ndarray, laplacian_h: jnp.ndarray) -> jnp.ndarray:
+        m2 = _mass ** 2
         # note: original code used laplacian_h factors in higher terms; keep same structure
         return 0.5 * m2 * h ** 2 + laplacian_h * vev * h ** 3 + 0.25 * laplacian_h * h ** 4
 
     kinetic = 0.5 * (dmu_h[0] ** 2)
     gradient = 0.5 * jnp.sum(dmu_h[1:] ** 2)
-    potential = _higgs_potential(mass, h, vev, laplacian_h)
+    potential = _higgs_potential(_mass, h, vev, laplacian_h)
     energy_density = kinetic + gradient + potential
     return energy_density
-
-"""
-
-@jit
-def dmu_h(
-
-    neighbor_pm_val_same_type,
-):
-    # Die Dirac-Gleichung kombiniert alle berechneten Kopplungsterme
-    dt = (h - prev) / dt
-
-    def _wrapper(attrs):
-
-
-        @jit
-        def _dmu(field_forward, field_backward, d):
-            return (field_forward - field_backward) / (2.0 * d)
-
-        dmu_x = _dmu(
-            *attrs,
-            d
-        )
-        return dmu_x
-
-    vmapped_func = vmap(_wrapper, in_axes=(0, None))
-
-    # Static arguments are passed explicitly using static_argnums
-    compiled_kernel = jit(vmapped_func)  # , static_argnums=(1,)
-
-    calc_result = compiled_kernel(neighbor_pm_val_same_type)
-    dmu = [dt, *calc_result]
-    return dmu
-
-"""

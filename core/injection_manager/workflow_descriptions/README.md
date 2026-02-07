@@ -116,7 +116,7 @@ CREATE TABLE `QBRAIN.injections` (
 #### Set/Upsert Injection
 ```json
 {
-  "type": "set_inj",
+  "type": "SET_INJ",
   "inj_object": {
     "id": "inj_123",
     "data": [[0, 10, 20], [1.0, 2.0, 3.0]],
@@ -212,7 +212,7 @@ CREATE TABLE `QBRAIN.injections` (
 3. **Send set_inj message**:
    ```javascript
    ws.send(JSON.stringify({
-       type: "set_inj",
+       type: "SET_INJ",
        inj_object: {
            id: "test_inj_1",
            data: [[0, 10, 20], [1.0, 2.0, 3.0]],
@@ -240,7 +240,7 @@ const injection = {
 };
 
 websocket.send(JSON.stringify({
-    type: "set_inj",
+    type: "SET_INJ",
     inj_object: injection
 }));
 

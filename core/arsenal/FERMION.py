@@ -42,16 +42,11 @@ def calc_psi_bar(psi, gamma):
 @jit
 def calc_dmu_psi(
         psi,  # entire gitter
-        prev,  # Gitter des vorherigen Zeitschritts (Psi(t-dt))
+        prev_psi,  # Gitter des vorherigen Zeitschritts (Psi(t-dt))
         d,  # Räumlicher Gitterabstand d
-        dt,  # Zeitschrittweite
-        pm_axes: tuple[list[tuple], list[tuple]],  # ([+dirs], [-dirs])
+        dt,
+        p_axes, m_axes,
 ):
-    """
-    Kinetische Ableitung (d/dt und 26 verallgemeinerte räumliche Ableitungen).
-    Verwendet Central Difference (1. Ableitung) für die räumlichen Terme.
-    """
-
     # 1. Funktion für die räumliche Zentraldifferenz
     def _d_spatial(field_forward, field_backward, d_space):
         """Berechnet (Psi_{i+1} - Psi_{i-1}) / (2.0 * d) für das gesamte Array."""
@@ -84,12 +79,12 @@ def calc_dmu_psi(
     )
 
     # JIT-Kompilierung des VMAP-Kerns
-    dmu_spatial = vmapped_func(*pm_axes)  # Liefert ein Array von 13 Ableitungs-Arrays
+    dmu_spatial = vmapped_func(p_axes, m_axes)  # Liefert ein Array von 13 Ableitungs-Arrays
 
     # --- Zeitliche Ableitung ---
     time_res = _d_time(
         field_current=psi,
-        field_prev=prev,
+        field_prev=prev_psi,
         d_time=dt
     )
 
@@ -106,7 +101,7 @@ def calc_dmu_psi(
 # dirac_process
 # --------------------
 @jit
-def calc_dirac(psi, dmu_psi, mass, gterm, yterm, gamma, gamma0_inv, i):
+def calc_dirac(psi, dmu_psi, _mass, gterm, yterm, gamma, gamma0_inv, i):
     """
     Time evolution (for sim)
     Uses Kinetic derivation & coupling term of neighbor gauges
@@ -125,7 +120,7 @@ def calc_dirac(psi, dmu_psi, mass, gterm, yterm, gamma, gamma0_inv, i):
     spatial = spatial + jnp.sum(compiled_kernel(dmu_psi), axis=0)
     spatial = spatial + gterm + yterm
 
-    mass_term = -1j * mass * psi
+    mass_term = -1j * _mass * psi
     dirac = -gamma0_inv @ (spatial + mass_term)
 
     #jax.debug.print(" dirac_process result: {dirac}", dirac=dirac_result)

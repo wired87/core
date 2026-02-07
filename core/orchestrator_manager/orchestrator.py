@@ -40,6 +40,8 @@ import json
 from core.qbrain_manager import QBrainTableManager
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 from gem_core.gem import Gem
+from core.file_manager.file_lib import file_manager
+from core.session_manager.session import session_manager
 
 class StartSimInput(TypedDict):
     """
@@ -69,6 +71,15 @@ class OrchestratorManager(BQCore):
         
         # Key: session_id, Value: Partial StartSimInput
         self.simulation_drafts: Dict[str, Dict[str, Any]] = {}
+    """
+    bsp task:
+    entwickel und teste ein ravity modell. 
+    zeig mir alle files an
+    
+    """
+
+
+
 
     def orchestrator_chat(self, user_id: str, session_id: str, message: str) -> str:
         """

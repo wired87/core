@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 import random
@@ -8,7 +9,6 @@ from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 from core.method_manager.method_processor import MethodDataProcessor
 from core.param_manager.params_lib import ParamsManager
 from core.qbrain_manager import QBrainTableManager
-from core.file_manager.file_lib import file_manager
 from qf_utils.qf_utils import QFUtils
 
 # Define Schemas
@@ -53,6 +53,20 @@ class MethodManager(BQCore, MethodDataProcessor):
         self.qfu = QFUtils()
 
         self.param_manager = ParamsManager()
+        from core.method_manager import case as method_case
+        set_case = next((c for c in method_case.RELAY_METHOD if c.get("case") == "SET_METHOD"), None)
+        req_struct = set_case.get("req_struct", {}) if set_case else {}
+        out_struct = set_case.get("out_struct", {}) if set_case else {}
+        self._extract_prompt = f"""Extract method/equation definitions from the provided file content.
+
+Input structure (what you receive): raw file bytes decoded as text or document content.
+Output structure (return valid JSON only):
+  req_struct: {json.dumps(req_struct, indent=2)}
+  out_struct: {json.dumps(out_struct, indent=2)}
+
+Return a JSON object with keys: id, equation, params (list of param names), origins (list, e.g. "self" or field ids), description.
+Each method matches the data shape expected by SET_METHOD.
+Output valid JSON only, no markdown."""
         self._ensure_method_table()
 
     def _ensure_method_table(self):
@@ -71,6 +85,33 @@ class MethodManager(BQCore, MethodDataProcessor):
             self.bqclient.create_table(table)
             logging.info(f"Table {table_ref} created.")
 
+    def extract_from_file_bytes(self, file_bytes: bytes) -> Optional[Dict[str, Any]]:
+        """
+        Extract manager-specific method/equation content from file bytes using the static prompt.
+        Uses Gem LLM with req_struct/out_struct from SET_METHOD case.
+        """
+        try:
+            from gem_core.gem import Gem
+            gem = Gem()
+            try:
+                text_content = file_bytes.decode("utf-8")
+                content = f"{self._extract_prompt}\n\n--- FILE CONTENT ---\n{text_content}"
+                response = gem.ask(content)
+            except UnicodeDecodeError:
+                b64 = base64.b64encode(file_bytes).decode("ascii")
+                response = gem.ask_mm(file_content_str=b64, prompt=self._extract_prompt)
+            text = (response or "").strip().replace("```json", "").replace("```", "").strip()
+            parsed = json.loads(text)
+            if "methods" in parsed:
+                return {"data": parsed["methods"] if isinstance(parsed["methods"], list) else [parsed["methods"]]}
+            if "id" in parsed or "equation" in parsed:
+                return {"data": parsed}
+            return {"data": parsed}
+        except Exception as e:
+            logging.error(f"MethodManager extract_from_file_bytes error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
     def set_method(self, rows: List[Dict] or Dict, user_id: str):
         if isinstance(rows, dict):
@@ -311,6 +352,7 @@ def handle_set_method(payload):
 
     # generat jax code
     if "jax_code" not in  method_data:
+        from core.file_manager.file_lib import file_manager
         method_data["jax_code"] = file_manager.jax_predator(method_data["code"])
 
     # Ensure ID
@@ -335,6 +377,7 @@ def handle_set_method(payload):
     if equation:
         print(f"Generating JAX code for equation: {equation}")
         try:
+            from core.file_manager.file_lib import file_manager
             jax_code = file_manager.jax_predator(equation)
             method_data["jax_code"] = jax_code
             print("JAX Code generated:", jax_code)

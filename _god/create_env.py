@@ -3,7 +3,6 @@ import os
 from tempfile import TemporaryDirectory
 from typing import List
 
-from fb_core.real_time_database import FBRTDBMgr
 from utils import deserialize
 from utils.utils import Utils
 

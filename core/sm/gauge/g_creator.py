@@ -117,7 +117,7 @@ class GaugeCreator(GaugeUtils):
             "gg_coupling": field_value,
             "gf_coupling": field_value,
             "field_value": field_value,
-            "prev": field_value,
+            "prev_field_value": field_value,
 
             "j_nu": field_value,
 
@@ -140,10 +140,10 @@ class GaugeCreator(GaugeUtils):
             field_value=field_value,
             prev=0,
             j_nu=0,
-            dmuG=self.dmu(),
-            fmunu=self.fmunu(),
-            prev_fmunu=self.fmunu(),
-            dmu_fmunu=self.dmu_fmunu(),
+            dmuG=self.dmu(pos),
+            fmunu=self.fmunu(pos),
+            prev_fmunu=self.fmunu(pos),
+            dmu_fmunu=self.dmu_fmunu(pos),
             charge=0,
             mass=0.0,
             g=1.217,

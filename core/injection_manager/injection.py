@@ -6,9 +6,11 @@ Injection format: {id: str, data: [[times], [energies]], ntype: str}
 """
 
 from typing import Optional, Dict, Any, List
-from datetime import datetime
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 from core.qbrain_manager import QBrainTableManager
+
+_INJ_DEBUG = "[InjectionManager]"
+
 
 class InjectionManager(BQCore):
     """
@@ -20,17 +22,23 @@ class InjectionManager(BQCore):
     
     def __init__(self):
         """Initialize InjectionManager with QBRAIN dataset."""
-        BQCore.__init__(self, dataset_id=self.DATASET_ID)
-        # Hardcoded schema as per user request
-        self.INJECTION_TABLE_SCHEMA = {
-            "id": "STRING",
-            "user_id": "STRING",
-            "data": "JSON",
-            "created_at": "TIMESTAMP",
-            "updated_at": "TIMESTAMP",
-        }
-        self.qb = QBrainTableManager()
-        self.table= f"injections"
+        try:
+            BQCore.__init__(self, dataset_id=self.DATASET_ID)
+            self.INJECTION_TABLE_SCHEMA = {
+                "id": "STRING",
+                "user_id": "STRING",
+                "data": "JSON",
+                "created_at": "TIMESTAMP",
+                "updated_at": "TIMESTAMP",
+            }
+            self.qb = QBrainTableManager()
+            self.table = "injections"
+            print(f"{_INJ_DEBUG} initialized")
+        except Exception as e:
+            print(f"{_INJ_DEBUG} __init__ error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
 
 
@@ -67,7 +75,7 @@ class InjectionManager(BQCore):
             return True
             
         except Exception as e:
-            print(f"Error validating injection object: {e}")
+            print(f"{_INJ_DEBUG} _validate_injection_object: error: {e}")
             return False
 
     def set_inj(
@@ -81,24 +89,16 @@ class InjectionManager(BQCore):
         """
 
         try:
-            
-            # Prepare record
-            # We want to use the input object, but sanitize/fill it.
+            print(f"{_INJ_DEBUG} set_inj: user_id={user_id}, inj_id={inj_object.get('id')}")
             injection_record = inj_object.copy()
-            
-            # Iterate over schema to map fields
             injection_record["user_id"] = user_id
-            
-            if "ntype"  in injection_record:
+            if "ntype" in injection_record:
                 injection_record.pop("ntype")
-
-            print(f"Inserting injection: {inj_object.get('id')} - {injection_record.get('data')} for user {user_id}")
-            
-            # Use set_item
-            return self.qb.set_item(self.table, injection_record, keys={"id": injection_record["id"], "user_id": user_id})
-            
+            out = self.qb.set_item(self.table, injection_record, keys={"id": injection_record["id"], "user_id": user_id})
+            print(f"{_INJ_DEBUG} set_inj: done, success={out}")
+            return out
         except Exception as e:
-            print(f"Error setting injection: {e}")
+            print(f"{_INJ_DEBUG} set_inj: error: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -106,69 +106,97 @@ class InjectionManager(BQCore):
 
 
     def del_inj(self, injection_id: str, user_id: str) -> bool:
-         print(f"del_inj, {injection_id}")
-         return self.qb.del_entry(
-            nid=injection_id,
-            table=self.table,
-            user_id=user_id
-         )
+        try:
+            print(f"{_INJ_DEBUG} del_inj: injection_id={injection_id}, user_id={user_id}")
+            out = self.qb.del_entry(
+                nid=injection_id,
+                table=self.table,
+                user_id=user_id
+            )
+            print(f"{_INJ_DEBUG} del_inj: done, success={out}")
+            return out
+        except Exception as e:
+            print(f"{_INJ_DEBUG} del_inj: error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
     def get_inj_user(self, user_id: str) -> List[Dict[str, Any]]:
         """
         Get all injections for a specific user using foreign key relationship.
         """
-        injections = self.qb.get_users_entries(
-            user_id=user_id,
-            table=self.table
-        )
-        if injections:
-            for inj in injections:
-                if isinstance(inj.get("data"), str):
-                    try:
-                        inj["data"] = json.loads(inj["data"])
-                    except Exception as e:
-                        print(f"Error parsing injection data: {e}")
-                        pass
-        return injections
+        try:
+            print(f"{_INJ_DEBUG} get_inj_user: user_id={user_id}")
+            injections = self.qb.get_users_entries(
+                user_id=user_id,
+                table=self.table
+            )
+            if injections:
+                for inj in injections:
+                    if isinstance(inj.get("data"), str):
+                        try:
+                            inj["data"] = json.loads(inj["data"])
+                        except Exception as e:
+                            print(f"{_INJ_DEBUG} get_inj_user: parse data: {e}")
+            print(f"{_INJ_DEBUG} get_inj_user: got {len(injections) if injections else 0} injection(s)")
+            return injections
+        except Exception as e:
+            print(f"{_INJ_DEBUG} get_inj_user: error: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
 
     def get_inj_list(self, inj_ids: List[str]) -> List[Dict[str, Any]]:
         """
         Get specific injections by ID list.
         """
-        rows = self.qb.row_from_id(
-            nid=inj_ids,
-            select="*",
-            table=self.table
-        )
-        if rows:
-            for inj in rows:
-                if isinstance(inj.get("data"), str):
-                    try:
-                        inj["data"] = json.loads(inj["data"])
-                    except Exception as e:
-                        print(f"Error parsing injection data: {e}")
-                        pass
-        return rows
+        try:
+            print(f"{_INJ_DEBUG} get_inj_list: inj_ids count={len(inj_ids) if inj_ids else 0}")
+            rows = self.qb.row_from_id(
+                nid=inj_ids,
+                select="*",
+                table=self.table
+            )
+            if rows:
+                for inj in rows:
+                    if isinstance(inj.get("data"), str):
+                        try:
+                            inj["data"] = json.loads(inj["data"])
+                        except Exception as e:
+                            print(f"{_INJ_DEBUG} get_inj_list: parse data: {e}")
+            return rows
+        except Exception as e:
+            print(f"{_INJ_DEBUG} get_inj_list: error: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
     def get_injection(self, injection_id: str) -> Optional[Dict[str, Any]]:
         """
         Get a single injection by ID.
         """
-        rows = self.qb.row_from_id(
-            nid=injection_id,
-            select="*",
-            table=self.table
-        )
-        if rows:
-            inj = rows[0]
-            if isinstance(inj.get("data"), str):
-                try:
-                    inj["data"] = json.loads(inj["data"])
-                except Exception as e:
-                    print(f"Error getting injection: {e}")
-            return inj
-        return None
+        try:
+            print(f"{_INJ_DEBUG} get_injection: injection_id={injection_id}")
+            rows = self.qb.row_from_id(
+                nid=injection_id,
+                select="*",
+                table=self.table
+            )
+            if rows:
+                inj = rows[0]
+                if isinstance(inj.get("data"), str):
+                    try:
+                        inj["data"] = json.loads(inj["data"])
+                    except Exception as e:
+                        print(f"{_INJ_DEBUG} get_injection: parse data: {e}")
+                return inj
+            return None
+        except Exception as e:
+            print(f"{_INJ_DEBUG} get_injection: error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
     def link_inj_env(self, injection_id: str, env_id: str, user_id: str, pos:tuple) -> bool:
         """
@@ -238,9 +266,10 @@ class InjectionManager(BQCore):
             )
             return True
         except Exception as e:
-            print(f"Error removing link for injection: {e}")
+            print(f"{_INJ_DEBUG} rm_link_inj_env: error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
-
 
     def get_inj_env(self, env_id: str, user_id: str, injection_id: str, select: str = "*") -> List[Dict[str, Any]]:
         """
@@ -262,11 +291,12 @@ class InjectionManager(BQCore):
                 select="*"
             )
             
-            print(f"Retrieved {len(injections)} injection(s) for environment {env_id}")
+            print(f"{_INJ_DEBUG} get_inj_env: got {len(injections)} injection(s) for env_id={env_id}")
             return injections
-            
         except Exception as e:
-            print(f"Error retrieving environment injections: {e}")
+            print(f"{_INJ_DEBUG} get_inj_env: error: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
 
@@ -283,34 +313,39 @@ class InjectionManager(BQCore):
     def retrieve_session_injections(self, session_id: str, user_id: str) -> List[Dict[str, Any]]:
         # get session_to_injections rows -> get injection rows
 
-        
-        links = self.qb.list_session_entries(
-            user_id=user_id,
-            session_id=session_id,
-            table=f"session_to_injections",
-            select="injection_id"
-        )
-        
-        if not links:
-            return []
+        try:
+            links = self.qb.list_session_entries(
+                user_id=user_id,
+                session_id=session_id,
+                table=f"session_to_injections",
+                select="injection_id"
+            )
 
-        inj_ids = [l["injection_id"] for l in links]
-        
-        injections = self.qb.row_from_id(
-            nid=inj_ids,
-            select="*",
-            table=self.table, # injections table
-            user_id=user_id
-        )
-        if injections:
-            for inj in injections:
-                if isinstance(inj.get("data"), str):
-                    try:
-                        inj["data"] = json.loads(inj["data"])
-                    except Exception as e:
-                        print(f"Error parsing injection data: {e}")
-                        pass
-        return injections
+            if not links:
+                return []
+
+            inj_ids = [l["injection_id"] for l in links]
+
+            injections = self.qb.row_from_id(
+                nid=inj_ids,
+                select="*",
+                table=self.table, # injections table
+                user_id=user_id
+            )
+            if injections:
+                for inj in injections:
+                    if isinstance(inj.get("data"), str):
+                        try:
+                            inj["data"] = json.loads(inj["data"])
+                        except Exception as e:
+                            print(f"{_INJ_DEBUG} retrieve_session_injections: parse data: {e}")
+                print(f"{_INJ_DEBUG} retrieve_session_injections: got {len(injections) if injections else 0} injection(s)")
+                return injections
+        except Exception as e:
+            print(f"{_INJ_DEBUG} retrieve_session_injections: error: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
 
 injection_manager = InjectionManager()
@@ -322,9 +357,10 @@ import random
 # ============================================================================
 
 from core.websocket_datatypes import (
-    WebSocketRequest, WebSocketResponse, AuthData, InjectionData,
+    WebSocketRequest, WebSocketResponse, AuthData,
     create_list_response
 )
+
 import json
 
 def handle_get_injection(payload: dict) -> dict:
@@ -382,13 +418,14 @@ def handle_set_inj(payload: dict) -> dict:
              injection_manager.del_inj(original_id, user_id)
 
         success = injection_manager.set_inj(inj_dict, user_id)
+
         if not success:
              return WebSocketResponse.error(
-                "set_inj", 
+                "SET_INJ", 
                 "Failed to save injection", 
                 auth=auth
             )
-             
+
         # Return updated list
         injections = injection_manager.get_inj_user(user_id)
         return {"type":"GET_INJ_USER", "data":{"injections":injections}}

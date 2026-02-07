@@ -29,5 +29,7 @@ INPUT PARAMS: {params}
 INPUT EQUATION: {equation}
 
 Return ONLY the executable Python code.
+
+Take an eample form the provided jax code. alert to amke no mistakes
 """
 

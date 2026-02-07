@@ -24,7 +24,7 @@ All WebSocket responses follow this structure:
 **Success:**
 ```json
 {
-    "type": "set_inj",
+    "type": "SET_INJ",
     "status": {
         "state": "success"
     },
@@ -38,7 +38,7 @@ All WebSocket responses follow this structure:
 **Error:**
 ```json
 {
-    "type": "set_inj",
+    "type": "SET_INJ",
     "status": {
         "state": "error",
         "error": "Missing inj_object"

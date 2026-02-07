@@ -182,16 +182,12 @@ def calc_fmunu(
 @jit
 def calc_dmuG(
         field_value,  # komplettes grid Aktuelles Gitter
-        prev,  # Gitter des vorherigen Zeitschritts (Psi(t-dt))
+        prev_field_value,  # Gitter des vorherigen Zeitschritts (Psi(t-dt))
         d,  # Räumlicher Gitterabstand d
         dt,  # Zeitschrittweite
-        pm_axes: tuple[list[tuple], list[tuple]],  # ([+dirs], [-dirs])
+        p_axes,
+        m_axes,  # ([+dirs], [-dirs])
 ):
-    """
-    Kinetische Ableitung (d/dt und 26 verallgemeinerte räumliche Ableitungen).
-    Verwendet Central Difference (1. Ableitung) für die räumlichen Terme.
-    """
-
     # 1. Funktion für die räumliche Zentraldifferenz
     def _d_spatial(field_forward, field_backward, d_space):
         """Berechnet (Psi_{i+1} - Psi_{i-1}) / (2.0 * d) für das gesamte Array."""
@@ -223,12 +219,12 @@ def calc_dmuG(
     )
 
     # JIT-Kompilierung des VMAP-Kerns
-    dmu_spatial = vmapped_func(*pm_axes)  # Liefert ein Array von 13 Ableitungs-Arrays
+    dmu_spatial = vmapped_func(p_axes, m_axes)  # Liefert ein Array von 13 Ableitungs-Arrays
 
     # --- Zeitliche Ableitung ---
     time_res = _d_time(
         field_current=field_value,
-        field_prev=prev,
+        field_prev=prev_field_value,
         d_time=dt
     )
 
@@ -247,12 +243,8 @@ def calc_dmu_fmunu(
         prev_fmunu,  # Gitter des vorherigen Zeitschritts (Psi(t-dt))
         d,  # Räumlicher Gitterabstand d
         dt,  # Zeitschrittweite
-        pm_axes: tuple[list[tuple], list[tuple]],  # ([+dirs], [-dirs])
+        p_axes, m_axes,  # ([+dirs], [-dirs])
 ):
-    """
-    Kinetische Ableitung (d/dt und 26 verallgemeinerte räumliche Ableitungen).
-    Verwendet Central Difference (1. Ableitung) für die räumlichen Terme.
-    """
 
     # 1. Funktion für die räumliche Zentraldifferenz
     @jit
@@ -287,7 +279,7 @@ def calc_dmu_fmunu(
     )
 
     # JIT-Kompilierung des VMAP-Kerns
-    dmu_spatial = vmapped_func(*pm_axes)  # Liefert ein Array von 13 Ableitungs-Arrays
+    dmu_spatial = vmapped_func(p_axes, m_axes)  # Liefert ein Array von 13 Ableitungs-Arrays
 
     # --- Zeitliche Ableitung ---
     time_res = _d_time(
@@ -305,86 +297,3 @@ def calc_dmu_fmunu(
     return dmu_fmunu
 
 
-
-
-"""
-
-
-
-@jit
-def dmu_fmunu(
-    fmunu,
-    prev,
-    d,
-    dt,
-    neighbor_pm_val_fmunu
-):
-    # Die Dirac-Gleichung kombiniert alle berechneten Kopplungsterme
-    dt = (fmunu - prev) / dt
-
-    def _wrapper(pm_fmunu):
-
-        @jit
-        def _dmu(field_forward, field_backward, d):
-            return (field_forward - field_backward) / (2.0 * d)
-
-        dmu_x = _dmu(
-            *pm_fmunu,
-            d
-        )
-        return dmu_x
-
-    vmapped_func = vmap(_wrapper, in_axes=(0, None))
-
-    # Static arguments are passed explicitly using static_argnums
-    compiled_kernel = jit(vmapped_func)  # , static_argnums=(1,)
-
-    calc_result = compiled_kernel(neighbor_pm_val_fmunu)
-
-    dmu = [dt, *calc_result]
-
-    return dmu
-
-
-
-
-
-@jit
-def dmuG(
-    field_value,
-    prev,
-    d,
-    dt,
-    neighbor_pm_val_same_type
-):
-
-    dt = (field_value - prev) / dt
-
-    def _wrapper(
-        field_forward,
-        field_backward
-    ):
-
-
-        @jit
-        def _d(field_forward, field_backward, d):
-            return (field_forward - field_backward) / (2.0 * d)
-
-        dmu_x = _d(
-            field_forward,
-            field_backward,
-            d
-        )
-        return dmu_x
-
-    vmapped_func = vmap(_wrapper, in_axes=(0, 0))(
-        *neighbor_pm_val_same_type
-    )
-
-    # Static arguments are passed explicitly using static_argnums
-    compiled_kernel = jit(vmapped_func)  # , static_argnums=(1,)
-
-    calc_result = compiled_kernel(neighbor_pm_val_same_type)
-    dmuG = [dt, *calc_result]
-    return dmuG
-"""

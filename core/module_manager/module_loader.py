@@ -81,7 +81,7 @@ class ModuleLoader(
             print(f"  Module ID: {self.id}")
 
         print("finished load_local_module_codebase")
-        self.g.print_status_G()
+        #self.g.print_status_G()
 
 
     def create_code_G(self, mid, code=None):

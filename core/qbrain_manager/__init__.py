@@ -19,6 +19,9 @@ dotenv.load_dotenv()
 from google.cloud import bigquery
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 
+_QBRAIN_DEBUG = "[QBrainTableManager]"
+
+
 class QBrainTableManager(BQCore):
     """
     Centralized manager for all QBRAIN dataset tables.
@@ -184,8 +187,19 @@ class QBrainTableManager(BQCore):
         {
             "manager_name": "FileManager",
             "description": "Handles file processing, extraction of code/configs (using RawModuleExtractor), and automated upsert of extracted entities.",
-             "default_table": None,
-             "schema": None
+            "default_table": None,
+            "schema": None,
+            "additional_tables": [
+                {
+                    "table_name": "files",
+                    "schema": {
+                        "id": "STRING",
+                        "user_id": "STRING",
+                        "module_id": "STRING",
+                        "created_at": "TIMESTAMP",
+                    }
+                }
+            ]
         },
         {
             "manager_name": "ModelManager",
@@ -233,12 +247,11 @@ class QBrainTableManager(BQCore):
         """Initialize QBrainTableManager with QBRAIN dataset."""
         super().__init__(dataset_id=self.DATASET_ID)
         self.ds_ref = f"{self.pid}.{self.DATASET_ID}"
-        print(f"QBrainTableManager initialized with dataset: {self.DATASET_ID}")
-        
+        print(f"{_QBRAIN_DEBUG} initialized with dataset: {self.DATASET_ID}")
         try:
             self.genai_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
         except Exception as e:
-            print(f"Warning: Failed to initialize GenAI client: {e}")
+            print(f"{_QBRAIN_DEBUG} GenAI client init warning: {e}")
             self.genai_client = None
 
     def _generate_embedding(self, text: str) -> List[float]:
@@ -310,7 +323,7 @@ class QBrainTableManager(BQCore):
             FROM (
                 SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY created_at DESC) as row_num
                 FROM `{self.ds_ref}.{table}`
-                WHERE user_id = @user_id AND (status != 'deleted' OR status IS NOT NULL)
+                WHERE (user_id = @user_id OR user_id = 'public') AND (status != 'deleted' OR status IS NOT NULL)
             )
             WHERE row_num = 1
         """
@@ -832,19 +845,23 @@ class QBrainTableManager(BQCore):
         except Exception as e:
             print(f"Error updating pattern for env {env_id}", e)
 
-    def set_item(self, table_name: str, items: Dict[str, Any] or list[dict], keys: Dict[str, Any] = None) -> bool:
+    def set_item(
+            self,
+            table_name: str,
+            items: Dict[str, Any] or list[dict],
+            keys: Dict[str, Any] = None,
+    ) -> bool:
         """
         Universal method to insert or update an item.
         Serializes specific fields that are stored as JSON strings.
         If keys are provided, attempts to find and update existing row (via upsert_copy logic).
         If no keys or row not found, inserts new row.
         """
+        print("set_item...")
         try:
             if isinstance(items, dict):
                 items = [items]
 
-            checked_embedding_col = False
-            
             for item in items:
                 if "parent" in item:
                     item.pop("parent")
@@ -859,34 +876,6 @@ class QBrainTableManager(BQCore):
                             except Exception as e:
                                 print(f"Warning: Failed to serialize field {key}: {e}")
 
-
-                """
-                # 3. Description Generation
-                if "description" not in item or not item["description"]:
-                    new_desc = self._generate_description(item, table_name)
-                    if new_desc:
-                        item["description"] = new_desc
-
-                # 4. Check/Create embedding column (Lazy check)
-                if "embedding" in item and item["embedding"] and not checked_embedding_col:
-                    try:
-                        # We only check if we actually have an embedding to save
-                        table_ref = f"{self.pid}.{self.DATASET_ID}.{table_name}"
-                        table = self.bqclient.get_table(table_ref)
-                        
-                        has_embedding_col = any(f.name == "embedding" for f in table.schema)
-                        
-                        if not has_embedding_col:
-                            print(f"Adding missing 'embedding' column to table {table_name}...")
-                            query = f"ALTER TABLE `{table_ref}` ADD COLUMN IF NOT EXISTS embedding ARRAY<FLOAT64>"
-                            self.bqclient.query(query).result()
-                            print(f"✓ Added column embedding to {table_name}")
-                        
-                        checked_embedding_col = True
-                    except Exception as e:
-                         pass
-                         # print(f"Warning verifying embedding column: {e}")
-                """
                 # 5. Timestamps & Status
                 now = datetime.now().isoformat()
                 if "created_at" not in item:
@@ -899,11 +888,13 @@ class QBrainTableManager(BQCore):
             if keys:
                 if self.upsert_copy(table_name, keys, items[0]):
                     return True
+
         except Exception as e:
             print(f"Error in set_item: {e}")
             pass
         
         # Fallback to insert
+        print("insert", table_name, items)
         return self.bq_insert(table_name, items)
 
     def reset_tables(self, table_list: List[str]):

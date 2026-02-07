@@ -8,22 +8,12 @@ class AIChatClassifier:
     Initialisiert den Chatbot mit API-Schlüssel und Konfigurationspfaden.
     Erstellt Konfigurationsdateien, falls nicht vorhanden.
     """
-    def __init__(self, cfg_creator=None):
+    def __init__(self, case_struct:list, cfg_creator=None):
         self.cfg_creator = cfg_creator
+        self.case_struct = case_struct
         self.gem = Gem()
         self.user_history = {}
-        self.use_cases = {
-            "start": self._handle_start_simulation,
-            "set_parameters": self._handle_set_parameters,
-            "check_status": self._handle_check_status,
-            "save_state": self._handle_save_state,
-            "load_state": self._handle_load_state,
-            "plot_results": self._handle_plot_results,
-            "stop_simulation": self._handle_stop_simulation,
-            "question": self._handle_general_qfs_query,  # Für allgemeine Fragen zur QFS
-            "set_fields": self._extract_fields,
-            "upgrade": None, # Handled by Relay
-        }
+        self.goal: str or None = None # case of relay case struct
 
 
     def _extract_fields(self):
@@ -46,21 +36,21 @@ class AIChatClassifier:
             self.user_history[user_id] = []
         self.user_history[user_id].append(message)
 
-    def _classify_input(self, user_input):
+    def _classify_input(self, user_input, cases):
         """
         Klassifiziert die Benutzereingabe mithilfe der Gemini API für QFS-Befehle.
         Gibt den passenden Usecase-Schlüssel zurück oder 'general_qfs_query' als Standard.
         """
-        print("_classify_input")
+        print("_classify_input...")
         prompt = f"""Klassifiziere die folgende Benutzereingabe in einen der folgenden Usecases für die Steuerung einer Quantenfeld-Simulation: 
-            {', '.join(self.use_cases.keys())}. Gib nur den Usecase-Namen zurück. 
+            {', '.join(cases)}. Gib nur den Usecase-Namen zurück. 
             Eingabe: '{user_input}'")
             """
         try:
             classification = self.gem.ask(prompt)
             if classification and isinstance(classification, str):
                 classification = classification.strip().lower()
-                if classification in self.use_cases:
+                if classification in cases:
                     print(f"Classification: {classification}")
                     return classification
         except Exception as e:
@@ -180,12 +170,62 @@ class AIChatClassifier:
         """
         Hauptmethode zum Verarbeiten von Benutzereingaben.
         """
+        cases = [c["case"] for c in self.case_struct]
         self._update_history(user_id, user_input)
-        classification = self._classify_input(user_input)
+        classification = self._classify_input(user_input, self.case_struct)
+        handler_struct = self.case_struct[cases.index(classification)]
 
+        if self.goal == None:
+            self.goal = classification
+            self.goal_data_struct = handler_struct["req_struct"]
+        else:
+            # question = follow up
+            # -> collect more information for the struct
+            prompt = f"""
+            Extract as much information from the provided user query to fill the provided data structure.
+             
+             GOAL:
+             {self.goal}
+             
+             DATA STRUCTURE:
+             {self.goal_data_struct}
+             
+             USER QUERY:
+             {user_input}
+             
+             MARK:
+             return just the adapted DATA STRUCTURE in valid (stringified) python synthax.
+             Add no etra chars
+            
+            AVOID THE FOLLOWING ERRORS:
+            
+            """
+            response = self.gem.ask(prompt)
+            # convert & save response
+            try:
+                updated_struct = json.loads(response)
+                self.goal_data_struct.update(updated_struct)
+
+                # make request
+                for item in self.case_struct:
+                    if item["case"] == self.goal:
+                        # make request
+                        response = item["func"](
+                            paylaod=self.goal_data_struct
+                        )
+
+                        # if response cmpletes withoit err:reset goal and data struct
+                        self.goal = None
+                        self.goal_data_struct = {}
+
+                        # return repsonse to user
+                        return response
+            except Exception as e:
+                print("unable to save changes in response:", e)
+
+        # set as gloabl goal
         handler = self.use_cases.get(classification, self._handle_general_qfs_query)
         response = handler(user_id, user_input)
 
         self._update_history(user_id, response)  # Antwort auch zur Historie hinzufügen
         return response
-

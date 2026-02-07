@@ -14,6 +14,8 @@ from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 
 from core.qbrain_manager import QBrainTableManager
 
+_USER_DEBUG = "[UserManager]"
+
 
 class UserManager(BQCore):
     """
@@ -38,9 +40,15 @@ class UserManager(BQCore):
 
     def __init__(self):
         """Initialize UserManager with QBRAIN dataset."""
-        BQCore.__init__(self, dataset_id=self.DATASET_ID)
-        self.qb = QBrainTableManager()
-        print(f"UserManager initialized with dataset: {self.DATASET_ID}")
+        try:
+            BQCore.__init__(self, dataset_id=self.DATASET_ID)
+            self.qb = QBrainTableManager()
+            print(f"{_USER_DEBUG} initialized with dataset: {self.DATASET_ID}")
+        except Exception as e:
+            print(f"{_USER_DEBUG} __init__ error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
     def initialize_qbrain_workflow(self, uid: str, email: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -53,21 +61,17 @@ class UserManager(BQCore):
         Returns:
             Dictionary containing initialization results
         """
-
-        results = {
-            "user_created": False,
-            "payment_created": False,
-            "errors": []
-        }
-        
+        results = {"user_created": False, "errors": []}
         try:
+            print(f"{_USER_DEBUG} initialize_qbrain_workflow: uid={uid}")
             results["user_created"] = self._ensure_user_record(uid, email)
-            results["payment_created"] = self._ensure_payment_record(uid)
+            print(f"{_USER_DEBUG} initialize_qbrain_workflow: done, user_created={results['user_created']}")
         except Exception as e:
             error_msg = f"Error in initialize_qbrain_workflow: {e}"
-            print(f"❌ {error_msg}")
+            print(f"{_USER_DEBUG} initialize_qbrain_workflow: error: {error_msg}")
             results["errors"].append(error_msg)
-
+            import traceback
+            traceback.print_exc()
         return results
 
     def get_user(self, uid: str) -> Optional[Dict[str, Any]]:
@@ -81,23 +85,22 @@ class UserManager(BQCore):
             User record dictionary or None if not found
         """
         try:
+            print(f"{_USER_DEBUG} get_user: uid={uid}")
             query = f"""
                 SELECT * FROM `{self.pid}.{self.DATASET_ID}.users`
                 WHERE id = @uid AND (status != 'deleted' OR status IS NULL)
                 LIMIT 1
             """
-            
             job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("uid", "STRING", uid)
-                ]
+                query_parameters=[bigquery.ScalarQueryParameter("uid", "STRING", uid)]
             )
-            
             result = self.run_query(query, conv_to_dict=True, job_config=job_config)
+            print(f"{_USER_DEBUG} get_user: found={bool(result)}")
             return result[0] if result else None
-            
         except Exception as e:
-            print(f"Error retrieving user {uid}: {e}")
+            print(f"{_USER_DEBUG} get_user: error: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def get_payment_record(self, uid: str) -> Optional[Dict[str, Any]]:
@@ -111,61 +114,61 @@ class UserManager(BQCore):
             Payment record dictionary or None if not found
         """
         try:
+            print(f"{_USER_DEBUG} get_payment_record: uid={uid}")
             query = f"""
                 SELECT * FROM `{self.pid}.{self.DATASET_ID}.payment`
                 WHERE id = @uid AND (status != 'deleted' OR status IS NULL)
                 LIMIT 1
             """
-            
             job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("uid", "STRING", uid)
-                ]
+                query_parameters=[bigquery.ScalarQueryParameter("uid", "STRING", uid)]
             )
-            
             result = self.run_query(query, conv_to_dict=True, job_config=job_config)
+            print(f"{_USER_DEBUG} get_payment_record: found={bool(result)}")
             return result[0] if result else None
-            
         except Exception as e:
-            print(f"Error retrieving payment record for {uid}: {e}")
+            print(f"{_USER_DEBUG} get_payment_record: error: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
-    def get_standard_stack(self, user_id:str):
-        self._ensure_user_record(user_id)
-        query = f"""
-        SELECT * from `{self.pid}.{self.DATASET_ID}.users`
-        WHERE id = @user_id AND (status != 'deleted' OR status IS NULL)
-        LIMIT 1
-        """
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
-            ]
-        )
-
-        result = self.run_query(
-            query,
-            job_config=job_config,
-            conv_to_dict=True,
-        )
-
-        print("get_standard_stack RESULT:", result)
-        
-        if not result:
+    def get_standard_stack(self, user_id: str):
+        try:
+            print(f"{_USER_DEBUG} get_standard_stack: user_id={user_id}")
+            self._ensure_user_record(user_id)
+            query = f"""
+                SELECT * from `{self.pid}.{self.DATASET_ID}.users`
+                WHERE id = @user_id AND (status != 'deleted' OR status IS NULL)
+                LIMIT 1
+            """
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ScalarQueryParameter("user_id", "STRING", user_id)]
+            )
+            result = self.run_query(query, job_config=job_config, conv_to_dict=True)
+            if not result:
+                print(f"{_USER_DEBUG} get_standard_stack: no result")
+                return False
+            sm_stack_status = result[0].get("sm_stack_status")
+            ok = sm_stack_status == "created"
+            print(f"{_USER_DEBUG} get_standard_stack: sm_stack_status={sm_stack_status}, ok={ok}")
+            return ok
+        except Exception as e:
+            print(f"{_USER_DEBUG} get_standard_stack: error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
-        sm_stack_status = result[0]["sm_stack_status"]
-
-        if sm_stack_status == "created":
-            return True
-
-        return False
-
     def set_standard_stack(self, user_id):
-        self._ensure_user_record(user_id)
-        
-        self.qb.set_item("users", {"sm_stack_status": "created"}, keys={"id": user_id})
-        print("set_standard_stack")
+        try:
+            print(f"{_USER_DEBUG} set_standard_stack: user_id={user_id}")
+            self._ensure_user_record(user_id)
+            self.qb.set_item("users", {"sm_stack_status": "created"}, keys={"id": user_id})
+            print(f"{_USER_DEBUG} set_standard_stack: done")
+        except Exception as e:
+            print(f"{_USER_DEBUG} set_standard_stack: error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
     def _ensure_user_record(self, uid: str, email: Optional[str] = None) -> bool:
         """
@@ -179,39 +182,28 @@ class UserManager(BQCore):
             True if user record was created or already exists
         """
         try:
-            # Check if user already exists
+            print(f"{_USER_DEBUG} _ensure_user_record: uid={uid}")
             query = f"""
                 SELECT id FROM `{self.pid}.{self.DATASET_ID}.users`
                 WHERE id = @uid AND (status != 'deleted' OR status IS NULL)
                 LIMIT 1
             """
-            
             job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("uid", "STRING", uid)
-                ]
+                query_parameters=[bigquery.ScalarQueryParameter("uid", "STRING", uid)]
             )
-            
             result = self.run_query(query, conv_to_dict=True, job_config=job_config)
-            
             if result:
-                print(f"User {uid} already exists")
+                print(f"{_USER_DEBUG} _ensure_user_record: user already exists")
                 return True
-            
-            # Create new user record
-            user_data = {
-                "id": uid,
-                "email": email or None,
-                "status": "active"
-            }
-            
-            print(f"Creating new user record: {user_data}")
+            user_data = {"id": uid, "email": email or None, "status": "active"}
+            print(f"{_USER_DEBUG} _ensure_user_record: creating user")
             self.qb.set_item("users", user_data, keys={"id": uid})
-            print(f"User {uid} created successfully")
+            print(f"{_USER_DEBUG} _ensure_user_record: created")
             return True
-            
         except Exception as e:
-            print(f"Error ensuring user record: {e}")
+            print(f"{_USER_DEBUG} _ensure_user_record: error: {e}")
+            import traceback
+            traceback.print_exc()
             raise
 
     def _ensure_payment_record(self, uid: str) -> bool:
@@ -225,26 +217,19 @@ class UserManager(BQCore):
             True if payment record was created or already exists
         """
         try:
-            # Check if payment record already exists
+            print(f"{_USER_DEBUG} _ensure_payment_record: uid={uid}")
             query = f"""
                 SELECT id FROM `{self.pid}.{self.DATASET_ID}.payment`
                 WHERE id = @uid AND (status != 'deleted' OR status IS NULL)
                 LIMIT 1
             """
-            
             job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("uid", "STRING", uid)
-                ]
+                query_parameters=[bigquery.ScalarQueryParameter("uid", "STRING", uid)]
             )
-            
             result = self.bqclient.query(query, job_config=job_config).result()
-            
             if result.total_rows > 0:
-                print(f"Payment record for user {uid} already exists")
+                print(f"{_USER_DEBUG} _ensure_payment_record: already exists")
                 return True
-            
-            # Create new payment record (free tier)
             from utils.id_gen import generate_id
             payment_data = {
                 "id": generate_id(),
@@ -255,14 +240,13 @@ class UserManager(BQCore):
                 "stripe_payment_intent_id": None,
                 "stripe_payment_method_id": None
             }
-            
-            print(f"Creating new payment record: {payment_data}")
             self.qb.set_item("payment", payment_data, keys={"id": uid})
-            print(f"Payment record for user {uid} created successfully")
+            print(f"{_USER_DEBUG} _ensure_payment_record: created")
             return True
-            
         except Exception as e:
-            print(f"Error ensuring payment record: {e}")
+            print(f"{_USER_DEBUG} _ensure_payment_record: error: {e}")
+            import traceback
+            traceback.print_exc()
             raise
 
 
@@ -290,6 +274,7 @@ class UserManager(BQCore):
             True if update was successful
         """
         try:
+            print(f"{_USER_DEBUG} update_payment_stripe_info: uid={uid}")
             updates = {}
             if stripe_customer_id is not None:
                 updates["stripe_customer_id"] = stripe_customer_id
@@ -301,13 +286,14 @@ class UserManager(BQCore):
                 updates["stripe_payment_method_id"] = stripe_payment_method_id
             if payment_type is not None:
                 updates["payment_type"] = payment_type
-            
             if not updates:
-                print("No fields to update")
+                print(f"{_USER_DEBUG} update_payment_stripe_info: no fields to update")
                 return False
-            
-            return self.qb.set_item("payment", updates, keys={"id": uid})
-            
+            out = self.qb.set_item("payment", updates, keys={"id": uid})
+            print(f"{_USER_DEBUG} update_payment_stripe_info: done")
+            return out
         except Exception as e:
-            print(f"Error updating payment record: {e}")
+            print(f"{_USER_DEBUG} update_payment_stripe_info: error: {e}")
+            import traceback
+            traceback.print_exc()
             return False

@@ -56,14 +56,14 @@ data = request.get_data_field("inj_object")  # Get field with default
 ```python
 # Success response
 response = WebSocketResponse.success(
-    type="set_inj",
+    type="SET_INJ",
     data={"injection_id": "inj_123"},
     auth=auth
 )
 
 # Error response
 response = WebSocketResponse.error(
-    type="set_inj",
+    type="SET_INJ",
     error="Validation failed",
     data=None,
     auth=auth

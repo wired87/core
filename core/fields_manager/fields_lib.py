@@ -1,13 +1,17 @@
+import base64
 import random
 import json
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+
 from google.cloud import bigquery
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 
 from core.qbrain_manager import QBrainTableManager
 from qf_utils.all_subs import FERMIONS, G_FIELDS, H
 from qf_utils.qf_utils import QFUtils
+
+_FIELDS_DEBUG = "[FieldsManager]"
 
 # Define Schemas
 FIELD_SCHEMA = [
@@ -45,17 +49,59 @@ class FieldsManager(BQCore):
         super().__init__(dataset_id=self.DATASET_ID)
         self.qb = QBrainTableManager()
         self.table = f"{self.FIELDS_TABLE}"
-        self.qfu=QFUtils()
+        self.qfu = QFUtils()
+        from core.fields_manager import case as fields_case
+        #set_case = next((c for c in fields_case.RELAY_FIELD if c.get("case") == "SET_FIELD"), None)
+        req_struct = set_case.get("req_struct", {}) if set_case else {}
+        out_struct = set_case.get("out_struct", {}) if set_case else {}
+        self._extract_prompt = f"""Extract field definitions from the provided file content.
 
+Input structure (what you receive): raw file bytes decoded as text or document content.
+Output structure (return valid JSON only):
+req_struct: {json.dumps(req_struct, indent=2)}
+out_struct: {json.dumps(out_struct, indent=2)}
+
+Return a JSON object with a "field" key matching the data.field shape expected by SET_FIELD.
+Each field dict should have: id, params (dict or JSON), optionally module, interactant_fields.
+Output valid JSON only, no markdown."""
+
+    def extract_from_file_bytes(self, file_bytes: bytes) -> Optional[Dict[str, Any]]:
+        """
+        Extract manager-specific field content from file bytes using the static prompt.
+        Uses Gem LLM with req_struct/out_struct from SET_FIELD case.
+        """
+        try:
+            from gem_core.gem import Gem
+            gem = Gem()
+            try:
+                text_content = file_bytes.decode("utf-8")
+                content = f"{self._extract_prompt}\n\n--- FILE CONTENT ---\n{text_content}"
+                response = gem.ask(content)
+            except UnicodeDecodeError:
+                b64 = base64.b64encode(file_bytes).decode("ascii")
+                response = gem.ask_mm(file_content_str=b64, prompt=self._extract_prompt)
+            text = (response or "").strip().replace("```json", "").replace("```", "").strip()
+            parsed = json.loads(text)
+            if "field" in parsed:
+                return {"field": parsed["field"]}
+            return {"field": parsed}
+        except Exception as e:
+            print(f"{_FIELDS_DEBUG} extract_from_file_bytes error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
     def _ensure_fields_table(self):
-        table_ref = f"{self.pid}.{self.DATASET_ID}.{self.FIELDS_TABLE}"
         try:
+            print(f"{_FIELDS_DEBUG} _ensure_fields_table: checking")
+            table_ref = f"{self.pid}.{self.DATASET_ID}.{self.FIELDS_TABLE}"
             self.bqclient.get_table(table_ref)
+            print(f"{_FIELDS_DEBUG} _ensure_fields_table: exists")
         except Exception as e:
-            print(f"Error ensuring fields table: {e}")
+            print(f"{_FIELDS_DEBUG} _ensure_fields_table: creating: {e}")
             table = bigquery.Table(table_ref, schema=FIELD_SCHEMA)
             self.bqclient.create_table(table)
+            print(f"{_FIELDS_DEBUG} _ensure_fields_table: created")
 
     def _ensure_fields_to_fields_table(self):
         table_ref = f"{self.pid}.{self.DATASET_ID}.{self.FIELDS_TO_FIELDS_TABLE}"
@@ -89,7 +135,9 @@ class FieldsManager(BQCore):
             interactant_ids = [item["interactant_field_id"] for item in result]
             return {"interactant_ids": interactant_ids}
         except Exception as e:
-            print(f"Error getting fields interactant_ids: {e}")
+            print(f"{_FIELDS_DEBUG} get_field_interactants: error: {e}")
+            import traceback
+            traceback.print_exc()
             return {"interactant_ids": []}
 
 
@@ -104,50 +152,66 @@ class FieldsManager(BQCore):
 
 
     def get_fields_by_user(self, user_id: str, select: str = "*") -> List[Dict[str, Any]]:
-        print("get_fields_by_user", user_id)
-        result = self.qb.get_users_entries(
-            user_id=user_id,
-            table=self.table,
-            select=select
-        )
-        fields = [dict(row) for row in result]
-        print("Users fields received: ", fields)
-        return fields
+        try:
+            print(f"{_FIELDS_DEBUG} get_fields_by_user: user_id={user_id}")
+            result = self.qb.get_users_entries(
+                user_id=user_id,
+                table=self.table,
+                select=select
+            )
+            fields = [dict(row) for row in result]
+            print(f"{_FIELDS_DEBUG} get_fields_by_user: got {len(fields)} field(s)")
+            return fields
+        except Exception as e:
+            print(f"{_FIELDS_DEBUG} get_fields_by_user: error: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
     def get_fields_by_module(self, module_id: str, user_id: str, select: str = "f.*") -> List[Dict[str, Any]]:
-        # Get module_to_field rows -> get fields
-        module_linked_rows = self.qb.get_modules_linked_rows(
-            module_id=module_id,
-            user_id=user_id,
-            table_name=self.MODULE_TO_FIELD_TABLE,
-            linked_row_id="field_id",
-            linked_row_id_name="field_id"
-        )
-        
-        field_ids = [row['field_id'] for row in module_linked_rows]
-        
-        fields = self.qb.row_from_id(
-            nid=field_ids,
-            select="*",
-            table=self.table
-        )
-        # Parse params JSON if string
-        for f in fields:
-            if f.get("params") and isinstance(f["params"], str):
-                try:
-                    f["params"] = json.loads(f["params"])
-                except Exception as e:
-                    print(f"Error parsing field params: {e}")
-                    pass
-        return fields
+        try:
+            print(f"{_FIELDS_DEBUG} get_fields_by_module: module_id={module_id}, user_id={user_id}")
+            module_linked_rows = self.qb.get_modules_linked_rows(
+                module_id=module_id,
+                user_id=user_id,
+                table_name=self.MODULE_TO_FIELD_TABLE,
+                linked_row_id="field_id",
+                linked_row_id_name="field_id"
+            )
+            field_ids = [row["field_id"] for row in module_linked_rows]
+            fields = self.qb.row_from_id(
+                nid=field_ids,
+                select="*",
+                table=self.table
+            )
+            for f in fields:
+                if f.get("params") and isinstance(f["params"], str):
+                    try:
+                        f["params"] = json.loads(f["params"])
+                    except Exception as e:
+                        print(f"{_FIELDS_DEBUG} get_fields_by_module: parse params: {e}")
+            print(f"{_FIELDS_DEBUG} get_fields_by_module: got {len(fields)} field(s)")
+            return fields
+        except Exception as e:
+            print(f"{_FIELDS_DEBUG} get_fields_by_module: error: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
     def delete_field(self, field_id: str, user_id: str):
-        # Delete from fields table (Soft Delete)
-        self.qb.del_entry(
-            nid=field_id,
-            table=self.table,
-            user_id=user_id
-        )
+        try:
+            print(f"{_FIELDS_DEBUG} delete_field: field_id={field_id}, user_id={user_id}")
+            self.qb.del_entry(
+                nid=field_id,
+                table=self.table,
+                user_id=user_id
+            )
+            print(f"{_FIELDS_DEBUG} delete_field: done")
+        except Exception as e:
+            print(f"{_FIELDS_DEBUG} delete_field: error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
         
 
     def get_fields_by_id(self, field_ids: List[str], select: str = "*") -> List[Dict[str, Any]]:
@@ -210,7 +274,10 @@ class FieldsManager(BQCore):
                  data = [data]
             self.qb.set_item(self.MODULE_TO_FIELD_TABLE, data)
         except Exception as e:
-            print("Err link_module_field", e)
+            print(f"{_FIELDS_DEBUG} link_module_field: error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
 
     def link_field_field(self, data:list):

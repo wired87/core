@@ -5,7 +5,8 @@
   </component>
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/PyPendulum" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/_bigquery_toolbox" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/core/researcher2" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/gem_core" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/qf_utils" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/utils" vcs="Git" />

@@ -133,7 +133,7 @@ Creates a new injection with foreign key relationship to user, then returns all 
 **Request:**
 ```json
 {
-    "type": "set_inj",
+    "type": "SET_INJ",
     "auth": {
         "user_id": "72b74d5214564004a3a86f441a4a112f"
     },
@@ -181,7 +181,7 @@ Creates a new injection with foreign key relationship to user, then returns all 
 **Response (Error):**
 ```json
 {
-    "type": "set_inj",
+    "type": "SET_INJ",
     "status": {
         "state": "error",
         "error": "Invalid injection data structure"
@@ -493,7 +493,7 @@ ws.send(JSON.stringify({
 1. **Client sends:**
 ```json
 {
-    "type": "set_inj",
+    "type": "SET_INJ",
     "auth": { "user_id": "user_123" },
     "data": {
         "id": "inj_new",
@@ -511,7 +511,7 @@ ws.send(JSON.stringify({
 4. **Server responds:**
 ```json
 {
-    "type": "set_inj",
+    "type": "SET_INJ",
     "status": { "state": "success", "error": null },
     "data": { "injection_id": "inj_new" },
     "auth": { "user_id": "user_123", "timestamp": "2025-12-26T14:00:00.123Z" },

@@ -7,7 +7,7 @@
 **Success Response:**
 ```json
 {
-    "type": "set_inj",
+    "type": "SET_INJ",
     "data": {
         "success": true,
         "injection_id": "inj_123"
@@ -19,7 +19,7 @@
 **Error - Missing inj_object:**
 ```json
 {
-    "type": "set_inj",
+    "type": "SET_INJ",
     "data": {
         "success": false,
         "error": "Missing inj_object"
@@ -31,7 +31,7 @@
 **Error - Exception:**
 ```json
 {
-    "type": "set_inj",
+    "type": "SET_INJ",
     "data": {
         "success": false,
         "error": "Exception message"

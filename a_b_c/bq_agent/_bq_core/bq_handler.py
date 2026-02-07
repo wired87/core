@@ -277,24 +277,24 @@ class BQGroundZero:
             if isinstance(query, list):
                 query = ";\n".join(query)
 
-            print("run BQ Query:", query)
+            #print("run BQ Query:", query)
 
             job = self.bqclient.query(query, job_config=job_config)
 
             result = job.result()
 
-            print("BQ Query Result finished")
+            #print("BQ Query Result finished")
             if result:
                 try:
                     if conv_to_dict is True:
                         result = [dict(row) for row in result]
-                    print("Return", len(result))
+                    #print("Return", len(result))
                 except Exception as e:
                     print("Query result has no len:", e)
 
             return result
         except Exception as e:
-            print(f"Error executing query:{query}:\n", e)
+            print(f"Error executing query:\n", e)
 
 
 class BQCore(BQGroundZero):
@@ -634,6 +634,7 @@ class BQCore(BQGroundZero):
                              print(f"ERROR: Failed to insert rows to {table_id} after retry: {errors}")
         else:
             print("No rows to process.")
+        return True
 
 
     def insert_col(self, table_id: str, column_name: str, column_type: str):

@@ -1,13 +1,18 @@
+import base64
 import random
 import json
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+
 from google.cloud import bigquery
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 
 from core.qbrain_manager import QBrainTableManager
 from qf_utils.all_subs import FERMIONS, G_FIELDS, H
 from qf_utils.qf_utils import QFUtils
+
+_PARAMS_DEBUG = "[ParamsManager]"
+
 
 def generate_numeric_id() -> str:
     """Generate a random numeric ID."""
@@ -22,6 +27,20 @@ class ParamsManager(BQCore):
         super().__init__(dataset_id=self.DATASET_ID)
         self.qb = QBrainTableManager()
         self.table = f"{self.PARAMS_TABLE}"
+        from core.param_manager import case as param_case
+        set_case = next((c for c in param_case.RELAY_PARAM if c.get("case") == "SET_PARAM"), None)
+        req_struct = set_case.get("req_struct", {}) if set_case else {}
+        out_struct = set_case.get("out_struct", {}) if set_case else {}
+        self._extract_prompt = f"""Extract parameter definitions from the provided file content.
+
+Input structure (what you receive): raw file bytes decoded as text or document content.
+Output structure (return valid JSON only):
+  req_struct: {json.dumps(req_struct, indent=2)}
+  out_struct: {json.dumps(out_struct, indent=2)}
+
+Return a JSON object with a "param" key (or "params" list) matching the data.param shape expected by SET_PARAM.
+Each param dict should have: id, name, param_type (e.g. FLOAT64, STRING), description, optionally const/is_constant, value.
+Output valid JSON only, no markdown."""
 
     def get_axis(self, params:dict):
         # get axis for pasm from BQ
@@ -29,6 +48,34 @@ class ParamsManager(BQCore):
 
     def get_axis_param(self, const:bool):
         return None if const is True else 1
+
+    def extract_from_file_bytes(self, file_bytes: bytes) -> Optional[Dict[str, Any]]:
+        """
+        Extract manager-specific param content from file bytes using the static prompt.
+        Uses Gem LLM with req_struct/out_struct from SET_PARAM case.
+        """
+        try:
+            from gem_core.gem import Gem
+            gem = Gem()
+            try:
+                text_content = file_bytes.decode("utf-8")
+                content = f"{self._extract_prompt}\n\n--- FILE CONTENT ---\n{text_content}"
+                response = gem.ask(content)
+            except UnicodeDecodeError:
+                b64 = base64.b64encode(file_bytes).decode("ascii")
+                response = gem.ask_mm(file_content_str=b64, prompt=self._extract_prompt)
+            text = (response or "").strip().replace("```json", "").replace("```", "").strip()
+            parsed = json.loads(text)
+            if "param" in parsed:
+                return {"param": parsed["param"]}
+            if "params" in parsed:
+                return {"param": parsed["params"] if isinstance(parsed["params"], list) else parsed["params"]}
+            return {"param": parsed}
+        except Exception as e:
+            print(f"{_PARAMS_DEBUG} extract_from_file_bytes error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
     def get_users_params(self, user_id: str, select: str = "*") -> List[Dict[str, Any]]:
         print("get_users_params", user_id)
@@ -39,47 +86,61 @@ class ParamsManager(BQCore):
         )
         return [dict(row) for row in result]
 
-    def set_param(self, param_data: Dict[str, Any] or List[dict], user_id: str):
+    def set_param(
+            self,
+            param_data: Dict[str, Any] or List[dict],
+            user_id: str,
+    ):
         """
         Upsert parameters.
         Schema: id, name, type, user_id, description, embedding (ARRAY<FLOAT64>), status, created_at, updated_at
         """
-        if not isinstance(param_data, list):
-            param_data = [param_data]
-
-        for p in param_data:
-            p["user_id"] = user_id
-            if "is_constant" in p:
-                p["const"] = p["is_constant"]
-
-            if "value" in p:
-                p["value"] = json.dumps(p["value"])
-
-            #set axis param
-            if "axis_def" not in p or p.get("axis_def") is None and "const" in p:
-                p["axis_def"] = self.get_axis_param(
-                    p["const"]
-                )
-
-            # Ensure embedding is list of floats if present
-            if "embedding" in p and p["embedding"]:
-                if isinstance(p["embedding"], str):
-                    try:
-                        p["embedding"] = json.loads(p["embedding"])
-                    except Exception as e:
-                        pass
-            
-        self.qb.set_item(
-            self.PARAMS_TABLE,
-            param_data
-        )
+        try:
+            print(f"{_PARAMS_DEBUG} set_param: user_id={user_id}, count={1 if not isinstance(param_data, list) else len(param_data)}")
+            if not isinstance(param_data, list):
+                param_data = [param_data]
+            prev_params = []
+            for p in param_data:
+                p["user_id"] = user_id
+                if "is_constant" in p:
+                    p["const"] = p["is_constant"]
+                if "value" in p:
+                    p["value"] = json.dumps(p["value"])
+                if "axis_def" not in p or p.get("axis_def") is None and "const" in p:
+                    p["axis_def"] = self.get_axis_param(p["const"])
+                if "embedding" in p and p["embedding"]:
+                    if isinstance(p["embedding"], str):
+                        try:
+                            p["embedding"] = json.loads(p["embedding"])
+                        except Exception:
+                            pass
+                prev_param = p.copy()
+                prev_param["id"] = f"prev_{p['id']}"
+                prev_param["description"] = "Prev variation to trac emergence over time. The val field is empty and taks the prev val of its parent at each iteration"
+                prev_param["value"] = None
+                prev_params.append(prev_param)
+            self.qb.set_item(self.PARAMS_TABLE, param_data)
+            print(f"{_PARAMS_DEBUG} set_param: done")
+        except Exception as e:
+            print(f"{_PARAMS_DEBUG} set_param: error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
     def delete_param(self, param_id: str, user_id: str):
-        self.qb.del_entry(
-            nid=param_id,
-            table=self.table,
-            user_id=user_id
-        )
+        try:
+            print(f"{_PARAMS_DEBUG} delete_param: param_id={param_id}, user_id={user_id}")
+            self.qb.del_entry(
+                nid=param_id,
+                table=self.table,
+                user_id=user_id
+            )
+            print(f"{_PARAMS_DEBUG} delete_param: done")
+        except Exception as e:
+            print(f"{_PARAMS_DEBUG} delete_param: error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
     def link_field_param(self, data: List[Dict[str, Any]] or Dict[str, Any], user_id: str):
         """
@@ -234,7 +295,9 @@ def handle_get_users_params(payload):
 
 def handle_list_users_params(payload):
     return handle_get_users_params(payload)
-
+"""
+each p gets prevp (pp)
+"""
 def handle_set_param(payload):
     auth = payload.get("auth", {})
     data = payload.get("data", {})

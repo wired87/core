@@ -13,6 +13,8 @@ from core.file_manager import RawModuleExtractor
 
 from core.qbrain_manager import QBrainTableManager
 
+_MODULE_DEBUG = "[ModuleWsManager]"
+
 # Define Schemas
 MODULE_SCHEMA = [
     bigquery.SchemaField("id", "STRING", mode="REQUIRED"),
@@ -225,19 +227,28 @@ class ModuleWsManager(BQCore):
 
     def retrieve_user_modules(self, user_id: str) -> List[Dict[str, Any]]:
         """Retrieve all modules for a user."""
-        # todocreate sm user specific so user can edit it
-        result = self.qb.get_users_entries(
-            user_id=user_id,
-            table=self.table_ref
-        )
-        
-        modules = []
-        for row in result:
-            row_dict = dict(row)
-            if row_dict.get("binary_data"):
-                row_dict["binary_data"] = base64.b64encode(row_dict["binary_data"]).decode('utf-8')
-            modules.append(row_dict)
-        return modules
+        try:
+            print(f"{_MODULE_DEBUG} retrieve_user_modules: user_id={user_id}")
+            result = self.qb.get_users_entries(
+                user_id=user_id,
+                table=self.table_ref
+            )
+            modules = []
+            for row in result:
+                row_dict = dict(row)
+                if row_dict.get("binary_data", None):
+                    row_dict["binary_data"] = base64.b64encode(
+                        row_dict["binary_data"]).decode("utf-8")
+                modules.append(row_dict)
+            print(f"{_MODULE_DEBUG} retrieve_user_modules: got {len(modules)} module(s)")
+            return modules
+        except Exception as e:
+            print(f"{_MODULE_DEBUG} retrieve_user_modules: error: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
+
 
     def retrieve_session_modules(self, session_id: str, user_id: str, select: str = "m.*") -> List[Dict[str, Any]]:
         """Retrieve modules for a session."""

@@ -13,6 +13,8 @@ from core.fields_manager.fields_lib import fields_manager
 from core.user_manager.user import UserManager
 from core.qbrain_manager import QBrainTableManager
 
+_SM_DEBUG = "[SMManager]"
+
 
 class SMManager:
     def __init__(self):
@@ -26,19 +28,21 @@ class SMManager:
         self.qb = QBrainTableManager()
 
     def check_sm_exists(self, user_id: str = "public"):
-        print("check_sm_exists...")
         try:
-            user=self.qb.row_from_id(user_id, table="users")
+            print(f"{_SM_DEBUG} check_sm_exists: user_id={user_id}")
+            user = self.qb.row_from_id(user_id, table="users")
             if not user:
+                print(f"{_SM_DEBUG} check_sm_exists: no user")
                 return False
-            user=user[0]
-            if user["sm_stack_status"] == "created":
-                print("check_sm_exists... done")
-                return True
+            user = user[0]
+            ok = user.get("sm_stack_status") == "created"
+            print(f"{_SM_DEBUG} check_sm_exists: sm_stack_status={user.get('sm_stack_status')}, ok={ok}")
+            return ok
         except Exception as e:
-            print("Err check_sm_exists:", e)
-        print("check_sm_exists... done")
-        return False
+            print(f"{_SM_DEBUG} check_sm_exists: error: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
 
     def main(self, user_id: str = "public"):
@@ -81,93 +85,95 @@ class SMManager:
             }
         }
         """
-        print(f"ENABLING SM FOR Env: {env_id}, Session: {session_id}")
-        fu = FieldUtils()
-        sm_modules = fu.modules_fields
-        
-        env_module_links = []
-        module_field_links = []
-        
-        now = datetime.now().isoformat()
-        
-        for module_name, fields in sm_modules.items():
-            mid = module_name
-            
-            # Link Env -> Module
-            env_module_links.append({
-                "id": generate_numeric_id(),
-                "env_id": env_id,
-                "module_id": mid,
-                "session_id": session_id,
-                "user_id": user_id,
-                "status": "active",
-                "created_at": now,
-                "updated_at": now
-            })
-            
-            for field_name in fields:
-                fid = field_name
-                # Link Module -> Field
-                module_field_links.append({
+        try:
+            print(f"ENABLING SM FOR Env: {env_id}, Session: {session_id}")
+            fu = FieldUtils()
+            sm_modules = fu.modules_fields
+
+            env_module_links = []
+            module_field_links = []
+
+            now = datetime.now().isoformat()
+
+            for module_name, fields in sm_modules.items():
+                mid = module_name
+
+                # Link Env -> Module
+                env_module_links.append({
                     "id": generate_numeric_id(),
-                    "module_id": mid,
-                    "field_id": fid,
-                    "session_id": session_id,
                     "env_id": env_id,
+                    "module_id": mid,
+                    "session_id": session_id,
                     "user_id": user_id,
                     "status": "active",
                     "created_at": now,
                     "updated_at": now
                 })
-        
-        # Upsert
-        if env_module_links:
-            for row in env_module_links:
-                self.qb.set_item("envs_to_modules", row, keys={"id": row["id"]})
 
-        #
-        if module_field_links:
-            for row in module_field_links:
-                self.qb.set_item("modules_to_fields", row, keys={"id": row["id"]})
+                for field_name in fields:
+                    fid = field_name
+                    # Link Module -> Field
+                    module_field_links.append({
+                        "id": generate_numeric_id(),
+                        "module_id": mid,
+                        "field_id": fid,
+                        "session_id": session_id,
+                        "env_id": env_id,
+                        "user_id": user_id,
+                        "status": "active",
+                        "created_at": now,
+                        "updated_at": now
+                    })
 
-        #
-        formatted_modules = {}
-        for mid, fids in sm_modules.items():
-            formatted_modules[mid] = {"fields": fids}
-         
-        return {
-            "sessions": {
-                session_id: {
-                    "envs": {
-                        env_id: {
-                            "modules": formatted_modules
+            # Upsert
+            if env_module_links:
+                for row in env_module_links:
+                    self.qb.set_item("envs_to_modules", row, keys={"id": row["id"]})
+
+            #
+            if module_field_links:
+                for row in module_field_links:
+                    self.qb.set_item("modules_to_fields", row, keys={"id": row["id"]})
+
+            #
+            formatted_modules = {}
+            for mid, fids in sm_modules.items():
+                formatted_modules[mid] = {"fields": fids}
+
+                print(f"{_SM_DEBUG} enable_sm: done")
+                return {
+                    "sessions": {
+                        session_id: {
+                            "envs": {
+                                env_id: {
+                                    "modules": formatted_modules
+                                }
+                            }
                         }
                     }
                 }
-            }
-        }
+        except Exception as e:
+            print(f"{_SM_DEBUG} enable_sm: error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
     def _initialize_graph(self) -> QFUtils:
         """Initialize QFUtils and load standard modules."""
-        # Create separate graph for SM loading
-        print("_initialize_graph...")
-        qf = QFUtils(
-            G=nx.Graph()
-        )
-
-        qf.build_interacion_G()
-
-        qf.build_parameter()
-
-        module_creator = ModuleCreator(
-            G=qf.g.G,
-            qfu=qf,
-        )
-
-        module_creator.load_sm()
-
-        print("_initialize_graph finshed")
-        return qf
+        try:
+            print(f"{_SM_DEBUG} _initialize_graph: starting")
+            qf = QFUtils(G=nx.Graph())
+            qf.build_interacion_G()
+            qf.build_parameter()
+            module_creator = ModuleCreator(G=qf.g.G, qfu=qf)
+            module_creator.load_sm()
+            print(f"{_SM_DEBUG} _initialize_graph: finished")
+            return qf
+        except Exception as e:
+            print(f"{_SM_DEBUG} _initialize_graph: error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
 
     def _upsert_graph_content(self, qf: QFUtils, user_id: str):

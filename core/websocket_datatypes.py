@@ -331,13 +331,13 @@ class WebSocketResponse:
     Usage:
         # Success response with data
         response = WebSocketResponse.success(
-            type="set_inj",
+            type="SET_INJ",
             data={"injection_id": "inj_123"}
         )
         
         # Error response
         response = WebSocketResponse.error(
-            type="set_inj",
+            type="SET_INJ",
             error="Missing required field"
         )
         
@@ -455,7 +455,7 @@ class WebSocketRequest:
         
         # Create new request (for testing)
         request = WebSocketRequest.create(
-            type="set_inj",
+            type="SET_INJ",
             data={"inj_object": {...}}
         )
     """
@@ -560,13 +560,13 @@ def create_injection_response(success: bool, injection_id: Optional[str] = None,
     """
     if success:
         return dict(
-            type="set_inj",
+            type="SET_INJ",
             data={"injection_id": injection_id},
             auth=auth
         )
     else:
         return dict(
-            type="set_inj",
+            type="SET_INJ",
             error=error or "Operation failed",
             data=None,
             auth=auth
