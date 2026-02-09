@@ -121,10 +121,13 @@ RELAY_METHOD = [
                 "equation": "str",
                 "params": "list",
                 "origins": "list",
-                "description": "str"
+                "description": "str",
+                "code": "str",
+                "jax_code": "str"
             },
             "auth": {
-                "user_id": "str"
+                "user_id": "str",
+                "original_id": "str"
             }
         },
         "out_struct": {

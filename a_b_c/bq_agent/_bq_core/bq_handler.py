@@ -361,7 +361,7 @@ class BQCore(BQGroundZero):
         updated_schema = table.schema + [bigquery.SchemaField(col, col_type) for col, col_type in new_columns.items()]
         table.schema = updated_schema
         self.bqclient.update_table(table, ["schema"])
-        print(f"✅ Added missing columns: {', '.join(new_columns.keys())}")
+        print(f"[OK] Added missing columns: {', '.join(new_columns.keys())}")
 
 
     def bq_check_table_exists(self, table_name):
@@ -656,12 +656,12 @@ class BQCore(BQGroundZero):
         existing_columns = [field.name for field in table.schema]
 
         if column_name not in existing_columns:
-            print(f"⚠️ Column '{column_name}' does not exist. Adding it...")
+            print(f"[WARN] Column '{column_name}' does not exist. Adding it...")
             alter_query = f"ALTER TABLE `{table_ref}` ADD COLUMN {column_name} {column_type}"
             self.bqclient.query(alter_query).result()
-            print(f"✅ Column '{column_name}' added successfully.")
+            print(f"[OK] Column '{column_name}' added successfully.")
         else:
-            print(f"✅ Column '{column_name}' already exists.")
+            print(f"[OK] Column '{column_name}' already exists.")
 
 
     def list_tables(self) -> list:
@@ -800,7 +800,7 @@ class BigQueryGraphHandler(BQCore):
 
         job = self.bqclient.load_table_from_file(csv_buffer, table_ref, job_config=job_config)
         job.result()  # Wait for completion
-        print(f"✅ Uploaded {len(df)} rows to {table_name}.")
+        print(f"[OK] Uploaded {len(df)} rows to {table_name}.")
 
     def check_add_fields(self, schema: dict, table_name: str):
         """
@@ -825,7 +825,7 @@ class BigQueryGraphHandler(BQCore):
             table = self.bqclient.get_table(table_ref)
             return {field.name for field in table.schema}
         except Exception as e:
-            print(f"⚠️ Error retrieving columns for {table_name}: {e}")
+            print(f"[WARN] Error retrieving columns for {table_name}: {e}")
             return set()
 
 

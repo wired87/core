@@ -1,4 +1,3 @@
-import base64
 import random
 import json
 from datetime import datetime
@@ -6,6 +5,8 @@ from typing import Dict, Any, List, Optional
 
 from google.cloud import bigquery
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
+from a_b_c.gemw.gem import Gem
+from core.param_manager.extraction_prompt import xtract_params_prompt
 
 from core.qbrain_manager import QBrainTableManager
 from qf_utils.all_subs import FERMIONS, G_FIELDS, H
@@ -27,20 +28,7 @@ class ParamsManager(BQCore):
         super().__init__(dataset_id=self.DATASET_ID)
         self.qb = QBrainTableManager()
         self.table = f"{self.PARAMS_TABLE}"
-        from core.param_manager import case as param_case
-        set_case = next((c for c in param_case.RELAY_PARAM if c.get("case") == "SET_PARAM"), None)
-        req_struct = set_case.get("req_struct", {}) if set_case else {}
-        out_struct = set_case.get("out_struct", {}) if set_case else {}
-        self._extract_prompt = f"""Extract parameter definitions from the provided file content.
-
-Input structure (what you receive): raw file bytes decoded as text or document content.
-Output structure (return valid JSON only):
-  req_struct: {json.dumps(req_struct, indent=2)}
-  out_struct: {json.dumps(out_struct, indent=2)}
-
-Return a JSON object with a "param" key (or "params" list) matching the data.param shape expected by SET_PARAM.
-Each param dict should have: id, name, param_type (e.g. FLOAT64, STRING), description, optionally const/is_constant, value.
-Output valid JSON only, no markdown."""
+        self._extract_prompt = None  # built lazily to avoid circular import with case
 
     def get_axis(self, params:dict):
         # get axis for pasm from BQ
@@ -49,27 +37,54 @@ Output valid JSON only, no markdown."""
     def get_axis_param(self, const:bool):
         return None if const is True else 1
 
-    def extract_from_file_bytes(self, file_bytes: bytes) -> Optional[Dict[str, Any]]:
+    def _get_extract_prompt(self, instructions, content, users_params) -> str:
+        """Build prompt lazily to avoid circular import with case."""
+        if self._extract_prompt is None:
+            from core.param_manager import case as param_case
+            set_case = next((c for c in param_case.RELAY_PARAM if c.get("case") == "SET_PARAM"), None)
+            req_struct = set_case.get("req_struct", {}) if set_case else {}
+            self._extract_prompt = xtract_params_prompt(
+                req_struct,
+                instructions,
+                content,
+                users_params,
+            )
+
+        return self._extract_prompt
+
+
+    def param_cfg(self):
+        config = {
+            "response_mime_type": "application/json",
+            "response_schema": List[{
+              "id": str,
+              "name": str,
+              "type": int,
+              "is_constant": bool,
+              "description": str
+            }]
+        }
+        return config
+
+    def extract_from_file_bytes(self, content: bytes or str, instructions, users_params) -> Optional[Dict[str, Any]]:
         """
         Extract manager-specific param content from file bytes using the static prompt.
         Uses Gem LLM with req_struct/out_struct from SET_PARAM case.
         """
+        print("param manager, extract_from_file_bytes...")
         try:
-            from gem_core.gem import Gem
+            prompt = self._get_extract_prompt(
+                instructions,
+                content,
+                users_params,
+            )
             gem = Gem()
-            try:
-                text_content = file_bytes.decode("utf-8")
-                content = f"{self._extract_prompt}\n\n--- FILE CONTENT ---\n{text_content}"
-                response = gem.ask(content)
-            except UnicodeDecodeError:
-                b64 = base64.b64encode(file_bytes).decode("ascii")
-                response = gem.ask_mm(file_content_str=b64, prompt=self._extract_prompt)
-            text = (response or "").strip().replace("```json", "").replace("```", "").strip()
-            parsed = json.loads(text)
-            if "param" in parsed:
-                return {"param": parsed["param"]}
-            if "params" in parsed:
-                return {"param": parsed["params"] if isinstance(parsed["params"], list) else parsed["params"]}
+
+            parsed = gem.ask(
+                content=prompt,
+                config=self.param_cfg()
+            )
+            print("parsed params:", parsed)
             return {"param": parsed}
         except Exception as e:
             print(f"{_PARAMS_DEBUG} extract_from_file_bytes error: {e}")
@@ -301,6 +316,7 @@ each p gets prevp (pp)
 def handle_set_param(payload):
     auth = payload.get("auth", {})
     data = payload.get("data", {})
+    # param
     user_id = auth.get("user_id")
     param_data = data.get("param")
     

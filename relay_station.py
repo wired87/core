@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 import networkx as nx
 
 from core.env_manager.env_lib import handle_get_env, handle_del_env, handle_set_env, handle_get_envs_user, EnvManager, handle_link_env_module, handle_rm_link_env_module, handle_download_model, handle_retrieve_logs_env, handle_get_env_data
+from core.file_manager import RELAY_FILE
 from core.injection_manager.injection import (
     handle_set_inj, handle_del_inj, handle_get_inj_user, handle_get_inj_list,
     handle_link_inj_env, handle_rm_link_inj_env, handle_list_link_inj_env, handle_get_injection,
@@ -100,7 +101,7 @@ RELAY_CASES_CONFIG = [
      "out_struct": {"type": "GET_USERS_ENVS", "data": {"envs": list}}},
 
     {"case": "SET_ENV", "desc": "", "func": handle_set_env,
-     "req_struct": {"data": {"env_item": dict}, "auth": {"user_id": str}},
+     "req_struct": {"data": {"env": dict}, "auth": {"user_id": str}},
      "out_struct": {"type": "GET_USERS_ENVS", "data": {"envs": list}}},
 
     {"case": "DOWNLOAD_MODEL", "desc": "Download Model", "func": handle_download_model,
@@ -129,11 +130,11 @@ RELAY_CASES_CONFIG = [
      "out_struct": {"type": "GET_MODULES_FIELDS", "data": {"fields": list}}},
 
     {"case": "SET_FIELD", "desc": "Set Field", "func": handle_set_field,
-     "req_struct": {"data": {"field": dict}, "auth": {"field_id": str, "user_id": str}},
+     "req_struct": {"data": {"field": dict}, "auth": {"user_id": str, "original_id": "str"}},
      "out_struct": {"type": "LIST_USERS_FIELDS", "data": {"fields": list}}},
 
     {"case": "LINK_MODULE_FIELD", "desc": "Link Module Field", "func": handle_link_module_field,
-     "req_struct": {"auth": {"user_id": str, "module_id": str, "field_id": str}},
+     "req_struct": {"auth": {"user_id": str, "module_id": str, "field_id": str, "session_id": str, "env_id": str}},
      "out_struct": {"type": "GET_MODULES_FIELDS", "data": {"fields": list}}},
 
     {"case": "RM_LINK_MODULE_FIELD", "desc": "Remove Link Module Field", "func": handle_rm_link_module_field,
@@ -150,7 +151,7 @@ RELAY_CASES_CONFIG = [
 
     # INJECTION – Energy Designer
     {"case": "SET_INJ", "desc": "Set/upsert injection", "func": handle_set_inj,
-     "req_struct": {"data": dict, "auth": {"user_id": str}},
+     "req_struct": {"data": dict, "auth": {"user_id": str, "original_id": str}},
      "out_struct": {"type": "GET_INJ_USER", "data": dict[str, list]}},
 
     {"case": "DEL_INJ", "desc": "Delete injection", "func": handle_del_inj,
@@ -179,7 +180,7 @@ RELAY_CASES_CONFIG = [
      "out_struct": {"type": "GET_INJ_ENV", "data": list}},
 
     {"case": "GET_INJECTION", "desc": "Get single injection", "func": handle_get_injection,
-     "req_struct": {"auth": {"injection_id": str}},
+     "req_struct": {"data": {"id": str, "injection_id": str}, "auth": {}},
      "out_struct": {"type": "GET_INJECTION", "data": dict}},
 
     # SESSION
@@ -210,7 +211,7 @@ RELAY_CASES_CONFIG = [
      "out_struct": {"type": "LINK_ENV_MODULE", "data": {"sessions": dict}}},
 
     {"case": "SET_MODULE", "desc": "Set Module", "func": handle_set_module,
-     "req_struct": {"data": {"id": str, "files": list}, "auth": {"user_id": str}},
+     "req_struct": {"data": {"id": str, "fields": list, "methods": list, "description": str}, "auth": {"user_id": str, "original_id": str}},
      "out_struct": {"type": "LIST_USERS_MODULES", "data": {"modules": list}}},
 
     {"case": "ENABLE_SM", "desc": "Enable Standard Model", "func": handle_enable_sm,
@@ -243,7 +244,7 @@ RELAY_CASES_CONFIG = [
      "out_struct": {"type": "LIST_USERS_PARAMS", "data": {"params": list}}},
 
     {"case": "SET_PARAM", "desc": "Set Param", "func": handle_set_param,
-     "req_struct": {"auth": {"user_id": str}, "data": {"param": dict}},
+     "req_struct": {"auth": {"user_id": str, "original_id": str}, "data": {"param": "dict|list"}},
      "out_struct": {"type": "LIST_USERS_PARAMS", "data": {"params": list}}},
 
     {"case": "DEL_PARAM", "desc": "Delete Param", "func": handle_del_param,
@@ -254,6 +255,7 @@ RELAY_CASES_CONFIG = [
 
     #
     *RELAY_METHOD,
+    *RELAY_FILE,
 ]
 
 class Relay(
@@ -305,7 +307,7 @@ class Relay(
         # save fiel names to apply to envs
         self.file_store:list[str] = []
         self.qc = False
-        self.instance = os.environ["FIREBASE_RTDB"]
+        #self.instance = os.environ["FIREBASE_RTDB"]
         self.demo_g_in_front = False
         self.start_up_path = "container/run.py"
         self.testing=True
@@ -564,17 +566,17 @@ class Relay(
             bytes_data=None
     ):
         try:
-            print(f"{_RELAY_DEBUG} receive: raw text_data length={len(text_data) if text_data else 0}")
+            #print(f"{_RELAY_DEBUG} receive: raw text_data length={len(text_data) if text_data else 0}")
             payload = deserialize(text_data)
             data_type = payload.get("type")
-            print(f"{_RELAY_DEBUG} receive: type={data_type}")
+            #print(f"{_RELAY_DEBUG} receive: type={data_type}")
 
             if self.session_id:
                 if "auth" not in payload:
                     payload["auth"] = {}
                 if "session_id" not in payload["auth"]:
                     payload["auth"]["session_id"] = self.session_id
-            print(f"{_RELAY_DEBUG} receive: payload prepared (session_id injected if needed)")
+            #print(f"{_RELAY_DEBUG} receive: payload prepared (session_id injected if needed)")
 
             handled = False
 
@@ -585,50 +587,7 @@ class Relay(
 
             if data_type == "CHAT":
                 data = payload.get("data", {}) or {}
-                if data.get("files"):
-                    # Classification step: use cases from file_manager.case (dynamic import)
-                    print(f"{_RELAY_DEBUG} receive: CHAT with files -> file relay dispatch")
-                    try:
-                        mod = importlib.import_module("core.file_manager.case")
-                        RELAY_FILE = getattr(mod, "RELAY_FILE", [])
-                        payload_data = payload.get("data", {}) or {}
-                        payload_auth = payload.get("auth", {}) or {}
-                        if "user_id" not in payload_auth and self.user_id:
-                            payload_auth["user_id"] = self.user_id
-                            payload["auth"] = payload_auth
-                        for case_info in RELAY_FILE:
-                            case_name = case_info.get("case")
-                            handler = case_info.get("func")
-                            if not handler:
-                                continue
-                            req_struct = case_info.get("req_struct", {})
-                            req_data = req_struct.get("data", {}) or {}
-                            needs_files = "files" in req_data and bool(payload_data.get("files"))
-                            needs_auth = not req_struct.get("auth") or (payload_auth.get("user_id") or self.user_id)
-                            if needs_files and needs_auth:
-                                print(f"{_RELAY_DEBUG} receive: matching file case {case_name}")
-                                res = handler(payload) if not inspect.iscoroutinefunction(handler) else await handler(payload)
-                                return_data = json.dumps(res, default=str)
-                                await self.send(text_data=return_data)
-                                print(f"{_RELAY_DEBUG} receive: file case {case_name} response sent")
-                                return
-                        print(f"{_RELAY_DEBUG} receive: no matching RELAY_FILE case for CHAT+files")
-                        await self.send(text_data=json.dumps({
-                            "type": "CHAT",
-                            "status": {"state": "error", "msg": "No matching file case for CHAT+files"},
-                            "data": {},
-                        }, default=str))
-                    except Exception as fe:
-                        print(f"{_RELAY_DEBUG} receive: CHAT+files dispatch error: {fe}")
-                        import traceback
-                        traceback.print_exc()
-                        await self.send(text_data=json.dumps({
-                            "type": "CHAT",
-                            "status": {"state": "error", "msg": str(fe)},
-                            "data": {},
-                        }, default=str))
-                    return
-                print(f"{_RELAY_DEBUG} receive: handling CHAT")
+
                 try:
                     response = self.chat_classifier.chat(
                         self.user_id,
@@ -717,7 +676,6 @@ class Relay(
         """
         try:
             config = payload.get("data", {}).get("config", {})
-            print(f"{_RELAY_DEBUG} _handle_start_sim_process: config keys={list(config.keys())}")
             for k, v in config.items():
                 try:
                     print(f"{_RELAY_DEBUG} _handle_start_sim_process: running guard.main for env_id={k}")
@@ -728,19 +686,22 @@ class Relay(
                     import traceback
                     traceback.print_exc()
                     raise
+
+                # send update user env
                 try:
                     print(f"{_RELAY_DEBUG} _handle_start_sim_process: retrieving env table rows for user_id={self.user_id}")
                     updated_env = self.env_manager.retrieve_send_user_specific_env_table_rows(self.user_id)
                     await self.send(text_data=json.dumps({
                         "type": "GET_USERS_ENVS",
                         "data": updated_env
-                    }))
+                    }, default=str))
                     print(f"{_RELAY_DEBUG} _handle_start_sim_process: sent GET_USERS_ENVS for env_id={k}")
                 except Exception as ex:
                     print(f"{_RELAY_DEBUG} _handle_start_sim_process: error updating env status (continuing): {ex}")
                     import traceback
                     traceback.print_exc()
 
+            # create new session
             if hasattr(self, "session_id") and self.session_id:
                 try:
                     print(f"{_RELAY_DEBUG} _handle_start_sim_process: deactivating session {self.session_id}")
@@ -757,7 +718,7 @@ class Relay(
                 "status": {"state": "success", "code": 200, "msg": "Simulation started and session completed."},
                 "data": {}
             }
-            await self.send(text_data=json.dumps(response))
+            await self.send(text_data=json.dumps(response, default=str))
             await self.send_session()
             print(f"{_RELAY_DEBUG} _handle_start_sim_process: completed successfully")
         except Exception as e:
@@ -935,5 +896,48 @@ class Relay(
     # AIChat
     {"case": "CHAT", "desc": "Get Fields Params", "func": handle_start_chat, "req_struct": {"auth": {"user_id": "str", "field_id": "str"}}, "out_struct": {"type": "GET_FIELDS_PARAMS", "data": {"params": "list"}}},
 
-
+                if data.get("files"):
+                    # Classification step: use cases from file_manager.case (dynamic import)
+                    print(f"{_RELAY_DEBUG} receive: CHAT with files -> file relay dispatch")
+                    try:
+                        mod = importlib.import_module("core.file_manager.case")
+                        RELAY_FILE = getattr(mod, "RELAY_FILE", [])
+                        payload_data = payload.get("data", {}) or {}
+                        payload_auth = payload.get("auth", {}) or {}
+                        if "user_id" not in payload_auth and self.user_id:
+                            payload_auth["user_id"] = self.user_id
+                            payload["auth"] = payload_auth
+                        for case_info in RELAY_FILE:
+                            case_name = case_info.get("case")
+                            handler = case_info.get("func")
+                            if not handler:
+                                continue
+                            req_struct = case_info.get("req_struct", {})
+                            req_data = req_struct.get("data", {}) or {}
+                            needs_files = "files" in req_data and bool(payload_data.get("files"))
+                            needs_auth = not req_struct.get("auth") or (payload_auth.get("user_id") or self.user_id)
+                            if needs_files and needs_auth:
+                                print(f"{_RELAY_DEBUG} receive: matching file case {case_name}")
+                                res = handler(payload) if not inspect.iscoroutinefunction(handler) else await handler(payload)
+                                return_data = json.dumps(res, default=str)
+                                await self.send(text_data=return_data)
+                                print(f"{_RELAY_DEBUG} receive: file case {case_name} response sent")
+                                return
+                        print(f"{_RELAY_DEBUG} receive: no matching RELAY_FILE case for CHAT+files")
+                        await self.send(text_data=json.dumps({
+                            "type": "CHAT",
+                            "status": {"state": "error", "msg": "No matching file case for CHAT+files"},
+                            "data": {},
+                        }, default=str))
+                    except Exception as fe:
+                        print(f"{_RELAY_DEBUG} receive: CHAT+files dispatch error: {fe}")
+                        import traceback
+                        traceback.print_exc()
+                        await self.send(text_data=json.dumps({
+                            "type": "CHAT",
+                            "status": {"state": "error", "msg": str(fe)},
+                            "data": {},
+                        }, default=str))
+                    return
+                print(f"{_RELAY_DEBUG} receive: handling CHAT")
 """

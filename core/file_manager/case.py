@@ -6,8 +6,8 @@ RELAY_FILE = [
         "desc": "Set File (Module from File)",
         "func": handle_set_file,
         "req_struct": {
-            "data": {"id": "str", "files": "list"},
-            "auth": {"user_id": "str"}
+            "data": {"id": "str", "files": "list", "name": "str", "description": "str", "prompt": "str", "msg": "str"},
+            "auth": {"user_id": "str", "original_id": "str"}
         },
         "out_struct": {
             "type": "LIST_USERS_MODULES",

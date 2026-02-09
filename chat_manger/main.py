@@ -229,3 +229,11 @@ class AIChatClassifier:
 
         self._update_history(user_id, response)  # Antwort auch zur Historie hinzufügen
         return response
+
+
+if __name__ == "__main__":
+    chat_classifier = AIChatClassifier(case_struct=RELAY_CASES_CONFIG)
+    response = chat_classifier.chat(
+        self.user_id,
+        user_input=payload["data"]["msg"],
+    )

@@ -292,10 +292,14 @@ class SessionManager(BQCore):
             print(f"{_SESSION_DEBUG} deactivate_session: session_id={session_id}")
             updates = {
                 "is_active": False,
-                "last_activity": datetime.utcnow().isoformat(),
+                "last_activity": datetime.now().isoformat(),
                 "status": "deleted"
             }
-            out = self.qb.set_item("sessions", updates, keys={"id": session_id})
+            out = self.qb.set_item(
+                "sessions",
+                updates,
+                keys={"id": session_id}
+            )
             print(f"{_SESSION_DEBUG} deactivate_session: done, success={out}")
             return out
         except Exception as e:
@@ -424,7 +428,7 @@ class SessionManager(BQCore):
             print(f"{_SESSION_DEBUG} get_active_session: user_id={user_id}")
             query = f"""
                 SELECT id FROM `{self.ds_ref}.sessions`
-                WHERE user_id = @user_id AND is_active = TRUE
+                WHERE user_id = @user_id AND is_active = TRUE AND status != 'deleted'
                 ORDER BY created_at DESC
                 LIMIT 1
             """

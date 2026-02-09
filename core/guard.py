@@ -1,5 +1,4 @@
 import base64
-import json
 import pprint
 
 from itertools import product
@@ -10,7 +9,7 @@ from core.env_manager import EnvManager
 import networkx as nx
 from utils.graph.local_graph_utils import GUtils
 from qf_utils.qf_utils import QFUtils
-
+import json
 from core.fields_manager.fields_lib import FieldsManager
 from core.method_manager.method_lib import MethodManager
 
@@ -290,7 +289,7 @@ class Guard(
 
         # GET DATA
         res = res[0]
-        self.g.update_node(
+        self.g.add_node(
             dict(
                 nid=env_id,
                 type="ENV",
@@ -340,7 +339,7 @@ class Guard(
         for fid in field_ids:
             missing_fields = []
             fattrs = self.g.get_node(fid)
-
+            print("fattrs", fattrs)
             interactant_fields:list[str] or str = fattrs["interactant_fields"]
             #print(f"{fid} interactant fields: {len(interactant_fields)}")
 
@@ -398,6 +397,7 @@ class Guard(
                             self.check_create_ghost_mod(
                                 env_id
                             )
+
                             self.g.add_edge(
                                 fid,
                                 mfid,
@@ -434,6 +434,8 @@ class Guard(
 
 
     def main(self, env_id, env_data):
+        print("main...")
+        pprint.pp(env_data)
         self.data_handler(env_id, env_data)
         components = self.converter(env_id)
         self.handle_deployment(env_id, components)
@@ -541,8 +543,7 @@ class Guard(
 
 
                     # create complex map for tbhe db indexing
-
-                    self.g.update_node(
+                    self.g.add_node(
                         dict(
                             nid=fid,
                             type="FIELD",
@@ -550,7 +551,7 @@ class Guard(
                         )
                     )
                 else:
-                    self.g.update_node({"nid": fid, "type": "FIELD"})
+                    self.g.add_node({"nid": fid, "type": "FIELD"})
 
         # GET INJ BQ
         if inj_ids:
@@ -569,7 +570,7 @@ class Guard(
                 for k, v in self.g.G.nodes(data=True):
                     if v.get("type") == "INJECTION" and inid in k:
                         if inj_data:
-                            self.g.update_node(
+                            self.g.add_node(
                                 dict(
                                     nid=k,
                                     type="INJECTION",
@@ -588,14 +589,14 @@ class Guard(
             mod_data = fetched_modules.get(mod_id)
 
             if mod_data:
-                self.g.update_node(dict(
+                self.g.add_node(dict(
                     nid=mod_id,
                     type="MODULE",
                     **{k:v for k,v in mod_data.items() if k not in self.g.get_node(nid=mod_id)}
                 ))
 
             else:
-                self.g.update_node({"nid": mod_id, "type": "MODULE"})
+                self.g.add_node({"nid": mod_id, "type": "MODULE"})
 
             fields_config = mod_config.get("fields", {})
             #print(f"Processing {len(fields_config)} fields for module {mod_id}...")
@@ -615,7 +616,7 @@ class Guard(
                         except Exception as e:
                             print(f"Error parsing field data interactant_fields for {field_id}: {e}")
 
-                    self.g.update_node(
+                    self.g.add_node(
                         dict(
                             nid=field_id,
                             type="FIELD",
@@ -640,7 +641,7 @@ class Guard(
                         print(f"Error linking params for field {field_id}: {e}")
                 else:
                     print(f"no field data for field {field_id}")
-                    self.g.update_node({
+                    self.g.add_node({
                         "nid": field_id,
                         "type": "FIELD",
                     })
@@ -872,7 +873,7 @@ class Guard(
                     self.fields.index(fid)
                 ] = param_index_map
 
-                self.g.update_node(
+                self.g.add_node(
                     dict(
                         fid,
                         param_index_map=param_index_map
@@ -1210,7 +1211,7 @@ class Guard(
             "DB_TO_METHOD_EDGES": [[] for _ in range(mlen)],
             "DB_CTL_VARIATION_LEN_PER_EQUATION": [[] for _ in range(mlen)],
             "DB_CTL_VARIATION_LEN_PER_FIELD": [[] for _ in range(mlen)],
-            "LEN_FEATURES_PER_EQ": self.get_empty_method_structure(set_zero=False)
+            "LEN_FEATURES_PER_EQ": self.get_empty_method_structure(set_zero=False),
         }
 
         ghost_fields = self.g.get_neighbor_list_rel(
@@ -1307,7 +1308,7 @@ class Guard(
 
                                 # RM start "_"
                                 if id_prev_val:
-                                    print("prev etected:", pid)
+                                    #print("prev etected:", pid)
                                     # _prev must be in keys!!!
                                     pid = pid.replace("prev_","").strip()
                                     time_dim = 1
@@ -1738,8 +1739,6 @@ class Guard(
             param_in_field_idx,
         )
 
-
-
     def get_empty_method_structure(self, set_zero=True, ):
         modules: list = self.g.get_nodes(
             filter_key="type",
@@ -1781,8 +1780,6 @@ class Guard(
             print("Err get_empty_field struct:", e)
 
 
-
-
 if __name__ == "__main__":
     import asyncio
     import json
@@ -1791,34 +1788,41 @@ if __name__ == "__main__":
     # Define payload (same structure as relay expects)
     payload = {'type': 'START_SIM', 'data': {'config': {'env_7c87bb26138a427eb93cab27d0f5429f': {'modules': {'GAUGE': {'fields': {'photon': {'injections': {'[4,4,4]': 'hi'}}, 'w_plus': {'injections': {}}, 'w_minus': {'injections': {}}, 'z_boson': {'injections': {}}, 'gluon_0': {'injections': {}}, 'gluon_1': {'injections': {}}, 'gluon_2': {'injections': {}}, 'gluon_3': {'injections': {}}, 'gluon_4': {'injections': {}}, 'gluon_5': {'injections': {}}, 'gluon_6': {'injections': {}}, 'gluon_7': {'injections': {}}}}, 'HIGGS': {'fields': {'phi': {'injections': {}}}}, 'FERMION': {'fields': {'electron': {'injections': {}}, 'muon': {'injections': {}}, 'tau': {'injections': {}}, 'electron_neutrino': {'injections': {}}, 'muon_neutrino': {'injections': {}}, 'tau_neutrino': {'injections': {}}, 'up_quark_0': {'injections': {}}, 'up_quark_1': {'injections': {}}, 'up_quark_2': {'injections': {}}, 'down_quark_0': {'injections': {}}, 'down_quark_1': {'injections': {}}, 'down_quark_2': {'injections': {}}, 'charm_quark_0': {'injections': {}}, 'charm_quark_1': {'injections': {}}, 'charm_quark_2': {'injections': {}}, 'strange_quark_0': {'injections': {}}, 'strange_quark_1': {'injections': {}}, 'strange_quark_2': {'injections': {}}, 'top_quark_0': {'injections': {}}, 'top_quark_1': {'injections': {}}, 'top_quark_2': {'injections': {}}, 'bottom_quark_0': {'injections': {}}, 'bottom_quark_1': {'injections': {}}, 'bottom_quark_2': {'injections': {}}}}}}}}, 'auth': {'session_id': 339617269692277, 'user_id': '72b74d5214564004a3a86f441a4a112f'}, 'timestamp': '2026-01-08T11:54:50.417Z'}
 
-    async def run_start_sim_via_ws():
-        user_id = payload["auth"]["user_id"]
-        uri = f"ws://127.0.0.1:8001/run/?user_id={user_id}"
-        print("Running START_SIM test via WebSocket...")
-        try:
-            async with websockets.connect(uri) as websocket:
-                print(f"Connected to {uri}")
-                await websocket.send(json.dumps(payload))
-                print("Sent START_SIM payload")
-                while True:
-                    try:
-                        response = await asyncio.wait_for(websocket.recv(), timeout=60.0)
-                        msg = json.loads(response)
-                        print(f"Received: type={msg.get('type')}, status={msg.get('status', {})}")
-                        if msg.get("type") == "START_SIM" and msg.get("status", {}).get("state") in ("success", "error"):
-                            break
-                    except asyncio.TimeoutError:
-                        print("No further messages (timeout)")
+
+    g = Guard(
+        qfu=QFUtils(),
+        g=GUtils(),
+        user_id="public",
+    )
+    g.main(
+        env_id='env_7c87bb26138a427eb93cab27d0f5429f',
+        env_data=payload["data"],
+    )
+
+
+
+
+async def run_start_sim_via_ws():
+    user_id = payload["auth"]["user_id"]
+    uri = f"ws://127.0.0.1:8001/run/?user_id={user_id}"
+    print("Running START_SIM test via WebSocket...")
+    try:
+        async with websockets.connect(uri) as websocket:
+            print(f"Connected to {uri}")
+            await websocket.send(json.dumps(payload))
+            print("Sent START_SIM payload")
+            while True:
+                try:
+                    response = await asyncio.wait_for(websocket.recv(), timeout=60.0)
+                    msg = json.loads(response)
+                    print(f"Received: type={msg.get('type')}, status={msg.get('status', {})}")
+                    if msg.get("type") == "START_SIM" and msg.get("status", {}).get("state") in ("success", "error"):
                         break
-        except Exception as e:
-            print(f"Failed: {e}")
-
-    asyncio.run(run_start_sim_via_ws())
-
-
-
-
-
+                except asyncio.TimeoutError:
+                    print("No further messages (timeout)")
+                    break
+    except Exception as e:
+        print(f"Failed: {e}")
 
 
 

@@ -495,12 +495,16 @@ class QBrainTableManager(BQCore):
                 WHERE {where_clause} 
                 ORDER BY created_at DESC LIMIT 1
             """
-            
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter(k, "STRING", str(v)) for k, v in keys.items()
-                ]
-            )
+            # Use schema types for params (sessions.id is INT64, not STRING)
+            schema = self.TABLES_SCHEMA.get(clean_table_name, {})
+            params = []
+            for k, v in keys.items():
+                col_type = schema.get(k, "STRING")
+                if col_type in ("INTEGER", "INT64"):
+                    params.append(bigquery.ScalarQueryParameter(k, "INT64", int(v)))
+                else:
+                    params.append(bigquery.ScalarQueryParameter(k, "STRING", str(v)))
+            job_config = bigquery.QueryJobConfig(query_parameters=params)
             
             rows = list(self.bqclient.query(query, job_config=job_config).result())
             if not rows:

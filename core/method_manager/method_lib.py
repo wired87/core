@@ -6,7 +6,9 @@ from typing import Dict, Any, List, Optional
 
 from google.cloud import bigquery
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
+from core.method_manager.gen_type import generate_methods_out_schema
 from core.method_manager.method_processor import MethodDataProcessor
+from core.method_manager.xtrct_prompt import xtrct_method_prompt
 from core.param_manager.params_lib import ParamsManager
 from core.qbrain_manager import QBrainTableManager
 from qf_utils.qf_utils import QFUtils
@@ -53,20 +55,7 @@ class MethodManager(BQCore, MethodDataProcessor):
         self.qfu = QFUtils()
 
         self.param_manager = ParamsManager()
-        from core.method_manager import case as method_case
-        set_case = next((c for c in method_case.RELAY_METHOD if c.get("case") == "SET_METHOD"), None)
-        req_struct = set_case.get("req_struct", {}) if set_case else {}
-        out_struct = set_case.get("out_struct", {}) if set_case else {}
-        self._extract_prompt = f"""Extract method/equation definitions from the provided file content.
-
-Input structure (what you receive): raw file bytes decoded as text or document content.
-Output structure (return valid JSON only):
-  req_struct: {json.dumps(req_struct, indent=2)}
-  out_struct: {json.dumps(out_struct, indent=2)}
-
-Return a JSON object with keys: id, equation, params (list of param names), origins (list, e.g. "self" or field ids), description.
-Each method matches the data shape expected by SET_METHOD.
-Output valid JSON only, no markdown."""
+        self._extract_prompt = None  # built lazily to avoid circular import with case
         self._ensure_method_table()
 
     def _ensure_method_table(self):
@@ -85,7 +74,14 @@ Output valid JSON only, no markdown."""
             self.bqclient.create_table(table)
             logging.info(f"Table {table_ref} created.")
 
-    def extract_from_file_bytes(self, file_bytes: bytes) -> Optional[Dict[str, Any]]:
+    def extract_from_file_bytes(
+            self,
+            content: bytes or str,
+            params,
+            fallback_params,
+            instructions,
+
+    ) -> Optional[Dict[str, Any]]:
         """
         Extract manager-specific method/equation content from file bytes using the static prompt.
         Uses Gem LLM with req_struct/out_struct from SET_METHOD case.
@@ -93,20 +89,31 @@ Output valid JSON only, no markdown."""
         try:
             from gem_core.gem import Gem
             gem = Gem()
+
+            prompt = xtrct_method_prompt(
+                params,
+                fallback_params,
+                instructions,
+            )
+
             try:
-                text_content = file_bytes.decode("utf-8")
-                content = f"{self._extract_prompt}\n\n--- FILE CONTENT ---\n{text_content}"
-                response = gem.ask(content)
-            except UnicodeDecodeError:
-                b64 = base64.b64encode(file_bytes).decode("ascii")
-                response = gem.ask_mm(file_content_str=b64, prompt=self._extract_prompt)
-            text = (response or "").strip().replace("```json", "").replace("```", "").strip()
-            parsed = json.loads(text)
-            if "methods" in parsed:
-                return {"data": parsed["methods"] if isinstance(parsed["methods"], list) else [parsed["methods"]]}
-            if "id" in parsed or "equation" in parsed:
-                return {"data": parsed}
-            return {"data": parsed}
+                content = f"{prompt}\n\n--- FILE CONTENT ---\n{content}"
+                response = gem.ask(
+                    content,
+                    config=generate_methods_out_schema
+                )
+                text = (response or "").strip().replace("```json", "").replace("```", "").strip()
+                parsed = json.loads(text)
+                if "methods" in parsed:
+                    return {
+                        "methods": parsed["methods"] if isinstance(parsed["methods"], list) else [parsed["methods"]]}
+                if "id" in parsed or "equation" in parsed:
+                    return {"methods": parsed}
+
+                print("extracted mehods:", parsed)
+                return {"methods": parsed}
+            except Exception as e:
+                print("Err method amanger extract_from_file_bytes", e)
         except Exception as e:
             logging.error(f"MethodManager extract_from_file_bytes error: {e}")
             import traceback

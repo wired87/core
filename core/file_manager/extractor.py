@@ -106,6 +106,37 @@ class RawModuleExtractor:
         }
         return mimes.get(extension, "application/octet-stream")
 
+    def extract_equation_content_from_pdf(self, pdf_bytes: bytes) -> dict:
+        """
+        Preprocessing: extract math/LaTeX from PDF using local pdfminer + regex.
+        Returns equation_content struct: {latex: [...], math_elements: [...], equations: [...]}
+        """
+        import re
+        from io import BytesIO
+        print("[Extractor] extract_equation_content_from_pdf: starting")
+        if not pdf_bytes:
+            print("[Extractor] extract_equation_content_from_pdf: empty bytes, returning empty")
+            return {"latex": [], "math_elements": [], "equations": []}
+        try:
+            from pdfminer.high_level import extract_text
+            text = extract_text(BytesIO(pdf_bytes))
+            latex, equations = [], []
+            # LaTeX blocks: \[...\], \(...\), $...$
+            for m in re.finditer(r'\\\[(.*?)\\\]|\\\((.*?)\\\)|\$([^$]+)\$', text, re.DOTALL):
+                s = (m.group(1) or m.group(2) or m.group(3) or "").strip()
+                if s:
+                    latex.append(s)
+            # Lines with = or \ (likely math)
+            for line in text.splitlines():
+                line = line.strip()
+                if line and ("=" in line or "\\" in line) and len(line) > 2:
+                    equations.append(line)
+            result = {"latex": list(dict.fromkeys(latex)), "math_elements": equations[:100], "equations": equations[:50]}
+            print(f"[Extractor] extract_equation_content_from_pdf: done -> latex={len(result['latex'])}, equations={len(result['equations'])}")
+            return result
+        except Exception as e:
+            logging.error(f"extract_equation_content_from_pdf error: {e}")
+            return {"latex": [], "math_elements": [], "equations": []}
 
     def extract_params_and_data_types(self, parts):
         if not self.model or not parts:
