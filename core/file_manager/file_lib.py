@@ -60,14 +60,6 @@ class FileManager(BQCore, RawModuleExtractor):
 
 
 
-
-    #def extract_math_content(self, file_bytes:str):
-
-
-
-
-
-
     def _req_struct_to_json_schema(self, req_struct: dict, content_type: str, data_key: str) -> dict:
         """
         Convert req_struct from SET case to JSON Schema for Gemini.
@@ -222,27 +214,55 @@ Return only valid JSON, no markdown or extra text."""
         extracted_ids: Dict[str, List[str]] = {"param": [], "field": [], "method": []}
         fallback_users_params = self.param_manager.get_users_params(user_id)
 
-        params_list = self.param_manager.extract_from_file_bytes(
+        # --- PARAM EXTRACTION ---
+        params_raw = self.param_manager.extract_from_file_bytes(
             content=equation_content,
             instructions=user_prompt,
-            users_params =fallback_users_params
+            users_params=fallback_users_params,
         )
+        params_list: List[Dict[str, Any]] = []
+        if isinstance(params_raw, dict):
+            _p = params_raw.get("param") or params_raw.get("params")
+            if isinstance(_p, list):
+                params_list = [p for p in _p if isinstance(p, dict)]
+            elif isinstance(_p, dict):
+                params_list = [_p]
+        elif isinstance(params_raw, list):
+            params_list = [p for p in params_raw if isinstance(p, dict)]
 
         ### METHOD EXTRACTION
-
-        methods_list = self.method_manager.extract_from_file_bytes(
+        methods_raw = self.method_manager.extract_from_file_bytes(
             content=equation_content,
             instructions=user_prompt,
-            params = params_list,
+            params=params_list,
             fallback_params=fallback_users_params,
         )
+        methods_list: List[Dict[str, Any]] = []
+        if isinstance(methods_raw, dict):
+            _m = methods_raw.get("methods")
+            if isinstance(_m, list):
+                methods_list = [m for m in _m if isinstance(m, dict)]
+            elif isinstance(_m, dict):
+                methods_list = [_m]
+        elif isinstance(methods_raw, list):
+            methods_list = [m for m in methods_raw if isinstance(m, dict)]
 
-        fields_extracted = self.fields_manager.extract_from_file_bytes(
+        # --- FIELD EXTRACTION ---
+        fields_raw = self.fields_manager.extract_from_file_bytes(
             equation_content,
             params_list,
             user_prompt,
-            fallback_users_params
+            fallback_users_params,
         )
+        fields_list: List[Dict[str, Any]] = []
+        if isinstance(fields_raw, dict):
+            _f = fields_raw.get("field") or fields_raw.get("fields")
+            if isinstance(_f, list):
+                fields_list = [f for f in _f if isinstance(f, dict)]
+            elif isinstance(_f, dict):
+                fields_list = [_f]
+        elif isinstance(fields_raw, list):
+            fields_list = [f for f in fields_raw if isinstance(f, dict)]
 
 
         # Collect created components in exact handler input format
@@ -263,16 +283,18 @@ Return only valid JSON, no markdown or extra text."""
             print(f"[FileManager] process_and_upload_file_config: params upserted -> {ids}")
 
         # 3. Fields
-        if fields_extracted:
+        if fields_list:
             ids = []
-            for item in fields_extracted:
+            for item in fields_list:
                 fid = item.get("id") or str(random.randint(100000, 999999))
                 item["id"] = fid
                 ids.append(fid)
             if not testing:
                 self.fields_manager.set_field(fields_list, user_id)
             extracted_ids["field"].extend(ids)
-            created_components["field"] = [{"auth": {"user_id": user_id}, "data": {"field": f}} for f in fields_list]
+            created_components["field"] = [
+                {"auth": {"user_id": user_id}, "data": {"field": f}} for f in fields_list
+            ]
             print(f"[FileManager] process_and_upload_file_config: fields upserted -> {ids}")
 
         # 4. Methods
