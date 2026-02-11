@@ -3,7 +3,7 @@ import base64
 import json
 import random
 from datetime import datetime
-from typing import Dict, Any, List, TypedDict
+from typing import Dict, Any, List, TypedDict, Callable, Optional
 
 import dotenv
 from core.file_manager.extractor import RawModuleExtractor
@@ -57,8 +57,6 @@ class FileManager(BQCore, RawModuleExtractor):
         self.method_manager = MethodManager()
 
     file_params: dict = {}  # Testing only attribute
-
-
 
     def _req_struct_to_json_schema(self, req_struct: dict, content_type: str, data_key: str) -> dict:
         """
@@ -350,6 +348,107 @@ Return only valid JSON, no markdown or extra text."""
             "created_components": created_components,
         }
 
+    def _classify_and_call(
+        self,
+        user_prompt: str,
+        options: Dict[str, Callable[[], Any]],
+        default_key: Optional[str] = None,
+    ):
+        """
+        Classify the user prompt into one of the option keys and invoke the corresponding callable.
+
+        options: dict mapping option key -> zero-arg callable.
+        """
+        if not options:
+            raise ValueError("[FileManager] _classify_and_call: options dict is empty")
+
+        keys = list(options.keys())
+        chosen_key: Optional[str] = None
+
+        # 1) Try LLM-based routing using Gem (short text-only prompt).
+        try:
+            from gem_core.gem import Gem
+
+            gem = Gem()
+            opt_list = ", ".join(keys)
+            routing_prompt = (
+                "You are a router deciding how to handle a file-related request.\n"
+                f"Available actions: {opt_list}.\n\n"
+                "- 'extract': only extract/inspect content from the file(s) without persisting to any database or knowledge base.\n"
+                "- 'upsert': extract as needed and then upsert / save the content into the knowledge base.\n\n"
+                f"User request: {user_prompt!r}\n\n"
+                f"Return exactly one action key from: {opt_list}.\n"
+                "Answer with the key only, no explanations."
+            )
+            resp = gem.ask(routing_prompt) or ""
+            text = resp.strip().strip('"').strip("'").lower()
+            for k in keys:
+                if text == k.lower():
+                    chosen_key = k
+                    break
+            if not chosen_key:
+                # Fallback: substring match in case the model adds text.
+                for k in keys:
+                    if k.lower() in text:
+                        chosen_key = k
+                        break
+        except Exception as e:
+            print(f"[FileManager] _classify_and_call: Gem routing error: {e}")
+
+        # 2) Heuristic fallback if LLM routing failed or is unavailable.
+        if not chosen_key:
+            lp = (user_prompt or "").lower()
+            if any(w in lp for w in ["upsert", "save", "store", "remember", "kb", "knowledge base"]):
+                for k in keys:
+                    if k.lower() == "upsert":
+                        chosen_key = k
+                        break
+            if not chosen_key:
+                for k in keys:
+                    if k.lower() == "extract":
+                        chosen_key = k
+                        break
+
+        # 3) Final fallback: default key or first option.
+        if not chosen_key:
+            chosen_key = default_key if default_key in options else keys[0]
+
+        print(f"[FileManager] _classify_and_call: chosen action={chosen_key}")
+        func = options.get(chosen_key)
+        if not callable(func):
+            raise ValueError(f"[FileManager] _classify_and_call: chosen action '{chosen_key}' is not callable")
+        return func()
+
+    def route_file_action(
+        self,
+        user_id: str,
+        data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Route a file request based on the user text prompt.
+
+        - 'extract' => extract-only (no upsert; uses testing=True).
+        - 'upsert'  => full pipeline including upsert to the knowledge base.
+        """
+        user_prompt = (data.get("prompt") or data.get("msg") or "").strip()
+        options: Dict[str, Callable[[], Any]] = {
+            # Extract-only: skip BigQuery upserts via testing=True.
+            "extract": lambda: self.process_and_upload_file_config(
+                user_id=user_id,
+                data=data,
+                testing=True,
+                mock_extraction=False,
+            ),
+            # Upsert: full pipeline with persistence.
+            "upsert": lambda: self.process_and_upload_file_config(
+                user_id=user_id,
+                data=data,
+                testing=False,
+                mock_extraction=False,
+            ),
+        }
+        return self._classify_and_call(user_prompt=user_prompt, options=options, default_key="upsert")
+
     def set_module(self, rows: List[Dict] or Dict, user_id: str):
         """
         Upsert module entry to BigQuery.
@@ -402,6 +501,23 @@ def handle_set_file(payload):
 
     result = file_manager.process_and_upload_file_config(user_id, data)
     return result
+
+
+def handle_route_file(payload):
+    """
+    Handle ROUTE_FILE request.
+    Uses intelligent classification over the user prompt to either:
+    - extract: run extract-only pipeline (no upsert)
+    - upsert:  run full pipeline with upsert to knowledge base
+    """
+    auth = payload.get("auth", {})
+    data = payload.get("data", {})
+    user_id = auth.get("user_id")
+
+    if not user_id:
+        return {"error": "Missing user_id"}
+
+    return file_manager.route_file_action(user_id=user_id, data=data)
 
 if __name__ =="__main__":
     file_manager.process_and_upload_file_config(

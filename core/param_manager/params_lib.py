@@ -54,17 +54,13 @@ class ParamsManager(BQCore):
 
 
     def param_cfg(self):
-        config = {
+        """
+        Configuration for Gem structured response.
+        Keep it simple to avoid typing issues from invalid generics.
+        """
+        return {
             "response_mime_type": "application/json",
-            "response_schema": List[{
-              "id": str,
-              "name": str,
-              "type": int,
-              "is_constant": bool,
-              "description": str
-            }]
         }
-        return config
 
     def extract_from_file_bytes(self, content: bytes or str, instructions, users_params) -> Optional[Dict[str, Any]]:
         """

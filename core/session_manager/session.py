@@ -29,7 +29,8 @@ class SessionManager(BQCore):
         "updated_at": "TIMESTAMP",
         "is_active": "BOOL",
         "last_activity": "TIMESTAMP",
-        "research_files": "STRING" # JSON list of URLs
+        "research_files": "STRING",  # JSON list of URLs
+        "corpus_id": "STRING",
     }
 
     # Link tables schemas
@@ -458,10 +459,16 @@ class SessionManager(BQCore):
             if session_id:
                 print(f"{_SESSION_DEBUG} get_or_create_active_session: using existing session_id={session_id}")
                 return session_id
-            self.create_session(user_id)
-            session_id = self.get_active_session(user_id)
-            print(f"{_SESSION_DEBUG} get_or_create_active_session: created, session_id={session_id}")
-            return session_id
+
+            # Create a new session and rely on the returned ID instead of
+            # immediately querying BigQuery again (which can be eventually consistent).
+            new_session_id = self.create_session(user_id)
+            if not new_session_id:
+                print(f"{_SESSION_DEBUG} get_or_create_active_session: failed to create session for user_id={user_id}")
+                return None
+
+            print(f"{_SESSION_DEBUG} get_or_create_active_session: created, session_id={new_session_id}")
+            return new_session_id
         except Exception as e:
             print(f"{_SESSION_DEBUG} get_or_create_active_session: error: {e}")
             import traceback

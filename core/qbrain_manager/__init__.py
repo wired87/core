@@ -78,6 +78,7 @@ class QBrainTableManager(BQCore):
                 "is_active": "BOOLEAN",
                 "last_activity": "TIMESTAMP",
                 "status": "STRING",
+                "corpus_id": "STRING",
             }
         },
         {

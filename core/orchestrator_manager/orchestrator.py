@@ -42,6 +42,7 @@ from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 from gem_core.gem import Gem
 from core.file_manager.file_lib import file_manager
 from core.session_manager.session import session_manager
+from core.researcher2.researcher2.core import ResearchAgent
 
 class StartSimInput(TypedDict):
     """
@@ -64,6 +65,7 @@ class OrchestratorManager(BQCore):
         super().__init__(dataset_id=self.DATASET_ID)
         self.qb = QBrainTableManager()
         self.gem = Gem()
+        self.research_agent = ResearchAgent()
         
         # Simple in-memory context storage for demo purposes
         # Key: session_id, Value: List[Dict[role, content]]
@@ -156,6 +158,28 @@ class OrchestratorManager(BQCore):
                 return response_text + "\n\n[System]: Failed to start simulation due to parsing error."
 
         return response_text
+
+    def start_research_for_session(self, user_id: str, session_id: str, prompt: str) -> None:
+        """
+        Kick off a deep-research workflow for a session.
+
+        - Uses ResearchAgent to discover relevant documents.
+        - The callback merges discovered URLs into the session's research_files column.
+        - ResearchAgent.research_workflow handles file processing and Vertex RAG ingestion.
+        """
+
+        def _on_sources(urls: List[str]) -> None:
+            try:
+                session_manager.update_research_files(user_id, session_id, urls)
+            except Exception as e:
+                print(f"[OrchestratorManager] Failed to update research_files via callback: {e}")
+
+        self.research_agent.run(
+            prompt=prompt,
+            use_dr_result_callable=_on_sources,
+            user_id=user_id,
+            session_id=session_id,
+        )
 
     def start_sim(self, input_data: StartSimInput, user_id: str, session_id: str) -> Dict[str, Any]:
         """
