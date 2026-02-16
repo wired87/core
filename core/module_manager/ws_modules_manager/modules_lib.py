@@ -8,10 +8,9 @@ from typing import Dict, Any, List, Optional
 from google.cloud import bigquery
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 
-from core.fields_manager.fields_lib import fields_manager
 from core.file_manager import RawModuleExtractor
-
-from core.qbrain_manager import QBrainTableManager
+from core.qbrain_manager import get_qbrain_table_manager
+from core.handler_utils import require_param, require_param_truthy, get_val
 
 _MODULE_DEBUG = "[ModuleWsManager]"
 
@@ -45,15 +44,17 @@ def generate_numeric_id() -> str:
     """Generate a random numeric ID."""
     return str(random.randint(1000000000, 9999999999))
 
-class ModuleWsManager(BQCore):
+class ModuleWsManager:
     DATASET_ID = "QBRAIN"
     MODULES_TABLE = "modules"
     SESSIONS_MODULES_TABLE = "sessions_to_modules"
     MODULES_METHODS_TABLE = "modules_to_methods"
 
-    def __init__(self):
-        super().__init__(dataset_id=self.DATASET_ID)
-        self.qb = QBrainTableManager()
+    def __init__(self, qb):
+        self.qb = qb
+        self.pid = qb.pid
+        self.bqclient = qb.bqclient
+        self.insert_col = qb.insert_col
         self.table_ref = f"{self.MODULES_TABLE}"
         self.session_link_ref = f"{self.SESSIONS_MODULES_TABLE}"
         self.module_creator = RawModuleExtractor()
@@ -302,157 +303,131 @@ class ModuleWsManager(BQCore):
         """
         Get fields associated with modules in a session.
         """
-        # Use FieldsManager to get IDs
-        field_ids = fields_manager.retrieve_session_fields(session_id, user_id)
-        
+        from core.managers_context import get_field_manager
+        fm = get_field_manager()
+        field_ids = fm.retrieve_session_fields(session_id, user_id)
+
         if not field_ids:
             return {"fields": []}
-            
-        # Get full field objects
-        # fields_manager.get_fields_by_id returns {"fields": [...]}
-        response = fields_manager.get_fields_by_id(field_ids, select="*")
+
+        response = fm.get_fields_by_id(field_ids, select="*")
         return response
 
 
-
-# Instantiate
-module_manager = ModuleWsManager()
+# Default instance for standalone use (no orchestrator context)
+_default_bqcore = BQCore(dataset_id="QBRAIN")
+_default_module_manager = ModuleWsManager(get_qbrain_table_manager(_default_bqcore))
+module_manager = _default_module_manager  # backward compat
 
 # -- RELAY HANDLERS --
 
-def handle_list_users_modules(payload):
-    """
-    receive "LIST_USERS_MODULES": auth=user_id:str -> SEND_USERS_MODULES
-    """
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    if not user_id:
-        return {"error": "Missing user_id"}
-    
-    modules = module_manager.retrieve_user_modules(user_id)
-    # Return full objects now that they are safe (binary data encoded)
-    
-    return {
-        "type": "LIST_USERS_MODULES", 
-        "data": {"modules": modules} 
-    }
+def handle_list_users_modules(data=None, auth=None):
+    """Retrieve all modules owned by a user. Required: user_id (auth or data)."""
+    from core.managers_context import get_module_manager
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    return {"type": "LIST_USERS_MODULES", "data": {"modules": get_module_manager().retrieve_user_modules(user_id)}}
 
-def handle_send_sessions_modules(payload):
-    # This seems to be the routine for returning session modules
-    # But the user defined "receive GET_SESSIONS_MODULES" -> call this logic
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    session_id = auth.get("session_id")
-    
-    if not user_id or not session_id:
-        return {"error": "Missing user_id or session_id"}
 
-    modules = module_manager.retrieve_session_modules(session_id, user_id)
-    return {
-        "type": "GET_SESSIONS_MODULES", # As per instruction
-        "data": {"modules": modules}
-    }
+def handle_send_sessions_modules(data=None, auth=None):
+    """Retrieve all modules linked to a session. Required: user_id, session_id (auth or data)."""
+    from core.managers_context import get_module_manager
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    return {"type": "GET_SESSIONS_MODULES", "data": {"modules": get_module_manager().retrieve_session_modules(session_id, user_id)}}
 
-def handle_get_sessions_modules(payload):
-    return handle_send_sessions_modules(payload)
 
-def handle_link_session_module(payload):
-    """
-    receive "LINK_SESSION_MODULE": auth={user_id:str, module_id:str, session_id:str}
-    -> LINK_SESSION_MODULE -> SEND_SESSIONS_MODULES
-    """
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    module_id = auth.get("module_id")
-    session_id = auth.get("session_id")
-    
-    if not all([user_id, module_id, session_id]):
-        return {"error": "Missing required auth fields"}
-        
-    module_manager.link_session_module(session_id, module_id, user_id)
-    return handle_send_sessions_modules(payload)
+def handle_get_sessions_modules(data=None, auth=None):
+    """Alias for handle_send_sessions_modules."""
+    return handle_send_sessions_modules(data=data, auth=auth)
 
-def handle_rm_link_session_module(payload):
-    """
-    receive type="RM_LINK_SESSION_MODULE", auth={user_id:str, session_id:str, module_id:str}
-    -> update sessions_to_modules-table row with status = deleted -> SEND_SESSION_MODULES
-    """
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    session_id = auth.get("session_id")
-    module_id = auth.get("module_id")
-    
-    if not all([user_id, session_id, module_id]):
-        return {"error": "Missing required auth fields"}
-        
-    module_manager.rm_link_session_module(session_id, module_id, user_id)
-    return handle_send_sessions_modules(payload)
 
-def handle_del_module(payload):
-    """
-    receive "DEL_MODULE". auh={module_id:str, user_id:str}
-    -> delete -> SEND_USERS_MODULES
-    """
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    module_id = auth.get("module_id") # User said 'module_id' in auth
-    
-    if not user_id or not module_id:
-        return {"error": "Missing user_id or module_id"}
-        
-    module_manager.delete_module(module_id, user_id)
-    return handle_list_users_modules(payload)
+def handle_link_session_module(data=None, auth=None):
+    """Link a module to a session. Required: user_id, module_id, session_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    module_id = get_val(data, auth, "module_id")
+    session_id = get_val(data, auth, "session_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(module_id, "module_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    from core.managers_context import get_module_manager
+    get_module_manager().link_session_module(session_id, module_id, user_id)
+    return handle_send_sessions_modules(data={"session_id": session_id}, auth={"user_id": user_id})
 
-def handle_set_module(payload):
-    """
-    receive "SET_MODULE": data={files:list[files]}, auth={user_id:str, module_id:str, session_id:str}
-    -> insert -> SEND_USERS_MODULES
-    """
-    auth = payload.get("auth", {})
-    data = payload.get("data", {})
-    user_id = auth.get("user_id")
-    fields = data.get("fields", [])
-    methods = data.get("methods", [])
-    description = data.get("description", [])
-    
-    if not user_id:
-        return {"error": "Missing user_id"}
 
-    row = dict(
-        id=data.get("id"),
-        user_id=user_id,
-        fields=fields,
-        methods=methods,
-        description=description,
-        status="active",
-    )
+def handle_rm_link_session_module(data=None, auth=None):
+    """Remove the link between a session and a module. Required: user_id, session_id, module_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    module_id = get_val(data, auth, "module_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    if err := require_param(module_id, "module_id"):
+        return err
+    from core.managers_context import get_module_manager
+    get_module_manager().rm_link_session_module(session_id, module_id, user_id)
+    return handle_send_sessions_modules(data={"session_id": session_id}, auth={"user_id": user_id})
 
-    original_id = auth.get("original_id")
+
+def handle_del_module(data=None, auth=None):
+    """Delete a module by ID. Required: user_id, module_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    module_id = get_val(data, auth, "module_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(module_id, "module_id"):
+        return err
+    from core.managers_context import get_module_manager
+    get_module_manager().delete_module(module_id, user_id)
+    return handle_list_users_modules(data={}, auth={"user_id": user_id})
+
+
+def handle_set_module(data=None, auth=None):
+    """Create or update a module. Required: user_id (auth). Optional: id, fields, methods, description (data), original_id (auth)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    original_id = get_val(data, auth, "original_id")
+    d = data if isinstance(data, dict) else {}
+    fields = d.get("fields", [])
+    methods = d.get("methods", [])
+    description = d.get("description", "")
+    module_id = d.get("id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    from core.managers_context import get_module_manager
+    mm = get_module_manager()
+    row = dict(id=module_id, user_id=user_id, fields=fields, methods=methods, description=description, status="active")
     if original_id:
-        module_manager.delete_module(original_id, user_id)
+        mm.delete_module(original_id, user_id)
+    mm.set_module(row, user_id)
+    return handle_list_users_modules(data={}, auth={"user_id": user_id})
 
-    module_manager.set_module(row, user_id)
-    return handle_list_users_modules(payload)
 
-def handle_get_module(payload):
-    """
-    receive "GET_MODULE": auth={module_id:str}
-    -> get row -> convert -> return {type: "GET_MODULE", data:{id, file, code}}
-    """
-    auth = payload.get("auth", {})
-    module_id = auth.get("module_id")
-    
-    if not module_id:
-        return {"error": "Missing module_id"}
-        
-    row = module_manager.get_module_by_id(module_id)
+def handle_get_module(data=None, auth=None):
+    """Retrieve a single module by ID. Required: module_id (auth or data)."""
+    from core.managers_context import get_module_manager
+    data, auth = data or {}, auth or {}
+    module_id = get_val(data, auth, "module_id")
+    if err := require_param(module_id, "module_id"):
+        return err
+    row = get_module_manager().get_module_by_id(module_id)
     if not row:
         return {"error": "Module not found"}
-
-
-    return {
-        "type": "GET_MODULE",
-        "data": row
-    }
+    return {"type": "GET_MODULE", "data": row}
 
 

@@ -10,18 +10,17 @@ from typing import Optional, Dict, Any
 from google.cloud import bigquery
 
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
-
-
-from core.qbrain_manager import QBrainTableManager
+from core.qbrain_manager import get_qbrain_table_manager
+from utils.id_gen import generate_id
 
 _USER_DEBUG = "[UserManager]"
 
 
-class UserManager(BQCore):
+class UserManager:
     """
     Manages user data and records in BigQuery.
-    Extends BQCore to leverage existing BigQuery functionality.
-    
+    Receives BQCore instance via constructor.
+
     Note: Table creation is handled by QBrainTableManager at server startup.
     """
 
@@ -34,15 +33,17 @@ class UserManager(BQCore):
         "metadata": "metadata",
         "modules": "modules"
     }
-    
+
     # Class-level cache to verify tables only once per server process
     _tables_verified = False
 
-    def __init__(self):
-        """Initialize UserManager with QBRAIN dataset."""
+    def __init__(self, qb):
+        """Initialize UserManager with QBrainTableManager instance."""
         try:
-            BQCore.__init__(self, dataset_id=self.DATASET_ID)
-            self.qb = QBrainTableManager()
+            self.qb = qb
+            self.pid = qb.pid
+            self.bqclient = qb.bqclient
+            self.run_query = qb.run_query
             print(f"{_USER_DEBUG} initialized with dataset: {self.DATASET_ID}")
         except Exception as e:
             print(f"{_USER_DEBUG} __init__ error: {e}")
@@ -63,7 +64,7 @@ class UserManager(BQCore):
         """
         results = {"user_created": False, "errors": []}
         try:
-            print(f"{_USER_DEBUG} initialize_qbrain_workflow: uid={uid}")
+            print(f"{_USER_DEBUG} initialize_qbrain_workflow: id={uid}")
             results["user_created"] = self._ensure_user_record(uid, email)
             print(f"{_USER_DEBUG} initialize_qbrain_workflow: done, user_created={results['user_created']}")
         except Exception as e:
@@ -73,6 +74,48 @@ class UserManager(BQCore):
             import traceback
             traceback.print_exc()
         return results
+
+    def get_or_create_user(
+        self,
+        received_key: Optional[str] = None,
+        email: Optional[str] = None,
+    ) -> Optional[str]:
+        """
+        Check users table for id = received_key. If not found, create user entry.
+        If received_key is empty, generate with generate_id().
+        Returns the user's id (for local storage) or None on failure.
+        """
+        uid = (received_key or "").strip()
+        if not uid:
+            uid = generate_id()
+            print(f"{_USER_DEBUG} get_or_create_user: no key received, generated uid={uid}")
+
+        query = f"""
+            SELECT * FROM `{self.pid}.{self.DATASET_ID}.users`
+            WHERE id = @uid AND (status != 'deleted' OR status IS NULL)
+            LIMIT 1
+        """
+        try:
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[bigquery.ScalarQueryParameter("uid", "STRING", uid)]
+            )
+            result = self.run_query(query, conv_to_dict=True, job_config=job_config)
+            if result and len(result) > 0:
+                row = result[0]
+                user_id = row.get("id") or row.get("uid") or uid
+                print(f"{_USER_DEBUG} get_or_create_user: found existing user id={user_id}")
+                return user_id
+
+            user_data = {"id": uid, "email": email or None, "status": "active"}
+            print(f"{_USER_DEBUG} get_or_create_user: creating user id={uid}")
+            self.qb.set_item("users", user_data, keys={"id": uid})
+            print(f"{_USER_DEBUG} get_or_create_user: created")
+            return uid
+        except Exception as e:
+            print(f"{_USER_DEBUG} get_or_create_user: error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
     def get_user(self, uid: str) -> Optional[Dict[str, Any]]:
         """
@@ -297,3 +340,8 @@ class UserManager(BQCore):
             import traceback
             traceback.print_exc()
             return False
+
+
+# Default instance for standalone use (no orchestrator context)
+_default_bqcore = BQCore(dataset_id="QBRAIN")
+_default_user_manager = UserManager(get_qbrain_table_manager(_default_bqcore))

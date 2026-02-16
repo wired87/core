@@ -233,6 +233,32 @@ class EnvCreatorProcess:
 
 
     def create_env_variables(self, world_cfg_item, env_id) -> list[dict]:
+        """
+        Build the environment variable specification for the Guard VM / worker.
+
+        This now includes all variables required by the BigQuery upsert process
+        used in the guard pipeline (see `upsert_arrays_to_bigquery`):
+
+        - ENV_ID:     current environment id
+        - BQ_PROJECT: GCP project id used for BigQuery (falls back to GCP_PROJECT_ID/GCP_ID)
+        - BQ_DATASET: BigQuery dataset id (falls back to BQ_DATASET/DATASET_ID)
+        - TESTING:    testing flag (string), defaults to "false" when not set
+        """
+
+        # Resolve project and dataset for BigQuery-based components
+        bq_project = (
+            os.environ.get("BQ_PROJECT")
+            or os.environ.get("GCP_PROJECT_ID")
+            or os.environ.get("GCP_ID")
+            or "aixr-401704"
+        )
+        bq_dataset = (
+            os.environ.get("BQ_DATASET")
+            or os.environ.get("DATASET_ID")
+            or "QCOMPS"
+        )
+        testing_flag = os.environ.get("TESTING", "false")
+
         env_vars_dict = {
             "SESSION_ID": env_id,
             "DOMAIN": "bestbrain.tech",
@@ -245,7 +271,11 @@ class EnvCreatorProcess:
             "FIREBASE_RTDB": os.environ.get("FIREBASE_RTDB"),
             "FB_DB_ROOT": f"users/{self.user_id}/env/{env_id}",
             "DELETE_RCS_ENDPOINT": "gke/delete-pod/" if self.deploy_to == "gke" else "batch/delete/",
-            "GKE_SIM_CLUSTER_NAME": os.environ.get("GKE_SIM_CLUSTER_NAME")
+            "GKE_SIM_CLUSTER_NAME": os.environ.get("GKE_SIM_CLUSTER_NAME"),
+            # Guard / BigQuery data pipeline vars
+            "BQ_PROJECT": bq_project,
+            "BQ_DATASET": bq_dataset,
+            "TESTING": testing_flag,
         }
 
         env_vars_list = [

@@ -6,46 +6,22 @@ from tempfile import TemporaryDirectory
 
 import networkx as nx
 
-from core.env_manager.env_lib import handle_get_env, handle_del_env, handle_set_env, handle_get_envs_user, EnvManager, handle_link_env_module, handle_rm_link_env_module, handle_download_model, handle_retrieve_logs_env, handle_get_env_data
-from core.file_manager import RELAY_FILE
-from core.injection_manager.injection import (
-    handle_set_inj, handle_del_inj, handle_get_inj_user, handle_get_inj_list,
-    handle_link_inj_env, handle_rm_link_inj_env, handle_list_link_inj_env, handle_get_injection,
-)
-
-from core.method_manager.case import RELAY_METHOD
-from core.module_manager.ws_modules_manager import (
-    handle_del_module,
-    handle_link_session_module,
-    handle_set_module,
-    handle_get_module,
-    handle_list_users_modules,
-)
-
-from core.fields_manager.fields_lib import handle_del_field, handle_set_field, \
-    handle_link_module_field, handle_list_modules_fields, handle_list_users_fields, \
-    handle_rm_link_module_field, handle_get_modules_fields, handle_get_sessions_fields
-
-from core.param_manager.params_lib import (
-    handle_get_users_params, handle_set_param, handle_del_param,
-    #handle_link_field_param, handle_rm_link_field_param, handle_get_fields_params,
-)
+from code_manipulation.graph_creator import StructInspector
+from core.orchestrator_manager.orchestrator import OrchestratorManager
 
 from core.guard import Guard
 
+import asyncio
 
-import inspect
 import json
 import dotenv
 
 from channels.generic.websocket import AsyncWebsocketConsumer
+from asgiref.sync import sync_to_async
 
-import asyncio
 from urllib.parse import parse_qs
 
-
-from core.module_manager.ws_modules_manager.modules_lib import handle_rm_link_session_module
-from core.sm_manager.sm_manager import handle_enable_sm
+from predefined_case import RELAY_CASES_CONFIG
 from qf_utils.qf_utils import QFUtils
 
 
@@ -60,16 +36,10 @@ from utils.graph.local_graph_utils import GUtils
 from utils.utils import Utils
 
 
-from core.user_manager import UserManager
-from core.session_manager.session import SessionManager
-from core.session_manager.session import (
-    handle_get_sessions_modules, handle_get_sessions_envs,
-    handle_link_env_session, handle_rm_link_env_session,
-    handle_list_user_sessions
-)
+from core.session_manager.session import session_manager
 
 from dataclasses import dataclass
-from typing import Callable, Any, Awaitable, Dict
+from typing import Callable, Any, Awaitable, Dict, Optional
 
 
 @dataclass
@@ -86,177 +56,6 @@ dotenv.load_dotenv()
 _RELAY_DEBUG = "[Relay]"
 
 
-RELAY_CASES_CONFIG = [
-    # ENV
-    {"case": "GET_ENV", "desc": "", "func": handle_get_env,
-     "req_struct": {"auth": {"env_id": str}},
-     "out_struct": {"type": "GET_ENV", "data": {"env": dict}}},
-
-    {"case": "GET_USERS_ENVS", "desc": "", "func": handle_get_envs_user,
-     "req_struct": {"auth": {"user_id": str}},
-     "out_struct": {"type": "GET_USERS_ENVS", "data": {"envs": list}}},
-
-    {"case": "DEL_ENV", "desc": "", "func": handle_del_env,
-     "req_struct": {"auth": {"env_id": str, "user_id": str}},
-     "out_struct": {"type": "GET_USERS_ENVS", "data": {"envs": list}}},
-
-    {"case": "SET_ENV", "desc": "", "func": handle_set_env,
-     "req_struct": {"data": {"env": dict}, "auth": {"user_id": str}},
-     "out_struct": {"type": "GET_USERS_ENVS", "data": {"envs": list}}},
-
-    {"case": "DOWNLOAD_MODEL", "desc": "Download Model", "func": handle_download_model,
-     "req_struct": {"auth": {"env_id": str, "user_id": str}},
-     "out_struct": {"type": "DOWNLOAD_MODEL", "data": dict}},
-
-    {"case": "RETRIEVE_LOGS_ENV", "desc": "Retrieve Logs Env", "func": handle_retrieve_logs_env,
-     "req_struct": {"auth": {"env_id": str, "user_id": str}},
-     "out_struct": {"type": "RETRIEVE_LOGS_ENV", "data": list}},
-
-    {"case": "GET_ENV_DATA", "desc": "Get Env Data", "func": handle_get_env_data,
-     "req_struct": {"auth": {"env_id": str, "user_id": str}},
-     "out_struct": {"type": "GET_ENV_DATA", "data": list}},
-
-    # FIELD
-    {"case": "DEL_FIELD", "desc": "Delete Field", "func": handle_del_field,
-     "req_struct": {"auth": {"field_id": str, "user_id": str}},
-     "out_struct": {"type": "LIST_USERS_FIELDS", "data": {"fields": list}}},
-
-    {"case": "LIST_USERS_FIELDS", "desc": "List Users Fields", "func": handle_list_users_fields,
-     "req_struct": {"auth": {"user_id": str}},
-     "out_struct": {"type": "LIST_USERS_FIELDS", "data": {"fields": list}}},
-
-    {"case": "LIST_MODULES_FIELDS", "desc": "List Modules Fields", "func": handle_list_modules_fields,
-     "req_struct": {"auth": {"module_id": str, "user_id": str}},
-     "out_struct": {"type": "GET_MODULES_FIELDS", "data": {"fields": list}}},
-
-    {"case": "SET_FIELD", "desc": "Set Field", "func": handle_set_field,
-     "req_struct": {"data": {"field": dict}, "auth": {"user_id": str, "original_id": "str"}},
-     "out_struct": {"type": "LIST_USERS_FIELDS", "data": {"fields": list}}},
-
-    {"case": "LINK_MODULE_FIELD", "desc": "Link Module Field", "func": handle_link_module_field,
-     "req_struct": {"auth": {"user_id": str, "module_id": str, "field_id": str, "session_id": str, "env_id": str}},
-     "out_struct": {"type": "GET_MODULES_FIELDS", "data": {"fields": list}}},
-
-    {"case": "RM_LINK_MODULE_FIELD", "desc": "Remove Link Module Field", "func": handle_rm_link_module_field,
-     "req_struct": {"auth": {"user_id": str, "module_id": str, "field_id": str}},
-     "out_struct": {"type": "GET_MODULES_FIELDS", "data": {"fields": list}}},
-
-    {"case": "GET_MODULES_FIELDS", "desc": "Get Modules Fields", "func": handle_get_modules_fields,
-     "req_struct": {"auth": {"user_id": str, "module_id": str}},
-     "out_struct": {"type": "GET_MODULES_FIELDS", "data": {"fields": list}}},
-
-    {"case": "SESSIONS_FIELDS", "desc": "Get Sessions Fields", "func": handle_get_sessions_fields,
-     "req_struct": {"auth": {"user_id": str, "session_id": str}},
-     "out_struct": {"type": "SESSIONS_FIELDS", "data": {"fields": list}}},
-
-    # INJECTION – Energy Designer
-    {"case": "SET_INJ", "desc": "Set/upsert injection", "func": handle_set_inj,
-     "req_struct": {"data": dict, "auth": {"user_id": str, "original_id": str}},
-     "out_struct": {"type": "GET_INJ_USER", "data": dict[str, list]}},
-
-    {"case": "DEL_INJ", "desc": "Delete injection", "func": handle_del_inj,
-     "req_struct": {"auth": {"injection_id": str, "user_id": str}},
-     "out_struct": {"type": "GET_INJ_USER", "data": dict[str, list]}},
-
-    {"case": "GET_INJ_USER", "desc": "Get user injections", "func": handle_get_inj_user,
-     "req_struct": {"auth": {"user_id": str}},
-     "out_struct": {"type": "GET_INJ_USER", "data": dict[str, list]}},
-
-    {"case": "GET_INJ_LIST", "desc": "Get injection list", "func": handle_get_inj_list,
-     "req_struct": {"data": {"inj_ids": list}, "auth": {"user_id": str}},
-     "out_struct": {"type": "GET_INJ_LIST", "data": list}},
-
-    # INJECTION – Env Linking
-    {"case": "LINK_INJ_ENV", "desc": "Link injection to env", "func": handle_link_inj_env,
-     "req_struct": {"auth": {"injection_id": str, "env_id": str, "user_id": str}},
-     "out_struct": {"type": "GET_INJ_ENV", "data": list}},
-
-    {"case": "RM_LINK_INJ_ENV", "desc": "Remove link injection to env", "func": handle_rm_link_inj_env,
-     "req_struct": {"auth": {"injection_id": str, "env_id": str, "user_id": str}},
-     "out_struct": {"type": "GET_INJ_ENV", "data": list}},
-
-    {"case": "LIST_LINK_INJ_ENV", "desc": "List env linked injections", "func": handle_list_link_inj_env,
-     "req_struct": {"auth": {"env_id": str, "user_id": str}},
-     "out_struct": {"type": "GET_INJ_ENV", "data": list}},
-
-    {"case": "GET_INJECTION", "desc": "Get single injection", "func": handle_get_injection,
-     "req_struct": {"data": {"id": str, "injection_id": str}, "auth": {}},
-     "out_struct": {"type": "GET_INJECTION", "data": dict}},
-
-    # SESSION
-    {"case": "LIST_USERS_SESSIONS", "desc": "List user sessions", "func": handle_list_user_sessions,
-     "req_struct": {"auth": {"user_id": str}},
-     "out_struct": {"type": "LIST_USERS_SESSIONS", "data": {"sessions": list}}},
-
-
-    # MDULE
-    {"case": "DEL_MODULE", "desc": "Delete Module", "func": handle_del_module,
-     "req_struct": {"auth": {"module_id": str, "user_id": str}},
-     "out_struct": {"type": "LIST_USERS_MODULES", "data": {"modules": list}}},
-
-    {"case": "LINK_SESSION_MODULE", "desc": "Link Session Module", "func": handle_link_session_module,
-     "req_struct": {"auth": {"user_id": str, "session_id": str, "module_id": str}},
-     "out_struct": {"type": "GET_SESSIONS_MODULES", "data": {"modules": list}}},
-
-    {"case": "RM_LINK_SESSION_MODULE", "desc": "Remove Link Session Module", "func": handle_rm_link_session_module,
-     "req_struct": {"auth": {"user_id": str, "session_id": str, "module_id": str}},
-     "out_struct": {"type": "GET_SESSIONS_MODULES", "data": {"modules": list}}},
-
-    {"case": "LINK_ENV_MODULE", "desc": "Link Env Module", "func": handle_link_env_module,
-     "req_struct": {"auth": {"user_id": str, "session_id": str, "env_id": str, "module_id": str}},
-     "out_struct": {"type": "LINK_ENV_MODULE", "data": {"sessions": dict}}},
-
-    {"case": "RM_LINK_ENV_MODULE", "desc": "Remove Link Env Module", "func": handle_rm_link_env_module,
-     "req_struct": {"auth": {"user_id": str, "session_id": str, "env_id": str, "module_id": str}},
-     "out_struct": {"type": "LINK_ENV_MODULE", "data": {"sessions": dict}}},
-
-    {"case": "SET_MODULE", "desc": "Set Module", "func": handle_set_module,
-     "req_struct": {"data": {"id": str, "fields": list, "methods": list, "description": str}, "auth": {"user_id": str, "original_id": str}},
-     "out_struct": {"type": "LIST_USERS_MODULES", "data": {"modules": list}}},
-
-    {"case": "ENABLE_SM", "desc": "Enable Standard Model", "func": handle_enable_sm,
-     "req_struct": {"auth": {"env_id": str, "session_id": str, "user_id": str}},
-     "out_struct": {"type": "ENABLE_SM", "data": {"sessions": dict}}},
-
-    {"case": "GET_MODULE", "desc": "Get Module", "func": handle_get_module,
-     "req_struct": {"auth": {"module_id": str}},
-     "out_struct": {"type": "GET_MODULE", "data": dict}},
-
-    {"case": "GET_SESSIONS_MODULES", "desc": "Get Session Modules", "func": handle_get_sessions_modules,
-     "req_struct": {"auth": {"user_id": str, "session_id": str}},
-     "out_struct": {"type": "GET_SESSIONS_MODULES", "data": {"modules": list}, "auth": {"session_id": str}}},
-
-    {"case": "LIST_USERS_MODULES", "desc": "List User Modules", "func": handle_list_users_modules,
-     "req_struct": {"auth": {"user_id": str}},
-     "out_struct": {"type": "LIST_USERS_MODULES", "data": {"modules": list}}},
-
-    {"case": "CONVERT_MODULE", "desc": "Convert Module", "func": None, "func_name": "_handle_convert_module",
-     "req_struct": {"auth": {"module_id": str}, "data": {"files": dict}},
-     "out_struct": {"type": "CONVERT_MODULE", "data": dict}},
-
-
-
-
-
-    # PARAMS
-    {"case": "LIST_USERS_PARAMS", "desc": "Get Users Params", "func": handle_get_users_params,
-     "req_struct": {"auth": {"user_id": str}},
-     "out_struct": {"type": "LIST_USERS_PARAMS", "data": {"params": list}}},
-
-    {"case": "SET_PARAM", "desc": "Set Param", "func": handle_set_param,
-     "req_struct": {"auth": {"user_id": str, "original_id": str}, "data": {"param": "dict|list"}},
-     "out_struct": {"type": "LIST_USERS_PARAMS", "data": {"params": list}}},
-
-    {"case": "DEL_PARAM", "desc": "Delete Param", "func": handle_del_param,
-     "req_struct": {"auth": {"user_id": str, "param_id": str}},
-     "out_struct": {"type": "LIST_USERS_PARAMS", "data": {"params": list}}},
-
-    # AIChat handled manually
-
-    #
-    *RELAY_METHOD,
-    *RELAY_FILE,
-]
 
 class Relay(
     AsyncWebsocketConsumer
@@ -297,20 +96,22 @@ class Relay(
         self.domain = "http://127.0.0.1:8000" if os.name == "nt" else "https://bestbrain.tech"
 
         self.cluster_ws = None
-        self.cluster_acess_ip:int = None
+        self.cluster_acess_ip: int = None
 
-        self.connection_manager = ConnectionManager()
-        self.env_manager = EnvManager()
+        # Lazy: ConnectionManager, Utils, UserManager, cg, inspector, chat_classifier, tmp
+        self._connection_manager = None
+        self._utils = None
+        self._user_manager = None
+        self._cg = None
+        self._inspector = None
+        self._chat_classifier = None
+        self._tmp = None
 
-        self.utils = Utils()
-
-        # save fiel names to apply to envs
-        self.file_store:list[str] = []
+        self.file_store: list[str] = []
         self.qc = False
-        #self.instance = os.environ["FIREBASE_RTDB"]
         self.demo_g_in_front = False
         self.start_up_path = "container/run.py"
-        self.testing=True
+        self.testing = True
         self.ready_sessions = []
         self.sessions_created = []
         self.created_envs = []
@@ -330,7 +131,7 @@ class Relay(
         self.ws_handler = None
         self.external_vm = False
         self.sim_ready = False
-        self.sim_start_puffer = 10  # seconds to wait when rcv start trigger
+        self.sim_start_puffer = 10
         self.demo = True
 
         self.required_steps = {
@@ -340,51 +141,127 @@ class Relay(
         }
 
         self.active_envs = {}
-        self.tmp = TemporaryDirectory()
-        self.root = Path(self.tmp.name)
-        self.user_manager = UserManager()
+        self._root = None  # Set when tmp is first accessed
 
+        self.worker_states = {"unknown": [], "error": [], "inactive": [], "active": []}
+        self.possible_states = ["start", "check_status", "set_parameters", "stop"]
 
-        self.worker_states = {
-            "unknown": [],
-            "error": [],
-            "inactive": [],
-            "active": [],
-        }
-
-        self.possible_states = [
-            "start",
-            "check_status",
-            "set_parameters",
-            "stop",
-        ]
-        self.session_id=None
-        self.loop = asyncio.new_event_loop()
-        self.data_thread_loop = asyncio.new_event_loop()
+        self.session_id = None
         self.user_tables_authenticated = False
         self.cluster_auth_data = None
 
-
-
-        self.con_type="http" if os.name == "nt" else "https"
+        self.con_type = "http" if os.name == "nt" else "https"
         self.cluster_domain = "127.0.0.1:8001" if os.name == "nt" else "clusterexpress.com"
         self.cluster_url = f"{self.con_type}://{self.cluster_domain}/"
-        print(f"Cluster domain set: {self.cluster_url}")
-
-        if self.testing is True:
-            self.cluster_root = "http://127.0.0.1:8001"
-
-        else:
-            self.cluster_root = "cluster.botworld.cloud"
+        self.cluster_root = "http://127.0.0.1:8001" if self.testing else "cluster.botworld.cloud"
 
         self.auth_data = None
-
-        #self.firestore = FirestoreMgr()
-
         self.relay_cases: list[RelayCase] = RELAY_CASES_CONFIG
-        #self._register_cases()
-        self.chat_classifier = AIChatClassifier(case_struct=self.relay_cases)
 
+        # Core components (g, qfu, guard, orchestrator) created in connect() when user_id is known
+        self.g = GUtils(nx_only=False, G=nx.Graph(), g_from_path=None)
+        self.qfu = QFUtils(g=self.g)
+        self.guard = Guard(self.qfu, self.g, self.user_id)
+        self.orchestrator = None
+
+
+    @property
+    def connection_manager(self):
+        if self._connection_manager is None:
+            self._connection_manager = ConnectionManager()
+        return self._connection_manager
+
+    @property
+    def utils(self):
+        if self._utils is None:
+            self._utils = Utils()
+        return self._utils
+
+    @property
+    def user_manager(self):
+        if self._user_manager is None:
+            from core.managers_context import get_user_manager
+            self._user_manager = get_user_manager()
+        return self._user_manager
+
+    @property
+    def cg(self):
+        if self._cg is None:
+            self._cg = GUtils(nx_only=True, enable_data_store=False)
+            self._inspector = StructInspector(self._cg.G)
+            from core.handler_inspector import register_handlers_to_gutils
+            register_handlers_to_gutils(self._cg)
+        return self._cg
+
+    @property
+    def inspector(self):
+        _ = self.cg  # Ensure cg (and inspector) initialized
+        return self._inspector
+
+    @property
+    def chat_classifier(self):
+        if self._chat_classifier is None:
+            self._chat_classifier = AIChatClassifier(case_struct=self.relay_cases)
+        return self._chat_classifier
+
+    @property
+    def tmp(self):
+        if self._tmp is None:
+            self._tmp = TemporaryDirectory()
+            self._root = Path(self._tmp.name)
+        return self._tmp
+
+    @property
+    def root(self):
+        if self._root is None:
+            _ = self.tmp
+        return self._root if self._root is not None else Path(".")
+
+    def consume_cases(self):
+        pass  # TODO: implement case consumption
+
+    def scan_dir_to_code_graph(self, root_dir: str = None) -> Dict[str, Any]:
+        """
+        Walk a local directory, scan all .py files, and convert each to graph format
+        using self.inspector.convert_module_to_graph. Nodes are added to self.cg.G.
+
+        Args:
+            root_dir: Directory to scan. Defaults to project root (parent of relay_station).
+
+        Returns:
+            Dict with keys: scanned (int), converted (int), errors (list of {path, error}).
+        """
+        if root_dir is None:
+            root_dir = os.path.dirname(os.path.abspath(__file__))
+        root_dir = os.path.normpath(root_dir)
+
+        result = {"scanned": 0, "converted": 0, "errors": []}
+        skip_dirs = {"__pycache__", ".git", "venv", ".venv", "node_modules"}
+
+        for dirpath, dirnames, filenames in os.walk(root_dir):
+            dirnames[:] = [d for d in dirnames if d not in skip_dirs]
+            for name in filenames:
+                if not name.endswith(".py"):
+                    continue
+                filepath = os.path.join(dirpath, name)
+                result["scanned"] += 1
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        code_content = f.read()
+                except Exception as e:
+                    result["errors"].append({"path": filepath, "error": str(e)})
+                    continue
+
+                rel = os.path.relpath(filepath, root_dir)
+                module_name = rel[:-3].replace(os.sep, ".")
+
+                try:
+                    self.inspector.convert_module_to_graph(code_content, module_name)
+                    result["converted"] += 1
+                except Exception as e:
+                    result["errors"].append({"path": filepath, "error": str(e)})
+
+        return result
 
     async def connect(self):
         try:
@@ -396,41 +273,38 @@ class Relay(
             query_params = parse_qs(query_string)
             print(f"{_RELAY_DEBUG} connect: query_params = {query_params}")
 
-            user_id = query_params.get("user_id")
-            if not user_id:
-                print(f"{_RELAY_DEBUG} connect: missing user_id in query; declining")
-                await self.close()
-                return
-            user_id = user_id[0]
-            self.user_id = user_id
-            print(f"{_RELAY_DEBUG} connect: user_id = {self.user_id}")
-
-            if not self.user_id:
-                print(f"{_RELAY_DEBUG} connect: connection declined (no user_id)")
-                await self.close()
-                return
-            print(f"{_RELAY_DEBUG} connect: connection verified for user_id={self.user_id}")
-
-            print(f"{_RELAY_DEBUG} connect: initializing GUtils, QFUtils, DataDistributor, NodeCfgManager, Guard")
-            self.g = GUtils(
-                nx_only=False,
-                G=nx.Graph(),
-                g_from_path=None,
+            received_key = (query_params.get("user_id") or [None])[0]
+            resolved_user_id = await sync_to_async(self.user_manager.get_or_create_user)(
+                received_key=received_key,
+                email=None,
             )
-            self.qfu = QFUtils(g=self.g)
+            if not resolved_user_id:
+                print(f"{_RELAY_DEBUG} connect: user resolution failed; declining")
+                await self.close()
+                return
+            self.user_id = resolved_user_id
+            print(f"{_RELAY_DEBUG} connect: user_id saved locally: {self.user_id}")
 
-            self.guard = Guard(
-                self.qfu,
-                self.g,
+            # Create graph, query utils, guard once (user_id known); inject into orchestrator to avoid duplicates
+            # OrchestratorManager init is sync (BQCore, managers, Guard) - must run in thread pool
+            # to avoid blocking the event loop and causing "took too long to shut down and was killed"
+            print(f"{_RELAY_DEBUG} connect: initializing g, qfu, guard, orchestrator")
+
+            def _create_orchestrator(cases, user_id):
+                return OrchestratorManager(cases, user_id=user_id)
+
+            self.orchestrator = await sync_to_async(_create_orchestrator)(
+                self.relay_cases,
                 self.user_id,
             )
+
             print(f"{_RELAY_DEBUG} connect: core components initialized")
 
             if not self.user_tables_authenticated:
                 try:
                     print(f"{_RELAY_DEBUG} connect: running user_manager.initialize_qbrain_workflow")
                     user_email = None
-                    workflow_results = self.user_manager.initialize_qbrain_workflow(
+                    workflow_results = await sync_to_async(self.user_manager.initialize_qbrain_workflow)(
                         uid=self.user_id,
                         email=user_email,
                     )
@@ -441,22 +315,16 @@ class Relay(
                     traceback.print_exc()
                 self.user_tables_authenticated = True
 
-            if not self.session_id:
-                try:
-                    print(f"{_RELAY_DEBUG} connect: initializing SessionManager and creating session")
-                    self.session_manager = SessionManager()
-                    session_id = self.session_manager.get_or_create_active_session(self.user_id)
-                    if session_id:
-                        self.session_id = session_id
-                        print(f"{_RELAY_DEBUG} connect: session created: {session_id}")
-                    else:
-                        raise Exception(f"Session creation returned None for user {self.user_id}")
-                except Exception as e:
-                    print(f"{_RELAY_DEBUG} connect: session creation error (using fallback): {e}")
-                    self.close()
+            session_id = await self._resolve_session()
+            if session_id is None:
+                print(f"{_RELAY_DEBUG} connect: session resolution failed for user {self.user_id}; declining")
+                await self.close()
+                return
+            self._save_session_locally(session_id)
 
-            print(f"{_RELAY_DEBUG} connect: sending session to client")
+            print(f"{_RELAY_DEBUG} connect: sending session and user sessions to client")
             await self.send_session()
+            await self._send_all_user_sessions()
             print(f"{_RELAY_DEBUG} connect: request for user {self.user_id} ACCEPTED")
         except Exception as e:
             print(f"{_RELAY_DEBUG} connect: FATAL error: {e}")
@@ -467,6 +335,20 @@ class Relay(
             except Exception as close_err:
                 print(f"{_RELAY_DEBUG} connect: error during close: {close_err}")
 
+
+    async def _resolve_session(self) -> Optional[int]:
+        """
+        Resolve session for current user: fetch active or create new.
+        Returns valid session_id (int) or None on failure.
+        """
+        return await sync_to_async(session_manager.get_or_create_active_session)(self.user_id)
+
+    def _save_session_locally(self, session_id: int) -> None:
+        """Store valid session_id on Relay instance for the connection lifecycle."""
+        if session_id is None or not isinstance(session_id, (int, str)) or session_id == "":
+            return
+        self.session_id = int(session_id)
+        print(f"{_RELAY_DEBUG} _save_session_locally: saved session_id={self.session_id}")
 
     async def send_session(self):
         try:
@@ -484,6 +366,22 @@ class Relay(
             import traceback
             traceback.print_exc()
             raise
+
+    async def _send_all_user_sessions(self) -> None:
+        """Fetch all sessions for the current user and send them to the client."""
+        try:
+            sessions = await sync_to_async(session_manager.list_user_sessions)(self.user_id)
+            payload = {
+                "type": "LIST_USERS_SESSIONS",
+                "auth": {"user_id": self.user_id, "sid": getattr(self, "session_id", None)},
+                "data": {"sessions": sessions},
+            }
+            await self.send(text_data=json.dumps(payload, default=str))
+            print(f"{_RELAY_DEBUG} _send_all_user_sessions: sent {len(sessions)} session(s)")
+        except Exception as e:
+            print(f"{_RELAY_DEBUG} _send_all_user_sessions: error: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 
@@ -566,7 +464,7 @@ class Relay(
             bytes_data=None
     ):
         try:
-            #print(f"{_RELAY_DEBUG} receive: raw text_data length={len(text_data) if text_data else 0}")
+            #print(f"{_RELAY_DEBUG} receive: raw text_data length={len(text_data) if text_data else 0)")
             payload = deserialize(text_data)
             data_type = payload.get("type")
             #print(f"{_RELAY_DEBUG} receive: type={data_type}")
@@ -576,84 +474,41 @@ class Relay(
                     payload["auth"] = {}
                 if "session_id" not in payload["auth"]:
                     payload["auth"]["session_id"] = self.session_id
-            #print(f"{_RELAY_DEBUG} receive: payload prepared (session_id injected if needed)")
 
-            handled = False
+            # Orchestrator is now the primary classifier/dispatcher for all relay cases,
+            # including CHAT and START_SIM (via injected helpers).
+            orchestrator_response = None
+            try:
+                orchestrator_response = await self.orchestrator.handle_relay_payload(
+                    payload=payload,
+                    user_id=self.user_id,
+                    session_id=str(self.session_id) if self.session_id else None,
+                )
+            except Exception as orch_err:
+                print(f"{_RELAY_DEBUG} receive: orchestrator error: {orch_err}")
+                import traceback
+                traceback.print_exc()
 
-            if data_type == "START_SIM":
-                print(f"{_RELAY_DEBUG} receive: dispatching to _handle_start_sim_process")
-                await self._handle_start_sim_process(payload)
+            if isinstance(orchestrator_response, dict):
+                # Special sentinel for side-effect-only handling (e.g. START_SIM)
+                if orchestrator_response.get("__handled_by_side_effect__"):
+                    print(f"{_RELAY_DEBUG} receive: orchestrator handled {data_type} via side effects")
+                    return
+
+            if isinstance(orchestrator_response, list):
+                orchestrator_response
+                await asyncio.gather(
+                    *[
+                        self.send_message(item)
+                        for item in orchestrator_response
+                    ]
+                )
                 return
 
-            if data_type == "CHAT":
-                data = payload.get("data", {}) or {}
+            if isinstance(orchestrator_response, dict):
+                self.send_message(orchestrator_response)
 
-                try:
-                    response = self.chat_classifier.chat(
-                        self.user_id,
-                        user_input=payload["data"]["msg"],
-                    )
-                    return_data = json.dumps(response, default=str)
-                    await self.send(text_data=return_data)
-                    print(f"{_RELAY_DEBUG} receive: CHAT response sent (type={response.get('type')})")
-                except Exception as chat_err:
-                    print(f"{_RELAY_DEBUG} receive: CHAT handler error: {chat_err}")
-                    import traceback
-                    traceback.print_exc()
-                    await self.send(text_data=json.dumps({
-                        "type": "CHAT",
-                        "status": {"state": "error", "msg": str(chat_err)},
-                        "data": {},
-                    }, default=str))
-                return
-
-            # Relay cases: support both dict (from RELAY_CASES_CONFIG) and RelayCase
-            for relay_case in list(self.relay_cases):
-                case_name = relay_case.get("case") if isinstance(relay_case, dict) else getattr(relay_case, "case", None)
-                if case_name != data_type:
-                    continue
-                print(f"{_RELAY_DEBUG} receive: matching case {case_name}")
-                if not relay_case.get("func") if isinstance(relay_case, dict) else (getattr(relay_case, "callable", None) is None):
-                    func_name = relay_case.get("func_name") if isinstance(relay_case, dict) else None
-                    if func_name:
-                        handler = getattr(self, func_name, None)
-                    else:
-                        print(f"{_RELAY_DEBUG} receive: skipping case {case_name} (no handler)")
-                        continue
-                else:
-                    handler = relay_case.get("func") if isinstance(relay_case, dict) else getattr(relay_case, "callable", None)
-                if handler is None:
-                    print(f"{_RELAY_DEBUG} receive: no callable for case {case_name}; skipping")
-                    continue
-                try:
-                    sig = inspect.signature(handler)
-                    if len(sig.parameters) >= 2:
-                        res = await handler(payload) if inspect.iscoroutinefunction(handler) else handler(payload)
-                    else:
-                        res = await handler(payload) if inspect.iscoroutinefunction(handler) else handler(payload)
-                except TypeError as te:
-                    print(f"{_RELAY_DEBUG} receive: handler signature error for {case_name}: {te}")
-                    raise
-                except Exception as he:
-                    print(f"{_RELAY_DEBUG} receive: handler error for case {case_name}: {he}")
-                    import traceback
-                    traceback.print_exc()
-                    await self.send(text_data=json.dumps({
-                        "type": case_name or data_type,
-                        "status": {"state": "error", "code": 500, "msg": str(he)},
-                        "data": {},
-                    }, default=str))
-                    handled = True
-                    break
-                res_type = res.get("type", "unknown") if isinstance(res, dict) else "unknown"
-                print(f"{_RELAY_DEBUG} receive: sending response type={res_type}")
-                return_data = json.dumps(res, default=str)
-                await self.send(text_data=return_data)
-                handled = True
-                break
-
-            if not handled:
-                print(f"{_RELAY_DEBUG} receive: unknown command type: {data_type}")
+            print(f"{_RELAY_DEBUG} receive: unknown command type (unhandled): {data_type}")
         except Exception as e:
             print(f"{_RELAY_DEBUG} receive: error processing message: {e}")
             import traceback
@@ -668,72 +523,11 @@ class Relay(
                 print(f"{_RELAY_DEBUG} receive: could not send error response: {send_err}")
 
 
-    async def _handle_start_sim_process(self, payload: dict):
-        """
-        Handles the START_SIM case.
-        Delegates to Guard.main to fetch data, build graph, and compile pattern.
-        Deactivates session upon success.
-        """
-        try:
-            config = payload.get("data", {}).get("config", {})
-            for k, v in config.items():
-                try:
-                    print(f"{_RELAY_DEBUG} _handle_start_sim_process: running guard.main for env_id={k}")
-                    self.guard.main(env_id=k, env_data=v)
-                    print(f"{_RELAY_DEBUG} _handle_start_sim_process: guard.main done for env_id={k}")
-                except Exception as guard_err:
-                    print(f"{_RELAY_DEBUG} _handle_start_sim_process: guard.main error for env_id={k}: {guard_err}")
-                    import traceback
-                    traceback.print_exc()
-                    raise
-
-                # send update user env
-                try:
-                    print(f"{_RELAY_DEBUG} _handle_start_sim_process: retrieving env table rows for user_id={self.user_id}")
-                    updated_env = self.env_manager.retrieve_send_user_specific_env_table_rows(self.user_id)
-                    await self.send(text_data=json.dumps({
-                        "type": "GET_USERS_ENVS",
-                        "data": updated_env
-                    }, default=str))
-                    print(f"{_RELAY_DEBUG} _handle_start_sim_process: sent GET_USERS_ENVS for env_id={k}")
-                except Exception as ex:
-                    print(f"{_RELAY_DEBUG} _handle_start_sim_process: error updating env status (continuing): {ex}")
-                    import traceback
-                    traceback.print_exc()
-
-            # create new session
-            if hasattr(self, "session_id") and self.session_id:
-                try:
-                    print(f"{_RELAY_DEBUG} _handle_start_sim_process: deactivating session {self.session_id}")
-                    self.session_manager.deactivate_session(self.session_id)
-                    self.session_id = self.session_manager.get_or_create_active_session(self.user_id)
-                    print(f"{_RELAY_DEBUG} _handle_start_sim_process: new session_id={self.session_id}")
-                except Exception as sess_err:
-                    print(f"{_RELAY_DEBUG} _handle_start_sim_process: session deactivate/create error: {sess_err}")
-                    import traceback
-                    traceback.print_exc()
-
-            response = {
-                "type": "START_SIM",
-                "status": {"state": "success", "code": 200, "msg": "Simulation started and session completed."},
-                "data": {}
-            }
-            await self.send(text_data=json.dumps(response, default=str))
-            await self.send_session()
-            print(f"{_RELAY_DEBUG} _handle_start_sim_process: completed successfully")
-        except Exception as e:
-            print(f"{_RELAY_DEBUG} _handle_start_sim_process: error: {e}")
-            import traceback
-            traceback.print_exc()
-            try:
-                await self.send(text_data=json.dumps({
-                    "type": "START_SIM",
-                    "status": {"state": "error", "code": 500, "msg": str(e)},
-                    "data": {}
-                }))
-            except Exception as send_err:
-                print(f"{_RELAY_DEBUG} _handle_start_sim_process: could not send error response: {send_err}")
-
+    async def send_message(self, orchestrator_response):
+        res_type = orchestrator_response.get("type", "unknown")
+        print(f"{_RELAY_DEBUG} receive: orchestrator handled type={res_type}")
+        return_data = json.dumps(orchestrator_response, default=str)
+        await self.send(text_data=return_data)
 
 
     async def batch_inject_env(self, payload):
@@ -801,8 +595,6 @@ class Relay(
             traceback.print_exc()
 
 
-
-
     async def error_response(self):
         try:
             print(f"{_RELAY_DEBUG} error_response: sending classification_error (invalid command)")
@@ -818,126 +610,3 @@ class Relay(
             traceback.print_exc()
             raise
 
-
-
-
-
-"""
-
-    # ENV HANDLING
-    {"case": "GET_ENV", "desc": "", "func": handle_get_env, "req_struct": {"auth": {"env_id": "str"}}, "out_struct": {"type": "GET_ENV", "data": {"env": "dict"}}},
-    {"case": "GET_USERS_ENVS", "desc": "", "func": handle_get_envs_user, "req_struct": {"auth": {"user_id": "str"}}, "out_struct": {"type": "GET_USERS_ENVS", "data": {"envs": "list"}}},
-    {"case": "DEL_ENV", "desc": "", "func": handle_del_env, "req_struct": {"auth": {"env_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_USERS_ENVS", "data": {"envs": "list"}}},
-    {"case": "SET_ENV", "desc": "", "func": handle_set_env, "req_struct": {"data": {"env_item": "dict"}, "auth": {"user_id": "str"}}, "out_struct": {"type": "GET_USERS_ENVS", "data": {"envs": "list"}}},
-    {"case": "DOWNLOAD_MODEL", "desc": "Download Model", "func": handle_download_model, "req_struct": {"auth": {"env_id": "string", "user_id": "string"}}, "out_struct": {"type": "DOWNLOAD_MODEL", "data": "dict"}},
-    {"case": "RETRIEVE_LOGS_ENV", "desc": "Retrieve Logs Env", "func": handle_retrieve_logs_env, "req_struct": {"auth": {"env_id": "string", "user_id": "string"}}, "out_struct": {"type": "RETRIEVE_LOGS_ENV", "data": "list"}},
-    {"case": "GET_ENV_DATA", "desc": "Get Env Data", "func": handle_get_env_data, "req_struct": {"auth": {"env_id": "string", "user_id": "string"}}, "out_struct": {"type": "GET_ENV_DATA", "data": "list"}},
-    
-    # FIELD
-    {"case": "DEL_FIELD", "desc": "Delete Field", "func": handle_del_field, "req_struct": {"auth": {"field_id": "str", "user_id": "str"}}, "out_struct": {"type": "LIST_USERS_FIELDS", "data": {"fields": "list"}}},
-    {"case": "LIST_USERS_FIELDS", "desc": "List Users Fields", "func": handle_list_users_fields, "req_struct": {"auth": {"user_id": "str"}}, "out_struct": {"type": "LIST_USERS_FIELDS", "data": {"fields": "list"}}},
-    {"case": "LIST_MODULES_FIELDS", "desc": "List Modules Fields", "func": handle_list_modules_fields, "req_struct": {"auth": {"module_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_MODULES_FIELDS", "data": {"fields": "list"}}},
-    {"case": "SET_FIELD", "desc": "Set Field", "func": handle_set_field, "req_struct": {"data": {"field": "dict"}, "auth": {"field_id": "str", "user_id": "str"}}, "out_struct": {"type": "LIST_USERS_FIELDS", "data": {"fields": "list"}}},
-    {"case": "LINK_MODULE_FIELD", "desc": "Link Module Field", "func": handle_link_module_field, "req_struct": {"auth": {"user_id": "str", "module_id": "str", "field_id": "str"}}, "out_struct": {"type": "GET_MODULES_FIELDS", "data": {"fields": "list"}}},
-    {"case": "RM_LINK_MODULE_FIELD", "desc": "Remove Link Module Field", "func": handle_rm_link_module_field, "req_struct": {"auth": {"user_id": "str", "module_id": "str", "field_id": "str"}}, "out_struct": {"type": "GET_MODULES_FIELDS", "data": {"fields": "list"}}},
-    {"case": "GET_MODULES_FIELDS", "desc": "Get Modules Fields", "func": handle_get_modules_fields, "req_struct": {"auth": {"user_id": "str", "module_id": "str"}}, "out_struct": {"type": "GET_MODULES_FIELDS", "data": {"fields": "list"}}},
-    {"case": "SESSIONS_FIELDS", "desc": "Get Sessions Fields", "func": handle_get_sessions_fields, "req_struct": {"auth": {"user_id": "str", "session_id": "str"}}, "out_struct": {"type": "SESSIONS_FIELDS", "data": {"fields": "list"}}},
-
-    # INJECTION - Energy Designer
-    {"case": "SET_INJ", "desc": "Set/upsert injection", "func": handle_set_inj, "req_struct": {"data": "dict", "auth": {"user_id": "str"}}, "out_struct": {"type": "GET_INJ_USER", "data": dict[str, list]}},
-    {"case": "DEL_INJ", "desc": "Delete injection", "func": handle_del_inj, "req_struct": {"auth": {"injection_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_INJ_USER", "data": dict[str, list]}},
-    {"case": "GET_INJ_USER", "desc": "Get user injections", "func": handle_get_inj_user, "req_struct": {"auth": {"user_id": "str"}}, "out_struct": {"type": "GET_INJ_USER", "data": dict[str, list]}},
-    {"case": "GET_INJ_LIST", "desc": "Get injection list", "func": handle_get_inj_list, "req_struct": {"data": {"inj_ids": "list"}, "auth": {"user_id": "str"}}, "out_struct": {"type": "GET_INJ_LIST", "data": "list"}},
-    
-    # INJECTION - Env Linking
-    {"case": "LINK_INJ_ENV", "desc": "Link injection to env", "func": handle_link_inj_env, "req_struct": {"auth": {"injection_id": "str", "env_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_INJ_ENV", "data": "list"}},
-    {"case": "RM_LINK_INJ_ENV", "desc": "Remove link injection to env", "func": handle_rm_link_inj_env, "req_struct": {"auth": {"injection_id": "str", "env_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_INJ_ENV", "data": "list"}},
-    {"case": "LIST_LINK_INJ_ENV", "desc": "List env linked injections", "func": handle_list_link_inj_env, "req_struct": {"auth": {"env_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_INJ_ENV", "data": "list"}},
-    {"case": "GET_INJ_ENV", "desc": "Get env injections", "func": handle_list_link_inj_env, "req_struct": {"auth": {"env_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_INJ_ENV", "data": "list"}},
-    {"case": "GET_INJECTION", "desc": "Get single injection", "func": handle_get_injection, "req_struct": {"auth": {"injection_id": "str"}}, "out_struct": {"type": "GET_INJECTION", "data": "dict"}},
-
-    # INJECTIONS (Session)
-    {"case": "LINK_SESSION_INJECTION", "desc": "Link Session Injection", "func": handle_link_session_injection, "req_struct": {"auth": {"session_id": "str", "injection_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_INJECTIONS", "data": {"injections": "list"}}},
-    {"case": "RM_LINK_SESSION_INJECTION", "desc": "Remove Link Session Injection", "func": handle_rm_link_session_injection, "req_struct": {"auth": {"session_id": "str", "injection_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_INJECTIONS", "data": {"injections": "list"}}},
-    {"case": "GET_SESSIONS_INJECTIONS", "desc": "Get Session Injections", "func": handle_get_sessions_injections, "req_struct": {"auth": {"session_id": "str", "user_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_INJECTIONS", "data": {"injections": "list"}}},
-
-    {"case": "REQUEST_INJ_SCREEN", "desc": "Requesting admin_data relavant for inj setup", "func": None, "func_name": "request_inj_process_start", "req_struct": {"data": {"env_id": "str"}}, "out_struct": {"type": "INJ_PATTERN_STRUCT", "admin_data": "dict", "env_id": "str"}},
-    {"case": "SET_INJ_PATTERN", "desc": "Set ncfg injection pattern", "func": None, "func_name": "set_env_inj_pattern", "req_struct": {"data": "dict"}, "out_struct": None},
-    {"case": "GET_INJ", "desc": "Retrieve inj cfg list", "func": None, "func_name": "set_env_inj_pattern", "req_struct": {"data": "dict"}, "out_struct": None},
-
-    # SESSION
-    {"case": "LINK_ENV_SESSION", "desc": "Link Env Session", "func": handle_link_env_session, "req_struct": {"auth": {"user_id": "str", "session_id": "str", "env_id": "str"}}, "out_struct": {"type": "LINK_ENV_SESSION", "data": {"sessions": "dict"}}},
-    {"case": "RM_LINK_ENV_SESSION", "desc": "Remove Link Env Session", "func": handle_rm_link_env_session, "req_struct": {"auth": {"user_id": "str", "session_id": "str", "env_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_ENVS", "data": {"envs": "list"}}},
-    {"case": "GET_SESSIONS_ENVS", "desc": "Get Session Envs", "func": handle_get_sessions_envs, "req_struct": {"auth": {"user_id": "str", "session_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_ENVS", "data": {"envs": "list"}}},
-    {"case": "LIST_USERS_SESSIONS", "desc": "List user sessions", "func": handle_list_user_sessions, "req_struct": {"auth": {"user_id": "str"}}, "out_struct": {"type": "LIST_USERS_SESSIONS", "data": {"sessions": "list"}}},
-    
-        # MODULES
-        {"case": "DEL_MODULE", "desc": "Delete Module", "func": handle_del_module, "req_struct": {"auth": {"module_id": "str", "user_id": "str"}}, "out_struct": {"type": "LIST_USERS_MODULES", "data": {"modules": "list"}}},
-        {"case": "LINK_SESSION_MODULE", "desc": "Link Session Module", "func": handle_link_session_module, "req_struct": {"auth": {"user_id": "str", "session_id": "str", "module_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_MODULES", "data": {"modules": "list"}}},
-        {"case": "RM_LINK_SESSION_MODULE", "desc": "Remove Link Session Module", "func": handle_rm_link_session_module, "req_struct": {"auth": {"user_id": "str", "session_id": "str", "module_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_MODULES", "data": {"modules": "list"}}},
-        {"case": "LINK_ENV_MODULE", "desc": "Link Env Module", "func": handle_link_env_module, "req_struct": {"auth": {"user_id": "str", "session_id": "str", "env_id": "str", "module_id": "str"}}, "out_struct": {"type": "LINK_ENV_MODULE", "data": {"sessions": "dict"}}},
-        {"case": "RM_LINK_ENV_MODULE", "desc": "Remove Link Env Module", "func": handle_rm_link_env_module, "req_struct": {"auth": {"user_id": "str", "session_id": "str", "env_id": "str", "module_id": "str"}}, "out_struct": {"type": "LINK_ENV_MODULE", "data": {"sessions": "dict"}}},
-        {"case": "SET_MODULE", "desc": "Set Module", "func": handle_set_module, "req_struct": {"data": {"id": "str", "files": "list"}, "auth": {"user_id": "str"}}, "out_struct": {"type": "LIST_USERS_MODULES", "data": {"modules": "list"}}},
-        {"case": "ENABLE_SM", "desc": "Enable Standard Model", "func": handle_enable_sm, "req_struct": {"auth": {"env_id": "str", "session_id": "str", "user_id": "str"}}, "out_struct": {"type": "ENABLE_SM", "data": {"sessions": "dict"}}},
-        {"case": "GET_MODULE", "desc": "Get Module", "func": handle_get_module, "req_struct": {"auth": {"module_id": "str"}}, "out_struct": {"type": "GET_MODULE", "data": "dict"}},
-        {"case": "GET_SESSIONS_MODULES", "desc": "Get Session Modules", "func": handle_get_sessions_modules, "req_struct": {"auth": {"user_id": "str", "session_id": "str"}}, "out_struct": {"type": "GET_SESSIONS_MODULES", "data": {"modules": "list"}, "auth": {"session_id": "str"}}},
-        {"case": "LIST_USERS_MODULES", "desc": "List User Modules", "func": handle_list_users_modules, "req_struct": {"auth": {"user_id": "str"}}, "out_struct": {"type": "LIST_USERS_MODULES", "data": {"modules": "list"}}},
-        {"case": "CONVERT_MODULE", "desc": "Convert Module", "func": None, "func_name": "_handle_convert_module", "req_struct": {"auth": {"module_id": "str"}, "data": {"files": "dict"}}, "out_struct": {"type": "CONVERT_MODULE", "data": "dict"}},
-        # todo apply last paramet entire grid to eq def  - in jax_test
-    
-    # PARAMS
-    {"case": "LIST_USERS_PARAMS", "desc": "Get Users Params", "func": handle_get_users_params, "req_struct": {"auth": {"user_id": "str"}}, "out_struct": {"type": "LIST_USERS_PARAMS", "data": {"params": "list"}}},
-    {"case": "SET_PARAM", "desc": "Set Param", "func": handle_set_param, "req_struct": {"auth": {"user_id": "str"}, "data": {"param": "dict"}}, "out_struct": {"type": "LIST_USERS_PARAMS", "data": {"params": "list"}}},
-    {"case": "DEL_PARAM", "desc": "Delete Param", "func": handle_del_param, "req_struct": {"auth": {"user_id": "str", "param_id": "str"}}, "out_struct": {"type": "LIST_USERS_PARAMS", "data": {"params": "list"}}},
-    {"case": "LINK_FIELD_PARAM", "desc": "Link Field Param", "func": handle_link_field_param, "req_struct": {"auth": {"user_id": "str"}, "data": {"links": "list"}}, "out_struct": {"type": "GET_FIELDS_PARAMS", "data": {"params": "list"}}},
-    {"case": "RM_LINK_FIELD_PARAM", "desc": "Rm Link Field Param", "func": handle_rm_link_field_param, "req_struct": {"auth": {"user_id": "str", "field_id": "str", "param_id": "str"}}, "out_struct": {"type": "GET_FIELDS_PARAMS", "data": {"params": "list"}}},
-    {"case": "GET_FIELDS_PARAMS", "desc": "Get Fields Params", "func": handle_get_fields_params, "req_struct": {"auth": {"user_id": "str", "field_id": "str"}}, "out_struct": {"type": "GET_FIELDS_PARAMS", "data": {"params": "list"}}},
-
-    # AIChat
-    {"case": "CHAT", "desc": "Get Fields Params", "func": handle_start_chat, "req_struct": {"auth": {"user_id": "str", "field_id": "str"}}, "out_struct": {"type": "GET_FIELDS_PARAMS", "data": {"params": "list"}}},
-
-                if data.get("files"):
-                    # Classification step: use cases from file_manager.case (dynamic import)
-                    print(f"{_RELAY_DEBUG} receive: CHAT with files -> file relay dispatch")
-                    try:
-                        mod = importlib.import_module("core.file_manager.case")
-                        RELAY_FILE = getattr(mod, "RELAY_FILE", [])
-                        payload_data = payload.get("data", {}) or {}
-                        payload_auth = payload.get("auth", {}) or {}
-                        if "user_id" not in payload_auth and self.user_id:
-                            payload_auth["user_id"] = self.user_id
-                            payload["auth"] = payload_auth
-                        for case_info in RELAY_FILE:
-                            case_name = case_info.get("case")
-                            handler = case_info.get("func")
-                            if not handler:
-                                continue
-                            req_struct = case_info.get("req_struct", {})
-                            req_data = req_struct.get("data", {}) or {}
-                            needs_files = "files" in req_data and bool(payload_data.get("files"))
-                            needs_auth = not req_struct.get("auth") or (payload_auth.get("user_id") or self.user_id)
-                            if needs_files and needs_auth:
-                                print(f"{_RELAY_DEBUG} receive: matching file case {case_name}")
-                                res = handler(payload) if not inspect.iscoroutinefunction(handler) else await handler(payload)
-                                return_data = json.dumps(res, default=str)
-                                await self.send(text_data=return_data)
-                                print(f"{_RELAY_DEBUG} receive: file case {case_name} response sent")
-                                return
-                        print(f"{_RELAY_DEBUG} receive: no matching RELAY_FILE case for CHAT+files")
-                        await self.send(text_data=json.dumps({
-                            "type": "CHAT",
-                            "status": {"state": "error", "msg": "No matching file case for CHAT+files"},
-                            "data": {},
-                        }, default=str))
-                    except Exception as fe:
-                        print(f"{_RELAY_DEBUG} receive: CHAT+files dispatch error: {fe}")
-                        import traceback
-                        traceback.print_exc()
-                        await self.send(text_data=json.dumps({
-                            "type": "CHAT",
-                            "status": {"state": "error", "msg": str(fe)},
-                            "data": {},
-                        }, default=str))
-                    return
-                print(f"{_RELAY_DEBUG} receive: handling CHAT")
-"""

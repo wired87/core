@@ -7,23 +7,24 @@ Injection format: {id: str, data: [[times], [energies]], ntype: str}
 
 from typing import Optional, Dict, Any, List
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
-from core.qbrain_manager import QBrainTableManager
+from core.qbrain_manager import get_qbrain_table_manager
 
 _INJ_DEBUG = "[InjectionManager]"
 
 
-class InjectionManager(BQCore):
+class InjectionManager:
     """
     Manages injection data in BigQuery.
-    Extends BQCore to leverage existing BigQuery functionality.
+    Receives BQCore instance via constructor.
     """
 
     DATASET_ID = "QBRAIN"
-    
-    def __init__(self):
-        """Initialize InjectionManager with QBRAIN dataset."""
+    TABLE = "injections"
+
+    def __init__(self, qb):
+        """Initialize InjectionManager with QBrainTableManager instance."""
         try:
-            BQCore.__init__(self, dataset_id=self.DATASET_ID)
+            self.qb = qb
             self.INJECTION_TABLE_SCHEMA = {
                 "id": "STRING",
                 "user_id": "STRING",
@@ -31,8 +32,7 @@ class InjectionManager(BQCore):
                 "created_at": "TIMESTAMP",
                 "updated_at": "TIMESTAMP",
             }
-            self.qb = QBrainTableManager()
-            self.table = "injections"
+            self.table = self.TABLE
             print(f"{_INJ_DEBUG} initialized")
         except Exception as e:
             print(f"{_INJ_DEBUG} __init__ error: {e}")
@@ -87,16 +87,21 @@ class InjectionManager(BQCore):
         Upsert injection to BigQuery.
         Dynamically executes schema based packing
         """
+        print("set_inj...", inj_object)
 
         try:
-            print(f"{_INJ_DEBUG} set_inj: user_id={user_id}, inj_id={inj_object.get('id')}")
-            injection_record = inj_object.copy()
-            injection_record["user_id"] = user_id
-            if "ntype" in injection_record:
-                injection_record.pop("ntype")
-            out = self.qb.set_item(self.table, injection_record, keys={"id": injection_record["id"], "user_id": user_id})
-            print(f"{_INJ_DEBUG} set_inj: done, success={out}")
-            return out
+            if isinstance(inj_object, list):
+                for item in inj_object:
+                    print(f"{_INJ_DEBUG} set_inj: user_id={user_id}, inj_id={item.get('id')}")
+                    injection_record = item.copy()
+                    injection_record["user_id"] = user_id
+                    out = self.qb.set_item(self.table, injection_record, keys={"id": item["id"], "user_id": user_id})
+            else:
+                inj_object["user_id"] = user_id
+                out = self.qb.set_item(self.table, inj_object, keys={"id": inj_object["id"], "user_id": user_id})
+
+            print(f"{_INJ_DEBUG} set_inj: done")
+            return True
         except Exception as e:
             print(f"{_INJ_DEBUG} set_inj: error: {e}")
             import traceback
@@ -306,7 +311,7 @@ class InjectionManager(BQCore):
             session_id=session_id,
             nid=injection_id,
             user_id=user_id,
-            session_link_table=self.table,
+            session_link_table="session_to_injections",
             session_to_link_name_id="injection_id",
         )
 
@@ -348,7 +353,9 @@ class InjectionManager(BQCore):
             return []
 
 
-injection_manager = InjectionManager()
+_default_bqcore = BQCore(dataset_id="QBRAIN")
+_default_injection_manager = InjectionManager(get_qbrain_table_manager(_default_bqcore))
+injection_manager = _default_injection_manager  # backward compat
 
 import random
 
@@ -363,211 +370,212 @@ from core.websocket_datatypes import (
 
 import json
 
-def handle_get_injection(payload: dict) -> dict:
-    """
-    Handle get_injection WebSocket message.
-    Return a single injection by ID.
-    """
-    auth: AuthData = payload["auth"]
+from core.handler_utils import require_param, require_param_truthy, get_val
+
+
+def handle_get_injection(data=None, auth=None) -> dict:
+    """Retrieve a single injection by ID. Required: injection_id or id (auth or data)."""
+    from core.managers_context import get_injection_manager
+    data, auth = data or {}, auth or {}
+    injection_id = get_val(data, auth, "injection_id") or get_val(data, auth, "id")
+    if err := require_param(injection_id, "injection_id"):
+        return err
+    auth_out = {k: v for k, v in {**auth, **data}.items() if k in ("user_id", "injection_id") and v is not None}
     try:
-        # Request parsing
-        request = WebSocketRequest.from_dict(payload)
-        injection_id = request.get_data_field("id") or request.get_data_field("injection_id")
-        
-        # Auth usage
-        # We assume auth is passed from Relay (enriched with connection user_id)
-        
-        if not injection_id:
-            return WebSocketResponse.error(
-                type="get_injection",
-                error="Missing injection id",
-                auth=auth
-            )
-            
-        injection = injection_manager.get_injection(injection_id)
-        
+        injection = get_injection_manager().get_injection(injection_id)
         if not injection:
-            return WebSocketResponse.error(
-                type="get_injection",
-                error="Injection not found",
-                auth=auth
-            )
-            
-        return WebSocketResponse.success(
-            type="GET_INJECTION",
-            data=injection,
-            auth=auth
-        )
-        
+            return WebSocketResponse.error(type="get_injection", error="Injection not found", auth=auth_out)
+        return WebSocketResponse.success(type="GET_INJECTION", data=injection, auth=auth_out)
     except Exception as e:
-        return WebSocketResponse.error(
-            type="get_injection",
-            error=str(e),
-            auth=auth
-        )
+        return WebSocketResponse.error(type="get_injection", error=str(e), auth=auth_out)
 
-def handle_set_inj(payload: dict) -> dict:
-    """Set/upsert injection."""
-    auth = payload["auth"]
+
+def handle_set_inj(data=None, auth=None) -> dict:
+    """Create or update an injection. Required: user_id (auth), data (injection dict with id/data/ntype). Optional: original_id (auth)."""
+    user_id = get_val(data, auth, "user_id")
+    inj_dict = data if isinstance(data, dict) else None
+    original_id = get_val(data, auth, "original_id")
+
+    if err := require_param(user_id, "user_id"):
+        return err
+
+    if err := require_param_truthy(inj_dict, "data"):
+        return err
+
+    auth_out = {"user_id": user_id}
+
+    from core.managers_context import get_injection_manager
+    im = get_injection_manager()
     try:
-        user_id = auth["user_id"]
-        inj_dict = payload.get("data")
-
-        original_id = auth.get("original_id")
         if original_id:
-             injection_manager.del_inj(original_id, user_id)
-
-        success = injection_manager.set_inj(inj_dict, user_id)
+            im.del_inj(original_id, user_id)
+        success = im.set_inj(data, user_id)
 
         if not success:
-             return WebSocketResponse.error(
-                "SET_INJ", 
-                "Failed to save injection", 
-                auth=auth
-            )
-
-        # Return updated list
-        injections = injection_manager.get_inj_user(user_id)
-        return {"type":"GET_INJ_USER", "data":{"injections":injections}}
-
+            print("!success", success)
+            return WebSocketResponse.error("SET_INJ", "Failed to save injection", auth=auth_out)
+        return {"type": "GET_INJ_USER", "data": {"injections": im.get_inj_user(user_id)}}
     except Exception as e:
         print("Err setting injection:", e)
-        return WebSocketResponse.error("SET_INJ", str(e), auth=auth)
+        return WebSocketResponse.error("SET_INJ", str(e), auth=auth_out)
 
 
-def handle_del_inj(payload: dict) -> dict:
-    """Delete injection."""
-    auth:dict = payload["auth"]
+def handle_del_inj(data=None, auth=None) -> dict:
+    """Delete an injection by ID. Required: user_id, injection_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    injection_id = get_val(data, auth, "injection_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(injection_id, "injection_id"):
+        return err
+    from core.managers_context import get_injection_manager
+    im = get_injection_manager()
+    auth_out = {"user_id": user_id}
     try:
-        user_id = auth["user_id"]
-        injection_id = auth["injection_id"]
-
-        if not injection_id:
-             return WebSocketResponse.error("del_inj", "Missing injection id", auth=auth)
-
-        success = injection_manager.del_inj(injection_id, user_id)
+        success = im.del_inj(injection_id, user_id)
         if not success:
-             return WebSocketResponse.error("DEL_INJ", "Failed to delete injection", auth=auth)
-             
-        injections = injection_manager.get_inj_user(user_id)
-        return {"type":"GET_INJ_USER", "data":{"injections":injections}}
-        
+            return WebSocketResponse.error("DEL_INJ", "Failed to delete injection", auth=auth_out)
+        return {"type": "GET_INJ_USER", "data": {"injections": im.get_inj_user(user_id)}}
     except Exception as e:
-        return WebSocketResponse.error("DEL_INJ", str(e), auth=auth)
+        return WebSocketResponse.error("DEL_INJ", str(e), auth=auth_out)
 
-def handle_get_inj_user(payload: dict) -> dict:
-    """Get all injections for user."""
-    auth: dict = payload["auth"]
+
+def handle_get_inj_user(data=None, auth=None) -> dict:
+    """Retrieve all injections owned by a user. Required: user_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    from core.managers_context import get_injection_manager
     try:
-        # request = WebSocketRequest.from_dict(payload) # not strictly needed if we trust auth
-        user_id = auth["user_id"]
-        injections = injection_manager.get_inj_user(user_id)
-        return {"type":"GET_INJ_USER", "data":{"injections":injections}}
+        return {"type": "GET_INJ_USER", "data": {"injections": get_injection_manager().get_inj_user(user_id)}}
     except Exception as e:
         print("Err handle_get_inj_user:", e)
-        return {"type":"GET_INJ_USER", "data":{"injections": []}}
+        return {"type": "GET_INJ_USER", "data": {"injections": []}}
 
-def handle_get_inj_list(payload: dict) -> dict:
-    """Get list of injections by ID."""
-    auth: AuthData = payload["auth"]
 
+def handle_get_inj_list(data=None, auth=None) -> dict:
+    """Retrieve injections by a list of IDs. Required: user_id (auth or data), inj_ids (data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    inj_ids = data.get("inj_ids") if isinstance(data, dict) else []
+    if err := require_param(user_id, "user_id"):
+        return err
+    if not isinstance(inj_ids, list):
+        return {"error": "param missing", "key": "inj_ids"}
+    auth_out = {"user_id": user_id}
+    from core.managers_context import get_injection_manager
     try:
-        request = WebSocketRequest.from_dict(payload)
-        inj_ids = request.get_data_field("inj_ids", [])
-        if not isinstance(inj_ids, list):
-             return create_list_response("get_inj_list", [], error="inj_ids must be a list", auth=auth)
-        
-        injections = injection_manager.get_inj_list(inj_ids)
-        return create_list_response("GET_INJ_LIST", injections, auth=auth)
+        return create_list_response("GET_INJ_LIST", get_injection_manager().get_inj_list(inj_ids), auth=auth_out)
     except Exception as e:
-        return create_list_response("GET_INJ_LIST", [], error=str(e), auth=auth)
+        return create_list_response("GET_INJ_LIST", [], error=str(e), auth=auth_out)
 
-def handle_link_inj_env(payload: dict) -> dict:
-    """Link injection to env."""
-    auth = payload["auth"]
+
+def handle_link_inj_env(data=None, auth=None) -> dict:
+    """Link an injection to an environment. Required: injection_id, env_id, user_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    injection_id = get_val(data, auth, "injection_id")
+    env_id = get_val(data, auth, "env_id")
+    user_id = get_val(data, auth, "user_id")
+    if err := require_param(injection_id, "injection_id"):
+        return err
+    if err := require_param(env_id, "env_id"):
+        return err
+    if err := require_param(user_id, "user_id"):
+        return err
+    from core.managers_context import get_injection_manager
+    im = get_injection_manager()
+    auth_out = {"user_id": user_id, "env_id": env_id}
     try:
-        injection_id = auth["injection_id"]
-        env_id = auth["env_id"]
-        user_id = auth["user_id"]
-        if not injection_id or not env_id:
-             return WebSocketResponse.error("link_inj_env", "Missing injection_id or env_id", auth=auth)
-             
-        injection_manager.link_inj_env(injection_id, env_id, user_id, pos=(0,0,0))
-        # Return updated env injections
-        injections = injection_manager.get_inj_env(env_id, user_id, injection_id)
-        return create_list_response("GET_INJ_ENV", injections, auth=auth)
+        im.link_inj_env(injection_id, env_id, user_id, pos=(0, 0, 0))
+        return create_list_response("GET_INJ_ENV", im.get_inj_env(env_id, user_id, injection_id), auth=auth_out)
     except Exception as e:
-        return WebSocketResponse.error("LINK_INJ_ENV", str(e), auth=auth)
+        return WebSocketResponse.error("LINK_INJ_ENV", str(e), auth=auth_out)
 
-def handle_rm_link_inj_env(payload: dict) -> dict:
-    """Remove link."""
-    auth: dict = payload["auth"]
+
+def handle_rm_link_inj_env(data=None, auth=None) -> dict:
+    """Remove the link between an injection and an environment. Required: user_id, env_id, injection_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    env_id = get_val(data, auth, "env_id")
+    injection_id = get_val(data, auth, "injection_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(env_id, "env_id"):
+        return err
+    if err := require_param(injection_id, "injection_id"):
+        return err
+    from core.managers_context import get_injection_manager
+    im = get_injection_manager()
+    auth_out = {"user_id": user_id}
     try:
-        user_id = auth["user_id"]
-        env_id = auth["env_id"]
-        injection_id = auth["injection_id"]
-
-        injection_manager.rm_link_inj_env(injection_id, env_id, user_id)
-        injections = injection_manager.get_inj_env(env_id, user_id, injection_id)
-        return create_list_response("GET_INJ_ENV", injections, auth=auth)
+        im.rm_link_inj_env(injection_id, env_id, user_id)
+        return create_list_response("GET_INJ_ENV", im.get_inj_env(env_id, user_id, injection_id), auth=auth_out)
     except Exception as e:
-         return WebSocketResponse.error("RM_LINK_INJ_ENV", str(e), auth=auth)
+        return WebSocketResponse.error("RM_LINK_INJ_ENV", str(e), auth=auth_out)
 
-def handle_list_link_inj_env(payload: dict) -> dict:
-    """List linked injections."""
-    auth = payload["auth"]
 
+def handle_list_link_inj_env(data=None, auth=None) -> dict:
+    """List injections linked to an environment. Required: env_id, user_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    env_id = get_val(data, auth, "env_id")
+    user_id = get_val(data, auth, "user_id")
+    injection_id = get_val(data, auth, "injection_id")
+    if err := require_param(env_id, "env_id"):
+        return err
+    if err := require_param(user_id, "user_id"):
+        return err
+    from core.managers_context import get_injection_manager
+    auth_out = {"user_id": user_id}
     try:
-        env_id = auth["env_id"]
-        user_id = auth["user_id"]
-        injection_id = auth["injection_id"]
-
-        if not env_id:
-             return WebSocketResponse.error("LIST_LINK_INJ_ENV", "Missing creds", auth=auth)
-        injections = injection_manager.get_inj_env(env_id, user_id, injection_id)
-        return create_list_response("GET_INJ_ENV", injections, auth=auth)
+        return create_list_response("GET_INJ_ENV", get_injection_manager().get_inj_env(env_id, user_id, injection_id), auth=auth_out)
     except Exception as e:
-        return WebSocketResponse.error("LIST_LINK_INJ_ENV", str(e), auth=auth)
-        return WebSocketResponse.error("list_link_inj_env", str(e), auth=auth)
+        return WebSocketResponse.error("LIST_LINK_INJ_ENV", str(e), auth=auth_out)
 
-def handle_get_sessions_injections(payload):
-    """
-    receive "GET_SESSIONS_INJECTIONS"
-    """
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    session_id = auth.get("session_id")
-    if not user_id or not session_id:
-        return {"error": "Missing user_id or session_id"}
-        
-    injections = injection_manager.retrieve_session_injections(session_id, user_id)
-    return {
-        "type": "GET_SESSIONS_INJECTIONS",
-        "data": {"injections": injections}
-    }
 
-def handle_link_session_injection(payload):
-    """Link session to injection."""
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    session_id = auth.get("session_id")
-    injection_id = auth.get("injection_id")
-    
-    if not all([user_id, session_id, injection_id]):
-        return {"error": "Missing required fields"}
-        
-    injection_manager.link_session_injection(session_id, injection_id, user_id)
-    return handle_get_sessions_injections(payload)
+def handle_get_sessions_injections(data=None, auth=None):
+    """Retrieve all injections linked to a session. Required: user_id, session_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    from core.managers_context import get_injection_manager
+    return {"type": "GET_SESSIONS_INJECTIONS", "data": {"injections": get_injection_manager().retrieve_session_injections(session_id, user_id)}}
 
-def handle_rm_link_session_injection(payload):
-    """Remove link."""
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    session_id = auth.get("session_id")
-    injection_id = auth.get("injection_id")
-    
-    if not all([user_id, session_id, injection_id]):
-        return {"error": "Missing required fields"}
-        
-    injection_manager.rm_link_session_injection(session_id, injection_id, user_id)
-    return handle_get_sessions_injections(payload)
+
+def handle_link_session_injection(data=None, auth=None):
+    """Link a session to an injection. Required: user_id, session_id, injection_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    injection_id = get_val(data, auth, "injection_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    if err := require_param(injection_id, "injection_id"):
+        return err
+    from core.managers_context import get_injection_manager
+    get_injection_manager().link_session_injection(session_id, injection_id, user_id)
+    return handle_get_sessions_injections(data={"session_id": session_id}, auth={"user_id": user_id})
+
+
+def handle_rm_link_session_injection(data=None, auth=None):
+    """Remove the link between a session and an injection. Required: user_id, session_id, injection_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    injection_id = get_val(data, auth, "injection_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    if err := require_param(injection_id, "injection_id"):
+        return err
+    from core.managers_context import get_injection_manager
+    get_injection_manager().rm_link_session_injection(session_id, injection_id, user_id)
+    return handle_get_sessions_injections(data={"session_id": session_id}, auth={"user_id": user_id})

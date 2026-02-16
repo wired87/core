@@ -7,7 +7,7 @@ Handles schema definitions and table creation for all QBRAIN tables.
 """
 import json
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import os
 import dotenv
 
@@ -17,19 +17,31 @@ from google import genai
 dotenv.load_dotenv()
 
 from google.cloud import bigquery
-from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 
 _QBRAIN_DEBUG = "[QBrainTableManager]"
 
 
-class QBrainTableManager(BQCore):
+class QBrainTableManager:
     """
     Centralized manager for all QBRAIN dataset tables.
     Handles schema definitions and table creation/verification.
+    Receives BQCore instance via constructor (no inheritance).
     """
 
     DATASET_ID = "QBRAIN"
-    
+
+    def __init__(self, bqcore):
+        self.bq = bqcore
+        self.pid = bqcore.pid
+        self.bqclient = bqcore.bqclient
+        self.ds_id = bqcore.ds_id
+        self.ds_ref = bqcore.ds_ref or f"{bqcore.pid}.{self.DATASET_ID}"
+        self.run_query = bqcore.run_query
+        self.get_table_schema = bqcore.get_table_schema
+        self.insert_col = bqcore.insert_col
+        self.genai_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+        print(f"{_QBRAIN_DEBUG} initialized with dataset: {self.DATASET_ID}")
+
     MANAGERS_INFO = [
         {
             "manager_name": "QBrainTableManager",
@@ -42,7 +54,7 @@ class QBrainTableManager(BQCore):
             "description": "Manages user data, records, payments, and standard stack initialization in BigQuery.",
             "default_table": "users",
             "schema": {
-                "uid": "STRING",
+                "id": "STRING",
                 "email": "STRING",
                 "created_at": "TIMESTAMP",
                 "updated_at": "TIMESTAMP",
@@ -113,6 +125,7 @@ class QBrainTableManager(BQCore):
                 "binary_data": "STRING",
                 "methods": "STRING",
                 "fields": "STRING",
+                "rag_file_ids": "JSON",
             }
         },
         {
@@ -180,6 +193,9 @@ class QBrainTableManager(BQCore):
                 "id": "STRING",
                 "user_id": "STRING",  
                 "data": "STRING",
+                "frequency": "STRING",
+                "amplitude": "STRING",
+                "waveform": "STRING",
                 "description": "STRING",
                 "created_at": "TIMESTAMP",
                 "updated_at": "TIMESTAMP",
@@ -198,6 +214,7 @@ class QBrainTableManager(BQCore):
                         "user_id": "STRING",
                         "module_id": "STRING",
                         "created_at": "TIMESTAMP",
+                        "rag_file_id": "STRING",
                     }
                 }
             ]
@@ -243,17 +260,6 @@ class QBrainTableManager(BQCore):
                     schemas[table_def["table_name"]] = table_def["schema"]
         
         return schemas
-
-    def __init__(self):
-        """Initialize QBrainTableManager with QBRAIN dataset."""
-        super().__init__(dataset_id=self.DATASET_ID)
-        self.ds_ref = f"{self.pid}.{self.DATASET_ID}"
-        print(f"{_QBRAIN_DEBUG} initialized with dataset: {self.DATASET_ID}")
-        try:
-            self.genai_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-        except Exception as e:
-            print(f"{_QBRAIN_DEBUG} GenAI client init warning: {e}")
-            self.genai_client = None
 
     def _generate_embedding(self, text: str) -> List[float]:
         """
@@ -439,7 +445,7 @@ class QBrainTableManager(BQCore):
         return modules_linked_rows
         
 
-    def row_from_id(self, nid, table, select="*", user_id=None):
+    def row_from_id(self, nid:list or str, table, select="*", user_id=None):
         print("retrieve_env_from_id")
         if isinstance(nid, str):
             nid = [nid]
@@ -477,6 +483,7 @@ class QBrainTableManager(BQCore):
         Fetches the latest row matching keys, updates it with `updates`, and inserts as new row.
         This avoids 'streaming buffer' errors on UPDATE/DELETE operations.
         """
+        print("upsert_copy...")
         try:
             # Construct SELECT query
             where_clause = " AND ".join([f"{k} = @{k}" for k in keys.keys()])
@@ -510,12 +517,9 @@ class QBrainTableManager(BQCore):
             rows = list(self.bqclient.query(query, job_config=job_config).result())
             if not rows:
                 print(f"Row not found for upsert_copy in {ref} with keys {keys}")
-                # Optional: If not found, maybe we act as if successful deletion?
                 return False
                 
             row = dict(rows[0])
-            #print("row to overwrite: ", row)
-            # Apply updates
             row.update(updates)
 
             # check injection
@@ -549,7 +553,7 @@ class QBrainTableManager(BQCore):
                 row["created_at"] = now
                 
             # Re-insert
-            self.bq_insert(clean_table_name, [row], upsert=False)
+            self.bq.bq_insert(clean_table_name, [row], upsert=False)
             #print("row overwritten: ", row)
             return True
             
@@ -694,7 +698,7 @@ class QBrainTableManager(BQCore):
             True if dataset was created or already exists
         """
         try:
-            self.ensure_dataset_exists(self.DATASET_ID)
+            self.bq.ensure_dataset_exists(self.DATASET_ID)
             print(f"✓ Dataset '{self.DATASET_ID}' ready")
             return True
         except Exception as e:
@@ -900,7 +904,7 @@ class QBrainTableManager(BQCore):
         
         # Fallback to insert
         print("insert", table_name, items)
-        return self.bq_insert(table_name, items)
+        return self.bq.bq_insert(table_name, items)
 
     def reset_tables(self, table_list: List[str]):
         """
@@ -921,7 +925,7 @@ class QBrainTableManager(BQCore):
                 for col, dtype in schema.items():
                     col_def = f"{col} {dtype}"
                     if col in ["created_at", "updated_at"]:
-                        col_def += f" DEFAULT {self.DEFAULT_TIMESTAMP}"
+                        col_def += f" DEFAULT {self.bq.DEFAULT_TIMESTAMP}"
                     cols_def.append(col_def)
 
                 cols_str = ",\n  ".join(cols_def)
@@ -944,6 +948,24 @@ class QBrainTableManager(BQCore):
             print(f"Error in set_item: {e}")
             return False
 
+
+# Default singleton for standalone use (no orchestrator context)
+_default_bqcore = None
+_qbrain_table_manager_instance: Optional["QBrainTableManager"] = None
+
+
+def get_qbrain_table_manager(bqcore=None) -> "QBrainTableManager":
+    """Return QBrainTableManager. If bqcore given, creates new instance. Else returns default singleton."""
+    global _qbrain_table_manager_instance, _default_bqcore
+    if bqcore is not None:
+        return QBrainTableManager(bqcore)
+    if _qbrain_table_manager_instance is None:
+        from a_b_c.bq_agent._bq_core.bq_handler import BQCore
+        _default_bqcore = BQCore(dataset_id="QBRAIN")
+        _qbrain_table_manager_instance = QBrainTableManager(_default_bqcore)
+    return _qbrain_table_manager_instance
+
+
 if __name__ == "__main__":
-    qbrain_manager = QBrainTableManager()
+    qbrain_manager = get_qbrain_table_manager()
     qbrain_manager.reset_tables(["fields"])

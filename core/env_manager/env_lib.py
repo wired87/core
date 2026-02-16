@@ -5,8 +5,8 @@ from datetime import datetime
 from typing import Dict, Any, List
 from google.cloud import bigquery
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
-
-from core.qbrain_manager import QBrainTableManager
+from core.qbrain_manager import get_qbrain_table_manager
+from core.handler_utils import param_missing_error, require_param, require_param_truthy, get_val
 
 # Debug prefix for manager methods (grep-friendly)
 _ENV_DEBUG = "[EnvManager]"
@@ -23,14 +23,17 @@ ENV_SCHEMA = [
     bigquery.SchemaField("updated_at", "TIMESTAMP"),
 ]
 
-class EnvManager(BQCore):
+class EnvManager:
     DATASET_ID = "QBRAIN"
     TABLE_ID = "envs"
 
-    def __init__(self):
-        super().__init__(dataset_id=self.DATASET_ID)
-        self.qb = QBrainTableManager()
-        self.session_link_tref = f"session_to_envs"
+    def __init__(self, qb):
+        self.qb = qb
+        self.pid = qb.pid
+        self.bqclient = qb.bqclient
+        self.run_query = qb.run_query
+        self.insert_col = qb.insert_col
+        self.session_link_tref = "session_to_envs"
 
     def _ensure_env_table(self):
         """Check if envs table exists, create if not."""
@@ -394,7 +397,7 @@ class EnvManager(BQCore):
                 ]
             )
             rows = self.run_query(query, conv_to_dict=True, job_config=job_config)
-            print(f"{_ENV_DEBUG} get_env_data: got {len(rows)} row(s)")
+            print(f"{_ENV_DEBUG} get_env_data: got {rows} row(s)")
             return rows
         except Exception as e:
             print(f"{_ENV_DEBUG} get_env_data: error (returning mock): {e}")
@@ -407,274 +410,202 @@ class EnvManager(BQCore):
             ]
 
 
-# Instantiate
-print("Instantiating global env_manager")
-env_manager = EnvManager()
-print("Global env_manager instantiated")
+# Default instance for standalone use (no orchestrator context)
+_default_bqcore = BQCore(dataset_id="QBRAIN")
+_default_env_manager = EnvManager(get_qbrain_table_manager(_default_bqcore))
+env_manager = _default_env_manager  # backward compat
 
-def handle_get_env(payload):
-    """
-    receive "get_env": auth=(user_id:str) -> retireve_send...
-    """
-    print("handle_get_env")
-    auth = payload["auth"]
-    env_id = auth["env_id"]
-    resp_data = env_manager.retrieve_env_from_id(env_id)
-    
-    return {
-        "type": "GET_ENV",
-        "data": resp_data,
-    }
+def handle_get_env(data=None, auth=None):
+    """Retrieve a single environment by ID. Required: env_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    env_id = get_val(data, auth, "env_id")
+    if err := require_param(env_id, "env_id"):
+        return err
+    from core.managers_context import get_env_manager
+    return {"type": "GET_ENV", "data": get_env_manager().retrieve_env_from_id(env_id)}
 
 
-def handle_get_envs_session(payload):
-    auth = payload["auth"]
-    user_id = auth.get("user_id")
+def handle_get_envs_session(data=None, auth=None):
+    """Retrieve all environments linked to a session. Required: user_id, session_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    from core.managers_context import get_env_manager
+    return {"type": "GET_SESSIONS_ENVS", "data": get_env_manager().retrieve_session_envs(user_id, session_id)}
 
 
+def handle_get_envs_user(data=None, auth=None):
+    """Retrieve all environments owned by a user. Required: user_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    from core.managers_context import get_env_manager
+    return {"type": "GET_USERS_ENVS", "data": get_env_manager().retrieve_send_user_specific_env_table_rows(user_id)}
 
 
+def handle_del_env(data=None, auth=None):
+    """Delete an environment by ID. Required: user_id, env_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    env_id = get_val(data, auth, "env_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(env_id, "env_id"):
+        return err
+    from core.managers_context import get_env_manager
+    mgr = get_env_manager()
+    mgr.delete_env(env_id, user_id)
+    return {"type": "GET_USERS_ENVS", "data": mgr.retrieve_send_user_specific_env_table_rows(user_id)}
 
-def handle_get_envs_user(payload):
-    """
-    receive "get_envs_user": auth
-    Same as get_env
-    """
-    print("handle_get_envs_user")
 
-    auth = payload["auth"]
-    user_id = auth.get("user_id")
-
-    if not user_id:
-        return {"error": "No user_id in auth"}
-
-    # Retrieve data
-    resp_data = env_manager.retrieve_send_user_specific_env_table_rows(user_id)
-
-    return {
-        "type": "GET_USERS_ENVS",
-        "data": resp_data
-    }
-
-def handle_del_env(payload):
-    """
-    receive "del_env": auth={env_id:str, user_id:str}
-    """
-    print("handle_del_env")
-
-    auth = payload["auth"]
-    user_id = auth.get("user_id")
-    env_id = auth.get("env_id")
-    
-    if not user_id or not env_id:
-        return {"error": "Missing env_id or user_id in auth"}
-        
-    env_manager.delete_env(env_id, user_id)
-
-    # Retrieve data
-    resp_data = env_manager.retrieve_send_user_specific_env_table_rows(user_id)
-
-    # Return message structure.
-    # Logic: send get_env: data:{envs: ...}
-    return {
-        "type": "GET_USERS_ENVS",
-        "data": resp_data
-    }
-
-def handle_set_env(payload):
-    """
-    env_item_type=
-    "env_item_type: {
-            id: STRING,
-            sim_time: INT64,
-            cluster_dim: INT64,
-            dims: INT64,
-            user_id:STRING,
-        }
-
-    receive "set_env": data={env:env_item_type}, auth={user_id:str, session_id:str, }
-    """
-    print("handle_set_env")
-
-    auth = payload["auth"]
-    data = payload["data"]
-    user_id = auth.get("user_id")
-    env_data = data.get("env")
-    
-    if not user_id or not env_data:
-        return {"error": "Missing user_id or env data"}
-        
-    original_id = auth.get("original_id")
+def handle_set_env(data=None, auth=None):
+    """Create or update an environment. Required: user_id (auth), env (data). Optional: original_id (auth)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    env_data = data.get("env") if isinstance(data.get("env"), dict) else data.get("env")
+    original_id = get_val(data, auth, "original_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param_truthy(env_data, "env"):
+        return err
+    from core.managers_context import get_env_manager
+    mgr = get_env_manager()
     if original_id:
-        env_manager.delete_env(original_id, user_id)
-
-    env_manager.set_env(env_data, user_id)
-
-    # Retrieve data
-    resp_data = env_manager.retrieve_send_user_specific_env_table_rows(user_id)
-
-    # Return message structure.
-    # Logic: send get_env: data:{envs: ...}
-    # Logic: send get_env: data:{envs: ...}
-    return {
-        "type": "GET_USERS_ENVS",
-        "data": resp_data
-    }
-
-def handle_get_sessions_envs(payload):
-    """
-    receive "GET_SESSIONS_ENVS": auth={user_id:str, session_id:str}
-    -> return envs...
-    """
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    session_id = auth.get("session_id")
-    
-    if not user_id or not session_id:
-        return {"error": "Missing user_id or session_id"}
-        
-    data = env_manager.retrieve_session_envs(user_id, session_id)
-    return {
-        "type": "GET_SESSIONS_ENVS",
-        "data": data
-    }
-
-def handle_link_session_env(payload):
-    """Link session to env."""
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    # Prompt says auth={user_id, session_id, env_id} but also data? Prompt: "auth={...}"
-    session_id = auth.get("session_id")
-    env_id = auth.get("env_id")
-    
-    if not all([user_id, session_id, env_id]):
-        return {"error": "Missing required fields"}
-        
-    env_manager.link_session_env(session_id, env_id, user_id)
-    return handle_get_sessions_envs(payload)
-
-def handle_rm_link_session_env(payload):
-    """Remove link session to env."""
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    session_id = auth.get("session_id")
-    env_id = auth.get("env_id")
-    
-    if not all([user_id, session_id, env_id]):
-        return {"error": "Missing required fields"}
-    
-    # Remove the link
-    env_manager.rm_link_session_env(session_id, env_id, user_id)
-    
-    # Return the remaining links structure
-    from core.session_manager.session import session_manager
-    structure = session_manager.get_full_session_structure(user_id, session_id)
-    
-    return {
-        "type": "LIST_SESSIONS_ENVS",
-        "data": structure
-    }
+        mgr.delete_env(original_id, user_id)
+    mgr.set_env(env_data, user_id)
+    return {"type": "GET_USERS_ENVS", "data": mgr.retrieve_send_user_specific_env_table_rows(user_id)}
 
 
-def handle_link_env_module(payload):
-    """Link module to env."""
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    session_id = auth.get("session_id")
-    env_id = auth.get("env_id")
-    module_id = auth.get("module_id")
-
-    if not all([user_id, session_id, env_id, module_id]):
-        return {"error": "Missing required fields"}
-
-    env_manager.link_env_module(session_id, env_id, module_id, user_id)
-    
-    structure = env_manager.get_env_module_structure(session_id, env_id, user_id)
-    return {
-        "type": "LINK_ENV_MODULE",
-        "data": structure
-    }
-
-def handle_rm_link_env_module(payload):
-    """Remove link module to env."""
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    session_id = auth.get("session_id")
-    env_id = auth.get("env_id")
-    module_id = auth.get("module_id")
-
-    if not all([user_id, session_id, env_id, module_id]):
-        return {"error": "Missing required fields"}
-
-    env_manager.rm_link_env_module(session_id, env_id, module_id, user_id)
-    
-    from core.session_manager.session import session_manager
-    structure = session_manager.get_full_session_structure(user_id, session_id)
-    
-    return {
-        "type": "LINK_ENV_MODULE", # Return updated structure
-        "data": structure
-    }
+def handle_get_sessions_envs(data=None, auth=None):
+    """Retrieve all environments linked to a session. Required: user_id, session_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    from core.managers_context import get_env_manager
+    return {"type": "GET_SESSIONS_ENVS", "data": get_env_manager().retrieve_session_envs(user_id, session_id)}
 
 
-def handle_download_model(payload):
-    """
-    receive "DOWNLOAD_MODEL"
-    """
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    env_id = auth.get("env_id")
-
-    if not user_id or not env_id:
-        return {"error": "Missing user_id or env_id"}
-
-    data = env_manager.download_model(env_id, user_id)
-    
-    # Response structure not strictly defined but usually involves sending data back.
-    # We will send a type that expects the download url or confirmation.
-    # Assuming "DOWNLOAD_MODEL" type back is fine.
-    return {
-        "type": "DOWNLOAD_MODEL",
-        "data": data
-    }
+def handle_link_session_env(data=None, auth=None):
+    """Link a session to an environment. Required: user_id, session_id, env_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    env_id = get_val(data, auth, "env_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    if err := require_param(env_id, "env_id"):
+        return err
+    from core.managers_context import get_env_manager
+    get_env_manager().link_session_env(session_id, env_id, user_id)
+    return handle_get_sessions_envs(data={"session_id": session_id}, auth={"user_id": user_id})
 
 
-def handle_retrieve_logs_env(payload):
-    """
-    receive "RETRIEVE_LOGS_ENV"
-    """
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    env_id = auth.get("env_id")
-
-    if not user_id or not env_id:
-        return {"error": "Missing user_id or env_id"}
-
-    logs = env_manager.retrieve_logs_env(env_id, user_id)
-    
-    return {
-        "type": "RETRIEVE_LOGS_ENV",
-        "data": logs
-    }
+def handle_rm_link_session_env(data=None, auth=None):
+    """Remove the link between a session and an environment. Required: user_id, session_id, env_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    env_id = get_val(data, auth, "env_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    if err := require_param(env_id, "env_id"):
+        return err
+    from core.managers_context import get_env_manager, get_session_manager
+    get_env_manager().rm_link_session_env(session_id, env_id, user_id)
+    return {"type": "LIST_SESSIONS_ENVS", "data": get_session_manager().get_full_session_structure(user_id, session_id)}
 
 
-def handle_get_env_data(payload):
-    """
-    receive "GET_ENV_DATA"
-    """
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    env_id = auth.get("env_id")
+def handle_link_env_module(data=None, auth=None):
+    """Link a module to an environment. Required: user_id, session_id, env_id, module_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    env_id = get_val(data, auth, "env_id")
+    module_id = get_val(data, auth, "module_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    if err := require_param(env_id, "env_id"):
+        return err
+    if err := require_param(module_id, "module_id"):
+        return err
+    from core.managers_context import get_env_manager
+    mgr = get_env_manager()
+    mgr.link_env_module(session_id, env_id, module_id, user_id)
+    return {"type": "LINK_ENV_MODULE", "data": mgr.get_env_module_structure(session_id, env_id, user_id)}
 
-    if not user_id or not env_id:
-        return {"error": "Missing user_id or env_id"}
 
-    env_data = env_manager.get_env_data(env_id, user_id)
-    
-    return {
-        "type": "GET_ENV_DATA",
-        "data": env_data
-    }
+def handle_rm_link_env_module(data=None, auth=None):
+    """Remove the link between a module and an environment. Required: user_id, session_id, env_id, module_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    env_id = get_val(data, auth, "env_id")
+    module_id = get_val(data, auth, "module_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    if err := require_param(env_id, "env_id"):
+        return err
+    if err := require_param(module_id, "module_id"):
+        return err
+    from core.managers_context import get_env_manager, get_session_manager
+    get_env_manager().rm_link_env_module(session_id, env_id, module_id, user_id)
+    return {"type": "LINK_ENV_MODULE", "data": get_session_manager().get_full_session_structure(user_id, session_id)}
+
+
+def handle_download_model(data=None, auth=None):
+    """Trigger model download for an environment. Required: user_id, env_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    env_id = get_val(data, auth, "env_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(env_id, "env_id"):
+        return err
+    from core.managers_context import get_env_manager
+    return {"type": "DOWNLOAD_MODEL", "data": get_env_manager().download_model(env_id, user_id)}
+
+
+def handle_retrieve_logs_env(data=None, auth=None):
+    """Retrieve logs for an environment. Required: user_id, env_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    env_id = get_val(data, auth, "env_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(env_id, "env_id"):
+        return err
+    from core.managers_context import get_env_manager
+    return {"type": "RETRIEVE_LOGS_ENV", "data": get_env_manager().retrieve_logs_env(env_id, user_id)}
+
+
+def handle_get_env_data(data=None, auth=None):
+    """Retrieve environment data (state, config, etc.). Required: user_id, env_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    env_id = get_val(data, auth, "env_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(env_id, "env_id"):
+        return err
+    from core.managers_context import get_env_manager
+    return {"type": "GET_ENV_DATA", "data": get_env_manager().get_env_data(env_id, user_id)}
 
 
 

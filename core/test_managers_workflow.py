@@ -3,7 +3,7 @@ import logging
 import random
 import time
 from datetime import datetime
-from core.qbrain_manager import QBrainTableManager
+from core.qbrain_manager import get_qbrain_table_manager
 from core.module_manager.ws_modules_manager.modules_lib import module_manager
 from core.fields_manager.fields_lib import fields_manager
 from core.injection_manager.injection import injection_manager
@@ -18,7 +18,7 @@ def test_managers():
     
     # 1. Initialize Tables
     print("\n[1] Initializing Tables...")
-    qb = QBrainTableManager()
+    qb = get_qbrain_table_manager()
     qb.initialize_all_tables()
     
     user_id = "test_user_" + generate_id()

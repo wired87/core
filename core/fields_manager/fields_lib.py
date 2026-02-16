@@ -9,7 +9,8 @@ from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 from core.fields_manager.prompt import extract_fields_prompt
 from core.fields_manager.set_type import SetFieldItem
 
-from core.qbrain_manager import QBrainTableManager
+from core.qbrain_manager import get_qbrain_table_manager
+from core.handler_utils import require_param, require_param_truthy, get_val
 from qf_utils.all_subs import FERMIONS, G_FIELDS, H
 from qf_utils.qf_utils import QFUtils
 
@@ -41,15 +42,18 @@ def generate_numeric_id() -> str:
     """Generate a random numeric ID."""
     return str(random.randint(1000000000, 9999999999))
 
-class FieldsManager(BQCore):
+class FieldsManager:
     DATASET_ID = "QBRAIN"
     FIELDS_TABLE = "fields"
     FIELDS_TO_FIELDS_TABLE = "fields_to_fields"
     MODULE_TO_FIELD_TABLE = "module_to_field"
 
-    def __init__(self):
-        super().__init__(dataset_id=self.DATASET_ID)
-        self.qb = QBrainTableManager()
+    def __init__(self, qb):
+        self.qb = qb
+        self.pid = qb.pid
+        self.bqclient = qb.bqclient
+        self.insert_col = qb.insert_col
+        self.run_query = qb.run_query
         self.table = f"{self.FIELDS_TABLE}"
         self.qfu = QFUtils()
         self._extract_prompt = None  # built lazily to avoid circular import with case
@@ -375,121 +379,131 @@ class FieldsManager(BQCore):
             self.set_field(batch_data, user_id)
             print(f"Uploaded {len(batch_data)} SM fields")
 
-fields_manager = FieldsManager()
+_default_bqcore = BQCore(dataset_id="QBRAIN")
+_default_field_manager = FieldsManager(get_qbrain_table_manager(_default_bqcore))
+fields_manager = _default_field_manager  # backward compat
 
 # HANDLERS
 
-def handle_send_users_fields(payload):
-    # SEND_USERS_FIELDS: get fields-table-rows ... -> type="list_field_user"
-    print("handle_send_users_fields...")
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    
-    if not user_id:
-        return {"error": "Missing user_id"}
-    
-    fields = fields_manager.get_fields_by_user(user_id)
-    #print("fields", fields)
-    return {
-        "type": "LIST_USERS_FIELDS",
-        "data": {"fields": fields}
-    }
+def handle_send_users_fields(data=None, auth=None):
+    """Retrieve all fields owned by a user. Required: user_id (auth or data)."""
+    from core.managers_context import get_field_manager
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    return {"type": "LIST_USERS_FIELDS", "data": {"fields": get_field_manager().get_fields_by_user(user_id)}}
 
-def handle_list_users_fields(payload):
-    print("handle_list_users_fields...")
-    return handle_send_users_fields(payload)
 
-def handle_send_modules_fields(payload):
-    # SEND_MODULES_FIELDS
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    module_id = auth.get("module_id")
-    if not user_id or not module_id:
-        return {"error": "Missing user_id or module_id"}
-    
-    fields = fields_manager.get_fields_by_module(module_id, user_id)
-    return {
-        "type": "GET_MODULES_FIELDS", 
-        "data": {"fields": fields},
-        "auth": {"module_id": module_id}
-    }
+def handle_list_users_fields(data=None, auth=None):
+    """Alias for handle_send_users_fields."""
+    return handle_send_users_fields(data=data, auth=auth)
 
-def handle_get_modules_fields(payload):
-    return handle_send_modules_fields(payload)
 
-def handle_rm_link_module_field(payload):
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    module_id = auth.get("module_id")
-    field_id = auth.get("field_id")
-    
-    if not all([user_id, module_id, field_id]):
-        return {"error": "Missing params"}
-        
-    fields_manager.rm_link_module_field(module_id, field_id, user_id)
-    return handle_send_modules_fields(payload)
+def handle_send_modules_fields(data=None, auth=None):
+    """Retrieve all fields linked to a module. Required: user_id, module_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    module_id = get_val(data, auth, "module_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(module_id, "module_id"):
+        return err
+    from core.managers_context import get_field_manager
+    fields = get_field_manager().get_fields_by_module(module_id, user_id)
+    return {"type": "GET_MODULES_FIELDS", "data": {"fields": fields}, "auth": {"module_id": module_id}}
 
-def handle_get_sessions_fields(payload):
-    # receive type="", auth={user_id:str, session_id:str} -> get session fields
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    session_id = auth.get("session_id")
-    
-    if not user_id or not session_id:
-        return {"error": "Missing params"}
-        
-    field_ids = fields_manager.retrieve_session_fields(session_id, user_id)
-    return {
-        "type": "SESSIONS_FIELDS",
-        "data": {"fields": field_ids}
-    }
 
-def handle_list_modules_fields(payload):
-    # receive "LIST_MODULES_FIELDS" -> send_fields_module
-    return handle_send_modules_fields(payload) # Assuming send_fields_module maps to this logic
+def handle_get_modules_fields(data=None, auth=None):
+    """Alias for handle_send_modules_fields."""
+    return handle_send_modules_fields(data=data, auth=auth)
 
-def handle_del_field(payload):
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    field_id = auth.get("field_id")
-    if not user_id or not field_id:
-        return {"error": "Missing user_id or field_id"}
-    
-    fields_manager.delete_field(field_id, user_id)
-    return handle_send_users_fields(payload)
 
-def handle_set_field(payload):
-    auth = payload.get("auth", {})
-    data = payload.get("data", {})
-    user_id = auth.get("user_id")
-    
-    field_data = data.get("field")
-    
-    if not user_id or not field_data:
-        return {"error": "Missing user_id or field data"}
-    
-    original_id = auth.get("original_id")
+def handle_rm_link_module_field(data=None, auth=None):
+    """Remove the link between a module and a field. Required: user_id, module_id, field_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    module_id = get_val(data, auth, "module_id")
+    field_id = get_val(data, auth, "field_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(module_id, "module_id"):
+        return err
+    if err := require_param(field_id, "field_id"):
+        return err
+    from core.managers_context import get_field_manager
+    get_field_manager().rm_link_module_field(module_id, field_id, user_id)
+    return handle_send_modules_fields(data={"module_id": module_id}, auth={"user_id": user_id})
+
+
+def handle_get_sessions_fields(data=None, auth=None):
+    """Retrieve all fields linked to a session. Required: user_id, session_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    from core.managers_context import get_field_manager
+    field_ids = get_field_manager().retrieve_session_fields(session_id, user_id)
+    return {"type": "SESSIONS_FIELDS", "data": {"fields": field_ids}}
+
+
+def handle_list_modules_fields(data=None, auth=None):
+    """Alias for handle_send_modules_fields."""
+    return handle_send_modules_fields(data=data, auth=auth)
+
+
+def handle_del_field(data=None, auth=None):
+    """Delete a field by ID. Required: user_id, field_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    field_id = get_val(data, auth, "field_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(field_id, "field_id"):
+        return err
+    from core.managers_context import get_field_manager
+    get_field_manager().delete_field(field_id, user_id)
+    return handle_send_users_fields(data={}, auth={"user_id": user_id})
+
+
+def handle_set_field(data=None, auth=None):
+    """Create or update a field. Required: user_id (auth), field (data). Optional: original_id (auth)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    original_id = get_val(data, auth, "original_id")
+    field_data = data.get("field") if isinstance(data, dict) else None
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param_truthy(field_data, "field"):
+        return err
+    from core.managers_context import get_field_manager
+    fm = get_field_manager()
     if original_id:
-        fields_manager.delete_field(original_id, user_id)
+        fm.delete_field(original_id, user_id)
+    if isinstance(field_data, dict) and "linked_fields" in field_data:
+        field_data = {**field_data, "interactant_fields": field_data["linked_fields"]}
+        field_data.pop("linked_fields", None)
+    fm.set_field(field_data, user_id)
+    return handle_send_users_fields(data={}, auth={"user_id": user_id})
 
-    if "linked_fields" in field_data:
-        field_data["interactant_fields"] = field_data["linked_fields"]
-        field_data.pop("linked_fields")
 
-    fields_manager.set_field(field_data, user_id)
-    return handle_send_users_fields(payload)
-
-def handle_link_module_field(payload):
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    module_id = auth.get("module_id")
-    field_id = auth.get("field_id")
-    session_id = auth.get("session_id")
-    env_id = auth.get("env_id")
-    
-    if not all([user_id, module_id, field_id]):
-        return {"error": "Missing params"}
-        
+def handle_link_module_field(data=None, auth=None):
+    """Link a field to a module. Required: user_id, module_id, field_id. Optional: session_id, env_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    module_id = get_val(data, auth, "module_id")
+    field_id = get_val(data, auth, "field_id")
+    session_id = get_val(data, auth, "session_id")
+    env_id = get_val(data, auth, "env_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(module_id, "module_id"):
+        return err
+    if err := require_param(field_id, "field_id"):
+        return err
     link_data = [{
         "id": generate_numeric_id(),
         "module_id": module_id,
@@ -500,12 +514,13 @@ def handle_link_module_field(payload):
         "status":"active"
     }]
 
-    fields_manager.link_module_field(link_data)
+    from core.managers_context import get_field_manager
+    get_field_manager().link_module_field(link_data)
     
     # Return delta structure if session info is present
     if session_id and env_id:
         return {
-            "type": "ENABLE_SM", # Using same type as SM enable for consistent frontend handling? Or unique? User asked for same format.
+            "type": "ENABLE_SM",
             "data": {
                 "sessions": {
                     session_id: {
@@ -523,5 +538,5 @@ def handle_link_module_field(payload):
             }
         }
 
-    return handle_send_modules_fields(payload)
+    return handle_send_modules_fields(data={"module_id": module_id}, auth={"user_id": user_id})
 

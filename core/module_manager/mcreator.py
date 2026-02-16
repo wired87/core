@@ -38,7 +38,7 @@ class ModuleCreator(
         parent=["FILE"],
         content=mcontent # code str
         """
-        print("======== INIT MODULE CREATOR ========")
+        #print("======== INIT MODULE CREATOR ========")
         super().__init__()
         self.g = GUtils(
             G=G

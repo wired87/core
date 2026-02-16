@@ -5,6 +5,7 @@ docker build -t us-central1-docker.pkg.dev/aixr-401704/qfs-repo/qfs -f ./Dockerf
 gcloud artifacts repositories create qfs --repository-format=docker --location=us-central1
 
 # 3 push artifact regsitry
+docker tag us-central1-docker.pkg.dev/aixr-401704/qfs-repo/qfs:latest us-central1-docker.pkg.dev/aixr-401704/qfs-repo/qfs:backup_tag
 docker tag qfs us-central1-docker.pkg.dev/aixr-401704/qfs-repo/qfs
 docker push us-central1-docker.pkg.dev/aixr-401704/qfs-repo/qfs
 
@@ -64,4 +65,9 @@ docker ps
 
 lit all dockers
 docker ps -o
+
+
+
+list all registry repos
+gcloud artifacts repositories list --project=aixr-401704
 

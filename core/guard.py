@@ -5,25 +5,18 @@ from itertools import product
 
 import numpy as np
 from bob_builder.artifact_registry.artifact_admin import ArtifactAdmin
-from core.env_manager import EnvManager
 import networkx as nx
 from utils.graph.local_graph_utils import GUtils
 from qf_utils.qf_utils import QFUtils
-import json
-from core.fields_manager.fields_lib import FieldsManager
-from core.method_manager.method_lib import MethodManager
 
-from core.injection_manager import InjectionManager
-from core.module_manager.ws_modules_manager import ModuleWsManager
-from core.param_manager.params_lib import ParamsManager
-from core.qbrain_manager import QBrainTableManager
-from core.user_manager import UserManager
+from core.qbrain_manager import get_qbrain_table_manager
 
 from core.module_manager.mcreator import ModuleCreator
 from qf_utils.all_subs import ALL_SUBS
 from utils._np.expand_array import expand_structure
 from utils.get_shape import extract_complex, get_shape
 from utils.xtract_trailing_numbers import extract_trailing_numbers
+from vertex_trainer.manager import VertexTrainerManager
 from workflows.deploy_sim import DeploymentHandler
 
 class PatternMaster:
@@ -56,6 +49,9 @@ class Guard(
         qfu,
         g,
         user_id,
+        field_manager=None,
+        method_manager=None,
+        injection_manager=None,
     ):
         print("Initializing Guard...")
 
@@ -63,26 +59,31 @@ class Guard(
             self,
             g,
         )
-        self.user_id=user_id
+        self.user_id = user_id
+        self.field_manager = field_manager
+        self.method_manager = method_manager
+        self.injection_manager = injection_manager
 
         self.deployment_handler = DeploymentHandler(
             user_id
         )
 
-        # DB MANAGERS
-        self.module_db_manager = ModuleWsManager()
-        self.field_manager = FieldsManager()
-        self.method_manager = MethodManager()
-        self.injection_manager = InjectionManager()
-        self.env_manager = EnvManager()
-        self.user_manager = UserManager()
-        self.param_manager = ParamsManager()
-        self.qb=QBrainTableManager()
+        # DB MANAGERS (reuse shared instances where appropriate)
+        from core.managers_context import get_field_manager, get_method_manager, get_injection_manager
+        if self.field_manager is None:
+            self.field_manager = get_field_manager()
+        if self.method_manager is None:
+            self.method_manager = get_method_manager()
+        if self.injection_manager is None:
+            self.injection_manager = get_injection_manager()
+
+        self.qb = get_qbrain_table_manager()
         print("DEBUG: QBrainTableManager initialized")
+
         self.world_cfg=None
         print("DEBUG: ArtifactAdmin initialized")
         self.artifact_admin = ArtifactAdmin()
-
+        self.trainer = VertexTrainerManager()
         self.time = 0
 
         self.qfu:QFUtils = qfu
@@ -100,22 +101,19 @@ class Guard(
             self.g.G,
             self.qfu,
         )
-        print("DEBUG: ModuleCreator initialized")
 
-        #self.pattern_arsenal = GStore
-
-        # Time Series Model Init
         self.prev_state = None
         self.model_params = None
         self.fnished_modules = False
 
         self.fields = []
-
         print("Guard Initialized!")
 
 
     def create_nodes(self, env_id, env_data):
         print("create_nodes...")
+        pprint.pp(env_data)
+
         # RESET G
         self.g.G = nx.Graph()
 
@@ -123,14 +121,12 @@ class Guard(
         module_ids = set()
         field_ids = set()
 
-
         # 1. CREATE GRAPH SCHEMA
         self.g.add_node({
                 "nid": env_id,
                 "type": "ENV",
             }
         )
-
         modules = env_data.get("modules", {})
 
         for i, (mod_id, mod_data) in enumerate(modules.items()):
@@ -159,19 +155,18 @@ class Guard(
                     }
                 )
 
-
         #############
-        # INJECTITONS
+        # INJECTIONS
         injections = env_data.get("injections", {})
         inj_ids = self.handle_injections(injections)
 
-        print("create_injcitons... done")
-        #self.g.print_status_G()
+        print("create_nodes... done")
         return module_ids, field_ids, inj_ids
 
 
 
     def handle_injections(self, injections):
+        print("handle_injections...", injections)
         inj_ids = set()
         for field_id, data in injections.items():
             for pos, inj_id in data.items():
@@ -195,6 +190,7 @@ class Guard(
                         "trgt_layer": "INJECTION",
                     }
                 )
+        print("handle_injections...", inj_ids)
         return inj_ids
 
     def create_edges(
@@ -237,7 +233,11 @@ class Guard(
         ghost_mod_id = f"GHOST_MODULE"
         print(f"Creating Ghost Module: {ghost_mod_id}")
 
-        modules = self.g.get_nodes(filter_key="type", filter_value="MODULE", just_id=True)
+        modules = self.g.get_nodes(
+            filter_key="type",
+            filter_value="MODULE",
+            just_id=True,
+        )
         print("check_create_ghost_mod modules", modules)
 
         # Create Module Node
@@ -327,7 +327,7 @@ class Guard(
                 "trgt_layer": "FIELD",
             }
         )
-        print("handle_env... done", env_data)
+        print("handle_env... done")
 
 
 
@@ -339,7 +339,7 @@ class Guard(
         for fid in field_ids:
             missing_fields = []
             fattrs = self.g.get_node(fid)
-            print("fattrs", fattrs)
+            #print("fattrs", fattrs)
             interactant_fields:list[str] or str = fattrs["interactant_fields"]
             #print(f"{fid} interactant fields: {len(interactant_fields)}")
 
@@ -432,58 +432,76 @@ class Guard(
                 )
         print("update_edges... done")
 
-
     def main(self, env_id, env_data):
         print("main...")
-        pprint.pp(env_data)
+        #pprint.pp(env_data)
         self.data_handler(env_id, env_data)
         components = self.converter(env_id)
         self.handle_deployment(env_id, components)
         print("main... done")
 
-
     def handle_deployment(self, env_id, components):
-        print("handle_deployment...")
+        print(f"\n[START] handle_deployment für Env: {env_id}")
         try:
+            # 1. Config Erstellung
             world_cfg = self.create_vm_cfgs(env_id)
+            print(f"  -> world_cfg erstellt:", type(world_cfg))
+            pprint.pp(world_cfg)
 
-            # SAVE CFG
+            # 2. DB Update
             self.module_db_manager.qb.update_env_pattern(
                 env_id=env_id,
                 pattern_data=components,
                 user_id=self.user_id
             )
 
-            if self.testing is False:
-                # Etend env var cfg structure
-                container_env = self.deployment_handler.env_creator.create_env_variables(
-                    env_id=env_id,
-                    cfg=world_cfg
-                )
+            # 3. Env Variables
+            container_env:dict = self.deployment_handler.env_creator.create_env_variables(
+                env_id=env_id,
+                cfg=world_cfg
+            )
+            print("  -> Container-Umgebungsvariablen generiert")
 
-                # get cfg
-                vm_payload = self.deployment_handler.get_vm_cfg(
-                    instance_name=env_id,
-                    testing=self.testing,
-                    image=self.artifact_admin.get_latest_image(),
-                    container_env=container_env
-                )
+            # 4. Payload Generierung
+            latest_image = self.artifact_admin.get_latest_image()
 
-                self.deploy_vms(vm_payload)
 
-                # Update status
-                self.user_manager.qb.set_item(
+
+            # LAUNCH TRAIING JOB VAIs
+            self.trainer.create_custom_job(
+                display_name=env_id,
+                container_image_uri=latest_image,
+                container_envs=container_env,
+            )
+
+            # 6. Status Update
+            from core.managers_context import get_user_manager
+            get_user_manager().qb.set_item(
+                "envs",
+                {"status": "IN_PROGRESS"},
+                keys={"id": env_id, "user_id": self.user_id}
+            )
+            print("  -> Status in DB auf 'IN_PROGRESS' gesetzt")
+
+            print(f"  -> Modus: TESTING (Speichere lokal)")
+            path = r"C:\Users\bestb\PycharmProjects\BestBrain\test_out.json"
+            with open(path, "w") as f:
+                f.write(json.dumps(components, indent=4))
+            print(f"  -> Datei erfolgreich geschrieben unter: {path}")
+
+        except Exception as e:
+            print(f"  [!!!] ERROR in handle_deployment: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                from core.managers_context import get_user_manager
+                get_user_manager().qb.set_item(
                     "envs",
-                    {"status": "IN_PROGRESS"},
+                    {"status": "FAILED"},
                     keys={"id": env_id, "user_id": self.user_id}
                 )
-            else:
-                print("save file local...")
-                with open(r"C:\Users\bestb\PycharmProjects\BestBrain\test_out.json", "w") as f:
-                    f.write(json.dumps(components))
-        except Exception as e:
-            print("Err handle_deployment:", e)
-        print("handle_deployment... done")
+            except Exception:
+                pass
 
     def data_handler(self, env_id, env_data):
         """
@@ -505,8 +523,6 @@ class Guard(
             env_data
         )
         print("Edges created.")
-
-
 
         self.check_create_ghost_mod(env_id)
         self.handle_env(env_id)
@@ -531,25 +547,25 @@ class Guard(
             res = self.qb.row_from_id(list(field_ids), table=self.field_manager.FIELDS_TABLE)
             fetched_fields = {item["id"]: item for item in res}
             print(f"Fetched {len(fetched_fields)} fields.")
+
             for fid, fattrs in fetched_fields.items():
                 fid = fid.upper()
                 if fattrs:
                     # Parse interactant_fields if string
                     if "interactant_fields" in fattrs and isinstance(fattrs["interactant_fields"], str):
                         try:
+                            import json
                             fattrs["interactant_fields"] = json.loads(fattrs["interactant_fields"])
                         except Exception as e:
                             print(f"Error parsing interactant_fields for {fid}: {e}")
 
 
-                    # create complex map for tbhe db indexing
-                    self.g.add_node(
-                        dict(
-                            nid=fid,
-                            type="FIELD",
-                            **fattrs
-                        )
-                    )
+                    # create complex map for tbhe db indexing (exclude nid/type from fattrs to avoid duplicate kwargs)
+                    attrs = {"nid": fid, "type": "FIELD"}
+                    for k, v in fattrs.items():
+                        if k not in ("nid", "type"):
+                            attrs[k] = v
+                    self.g.add_node(attrs)
                 else:
                     self.g.add_node({"nid": fid, "type": "FIELD"})
 
@@ -570,13 +586,11 @@ class Guard(
                 for k, v in self.g.G.nodes(data=True):
                     if v.get("type") == "INJECTION" and inid in k:
                         if inj_data:
-                            self.g.add_node(
-                                dict(
-                                    nid=k,
-                                    type="INJECTION",
-                                    **inj_data
-                                )
-                            )
+                            attrs = {"nid": k, "type": "INJECTION"}
+                            for pk, pv in inj_data.items():
+                                if pk not in ("nid", "type"):
+                                    attrs[pk] = pv
+                            self.g.add_node(attrs)
             print(f"Fetched injections: {len(fetched_injections)} ")
 
         modules_config = env_data.get("modules", {})
@@ -606,29 +620,24 @@ class Guard(
                 #print(f"Processing field: {field_id}")
                 field_data = fetched_fields.get(field_id)
                 if field_data:
-
+                    import json
                     values = json.loads(field_data.get("values"))
                     keys = json.loads(field_data.get("keys"))
 
-                    if "interactant_fields" in field_data and isinstance(field_data["interactant_fields"], str):
+                    if "interactant_fields" in field_data and isinstance(
+                            field_data["interactant_fields"],
+                            str
+                    ):
                         try:
                             field_data["interactant_fields"] = json.loads(field_data["interactant_fields"])
                         except Exception as e:
                             print(f"Error parsing field data interactant_fields for {field_id}: {e}")
 
-                    self.g.add_node(
-                        dict(
-                            nid=field_id,
-                            type="FIELD",
-                            keys=keys,
-                            value=values,
-                            **{
-                                k:v
-                                for k,v in field_data.items()
-                                if k not in ["values", "keys"]
-                            }
-                        )
-                    )
+                    attrs = {"nid": field_id, "type": "FIELD", "keys": keys, "value": values}
+                    for k, v in field_data.items():
+                        if k not in ("nid", "type", "values", "keys"):
+                            attrs[k] = v
+                    self.g.add_node(attrs)
 
                     try:
                         self.qfu.add_params_link_fields(
@@ -723,11 +732,26 @@ class Guard(
 
     def deploy_vms(self, vm_payload):
         print("Deploying VMs...")
-        for cfg in vm_payload.values():
-            self.deployment_handler.create_vm(
-                cfg=cfg
-            )
-        print(f"Deployment Finished!")
+        if not vm_payload or not isinstance(vm_payload, dict):
+            print("  [WARN] deploy_vms: empty or invalid vm_payload, skipping")
+            return
+        for key, cfg in vm_payload.items():
+            if not isinstance(cfg, dict):
+                print(f"  [WARN] deploy_vms: skipping invalid cfg for key={key}")
+                continue
+            print("deploy vm from", cfg)
+
+
+            try:
+                self.deployment_handler.create_instance(
+                    **cfg
+                )
+            except Exception as e:
+                print(f"  [!!!] deploy_vms failed for {key}: {e}")
+                import traceback
+                traceback.print_exc()
+                raise
+        print("Deployment Finished!")
 
 
     def create_vm_cfgs(
@@ -748,9 +772,7 @@ class Guard(
             "DIMS": env_node.get("dims", 3),
         }
 
-        cfg_str = json.dumps(world_cfg)
-
-        return cfg_str
+        return world_cfg
 
 
 
@@ -895,12 +917,15 @@ class Guard(
 
     def create_db(self, modules):
         print("[create_db] start")
+        import json
         # --- initialize base structures ---
         db = self.get_empty_field_structure()
         axis = self.get_empty_field_structure()
         shapes = self.get_empty_field_structure()
         item_len_collection = self.get_empty_field_structure()
         param_len_collection = self.get_empty_field_structure()
+        field_ids = self.get_empty_field_structure()
+        db_keys = self.get_empty_field_structure()
 
         DB = {
             "DB": [],
@@ -908,7 +933,10 @@ class Guard(
             "DB_SHAPE": [],
             "AMOUNT_PARAMS_PER_FIELD": [],
             "DB_PARAM_CONTROLLER": [],
+            "DB_KEYS": [],
+            "FIELD_KEYS": []
         }
+
 
         try:
             for mid, m in modules:
@@ -948,10 +976,11 @@ class Guard(
                     collected_values = []
                     vals_item_lens = []
 
+
                     # --- process values ---
                     for vi, (v, k, xd) in enumerate(zip(vals, keys, xdef)):
                         shape = get_shape(v)
-                        print(f"shape for {k}:{v}:{shape}")
+                        #print(f"shape for {k}:{v}:{shape}")
                         shape_struct.append(shape)
 
                         # flatten any shape -> 1d
@@ -962,13 +991,6 @@ class Guard(
                             len(sval_collector) # add len 1d numbers
                         )
                         collected_values.extend(sval_collector)
-                        """
-                        print(f"[{m_idx}, {fidx}, {vi}]:")
-                        print("param:", k)
-                        print("original value:", v)
-                        print("flattened values:", sval_collector)
-                        print("shape:", shape)
-                        """
 
                     # --- assign per module / field ---
                     db[m_idx][fidx] = collected_values
@@ -976,14 +998,16 @@ class Guard(
                     shapes[m_idx][fidx] = shape_struct
                     item_len_collection[m_idx][fidx] = vals_item_lens
                     param_len_collection[m_idx][fidx] = len(vals)
+                    db_keys[m_idx][fidx] = keys
+                    field_ids[m_idx][fidx] = fid
 
 
             # len is correctly set
-            for i, (m_db, m_axis, m_shape, m_len, plen_item) in enumerate(
-                    zip(db, axis, shapes, item_len_collection, param_len_collection)):
+            for i, (m_db, m_axis, m_shape, m_len, plen_item, db_key_struct) in enumerate(
+                    zip(db, axis, shapes, item_len_collection, param_len_collection, db_keys)):
 
-                for j, (f_db, f_axis, f_shape, f_len, plen_field) in enumerate(
-                        zip(m_db, m_axis, m_shape, m_len, plen_item)):
+                for j, (f_db, f_axis, f_shape, f_len, plen_field, db_key) in enumerate(
+                        zip(m_db, m_axis, m_shape, m_len, plen_item, db_key_struct)):
 
                     DB["DB"].extend(f_db)
                     DB["AXIS"].extend(f_axis)
@@ -995,6 +1019,7 @@ class Guard(
                     # AMOUNT_PARAMS_PER_FIELD
                     # int len param / f
                     DB["AMOUNT_PARAMS_PER_FIELD"].append(plen_field)
+                    DB["DB_KEYS"].extend(db_key)
 
             DB["DB"] = base64.b64encode(
                 np.array(DB["DB"], dtype=np.complex64).tobytes()
@@ -1009,6 +1034,7 @@ class Guard(
 
     def handle_methods(self, module_ids:list[str]):
         print("handle_methods...")
+        import json
         method_idx = 0
         for mid in module_ids:
             mod_node = self.g.get_node(nid=mid)
@@ -1114,8 +1140,10 @@ class Guard(
             # flatten
             flattened_methods = []
             for i, sublist in enumerate(method_struct["METHODS"]):
+                """
                 for j, mid in enumerate(mnames[i]):
                     print(f"mod {i} method {j}: {mid}")
+                """
                 flattened_methods.extend(sublist)
 
             method_struct["METHODS"] = flattened_methods
@@ -1205,13 +1233,14 @@ class Guard(
         print("set_edge_db_to_method...")
         # todo for field index includ again
         mlen = len(modules)-1
-
+        import json
         # db out gnn
         db_to_method = {
             "DB_TO_METHOD_EDGES": [[] for _ in range(mlen)],
             "DB_CTL_VARIATION_LEN_PER_EQUATION": [[] for _ in range(mlen)],
             "DB_CTL_VARIATION_LEN_PER_FIELD": [[] for _ in range(mlen)],
             "LEN_FEATURES_PER_EQ": self.get_empty_method_structure(set_zero=False),
+            "VARIATION_KEYS": [[] for _ in range(mlen)]
         }
 
         ghost_fields = self.g.get_neighbor_list_rel(
@@ -1291,6 +1320,7 @@ class Guard(
                             collected = False
 
                             param_collector = []
+                            param_origin_key_collector = []
                             #print("work pid", pid)
 
                             # Field's own param
@@ -1362,6 +1392,8 @@ class Guard(
                                                 pindex,
                                             )
                                         )
+                                        # collect field interaction keys
+                                        param_origin_key_collector.append(finid)
                                         collected = True
 
                                 #print(f"param {pid} is not in interactant -> check GHOST FIELDS")
@@ -1475,7 +1507,7 @@ class Guard(
             "MODULES": [],
             "FIELDS": [],
         }
-
+        import json
         modules = self.g.get_nodes(filter_key="type", filter_value="MODULE")
         ghost_fields = self.g.get_neighbor_list_rel(trgt_rel="has_field", node="GHOST_MODULE")
 
@@ -1581,7 +1613,7 @@ class Guard(
             filter_key="type",
             filter_value="MODULE",
         )
-
+        import json
         try:
             for mid, module in modules:
                 if "GHOST" in mid.upper(): continue
@@ -1638,6 +1670,7 @@ class Guard(
 
 
     def get_modules_methods(self, mid):
+        import json
         methods = {}
         method_nodes = self.g.get_neighbor_list_rel(
             trgt_rel="has_method",
@@ -1696,6 +1729,7 @@ class Guard(
             filter_key="type",
             filter_value="MODULE",
         )
+        import json
         modules_struct = []
         try:
 
@@ -1789,15 +1823,17 @@ if __name__ == "__main__":
     payload = {'type': 'START_SIM', 'data': {'config': {'env_7c87bb26138a427eb93cab27d0f5429f': {'modules': {'GAUGE': {'fields': {'photon': {'injections': {'[4,4,4]': 'hi'}}, 'w_plus': {'injections': {}}, 'w_minus': {'injections': {}}, 'z_boson': {'injections': {}}, 'gluon_0': {'injections': {}}, 'gluon_1': {'injections': {}}, 'gluon_2': {'injections': {}}, 'gluon_3': {'injections': {}}, 'gluon_4': {'injections': {}}, 'gluon_5': {'injections': {}}, 'gluon_6': {'injections': {}}, 'gluon_7': {'injections': {}}}}, 'HIGGS': {'fields': {'phi': {'injections': {}}}}, 'FERMION': {'fields': {'electron': {'injections': {}}, 'muon': {'injections': {}}, 'tau': {'injections': {}}, 'electron_neutrino': {'injections': {}}, 'muon_neutrino': {'injections': {}}, 'tau_neutrino': {'injections': {}}, 'up_quark_0': {'injections': {}}, 'up_quark_1': {'injections': {}}, 'up_quark_2': {'injections': {}}, 'down_quark_0': {'injections': {}}, 'down_quark_1': {'injections': {}}, 'down_quark_2': {'injections': {}}, 'charm_quark_0': {'injections': {}}, 'charm_quark_1': {'injections': {}}, 'charm_quark_2': {'injections': {}}, 'strange_quark_0': {'injections': {}}, 'strange_quark_1': {'injections': {}}, 'strange_quark_2': {'injections': {}}, 'top_quark_0': {'injections': {}}, 'top_quark_1': {'injections': {}}, 'top_quark_2': {'injections': {}}, 'bottom_quark_0': {'injections': {}}, 'bottom_quark_1': {'injections': {}}, 'bottom_quark_2': {'injections': {}}}}}}}}, 'auth': {'session_id': 339617269692277, 'user_id': '72b74d5214564004a3a86f441a4a112f'}, 'timestamp': '2026-01-08T11:54:50.417Z'}
 
 
+    env_id = 'env_7c87bb26138a427eb93cab27d0f5429f'
+    # env_data must be the env config (with "modules") - same shape as orchestrator passes
+    env_data = payload["data"]["config"][env_id]
+    g = GUtils()
+    qfu = QFUtils(g)
     g = Guard(
-        qfu=QFUtils(),
-        g=GUtils(),
-        user_id="public",
+        qfu=qfu,
+        g=g,
+        user_id="72b74d5214564004a3a86f441a4a112f",
     )
-    g.main(
-        env_id='env_7c87bb26138a427eb93cab27d0f5429f',
-        env_data=payload["data"],
-    )
+    g.main(env_id=env_id, env_data=env_data)
 
 
 
@@ -1825,13 +1861,16 @@ async def run_start_sim_via_ws():
         print(f"Failed: {e}")
 
 
-
-
-
-
-
-
-
-
-
-
+"""
+CE VM: create cfg -> create & exec
+cfg = self.deployment_handler.get_prod_vm_cfg(
+    env_id,
+    latest_image,
+    container_env,
+    testing=self.testing,
+)
+print(f"  -> VM-Payload bereit (Image: {latest_image})")
+# 5. Deployment Call (deploy_vms expects {key: cfg} dict)
+vm_payload = {env_id: cfg}
+self.deploy_vms(vm_payload)
+"""

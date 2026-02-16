@@ -18,6 +18,7 @@ mock_bq_core_class = MagicMock()
 mock_bq_module.BQCore = mock_bq_core_class
 
 try:
+    from core.handler_utils import flatten_payload
     from core.module_manager.ws_modules_manager import modules_lib
 except ImportError as e:
     print(f"ImportError: {e}")
@@ -47,7 +48,7 @@ class TestWSModules(unittest.TestCase):
             {"id": "1001", "file_type": "py", "created_at": "2025-01-01"}
         ]
         
-        resp = modules_lib.handle_set_module(payload_set)
+        resp = modules_lib.handle_set_module(**flatten_payload(payload_set))
         print("Set Resp:", resp)
         
         self.assertEqual(resp["type"], "LIST_USERS_MODULES")
@@ -60,7 +61,7 @@ class TestWSModules(unittest.TestCase):
             {"id": "1001", "code": "print('hello')", "binary_data": None}
         ]
         payload_get = {"auth": {"module_id": "1001"}}
-        resp_get = modules_lib.handle_get_module(payload_get)
+        resp_get = modules_lib.handle_get_module(**flatten_payload(payload_get))
         print("Get Resp:", resp_get)
         self.assertEqual(resp_get["type"], "GET_MODULE")
         self.assertEqual(resp_get["data"]["code"], "print('hello')")
@@ -77,15 +78,15 @@ class TestWSModules(unittest.TestCase):
         manager.run_query.return_value = [
             {"id": "1001", "code": "print('hello')"}
         ]
-        resp_link = modules_lib.handle_link_session_module(payload_link)
-        self.assertEqual(resp_link["type"], "get_modules_session")
+        resp_link = modules_lib.handle_link_session_module(**flatten_payload(payload_link))
+        self.assertEqual(resp_link["type"], "GET_SESSIONS_MODULES")
         self.assertEqual(len(resp_link["data"]["modules"]), 1)
         
         # 4. DEL
         print("\n--- Testing DEL ---")
         payload_del = {"auth": {"user_id": user_id, "module_id": "1001"}}
         manager.run_query.return_value = [] 
-        resp_del = modules_lib.handle_del_module(payload_del)
+        resp_del = modules_lib.handle_del_module(**flatten_payload(payload_del))
         self.assertEqual(resp_del["type"], "LIST_USERS_MODULES")
         self.assertEqual(len(resp_del["data"]["modules"]), 0)
 

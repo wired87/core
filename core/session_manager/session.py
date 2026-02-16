@@ -6,21 +6,26 @@ from google.cloud import bigquery
 import json
 
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
-from core.env_manager.env_lib import env_manager
-from core.module_manager.ws_modules_manager.modules_lib import module_manager
-from core.qbrain_manager import QBrainTableManager
+from core.qbrain_manager import get_qbrain_table_manager
+from core.handler_utils import require_param, get_val
+
+try:
+    # Optional: per-session Vertex RAG corpus creation.
+    from vertex_rag.corpus import create_corpus as create_vertex_rag_corpus
+except Exception:  # pragma: no cover - keep SessionManager usable without vertex_rag
+    create_vertex_rag_corpus = None
 
 _SESSION_DEBUG = "[SessionManager]"
 
 
-class SessionManager(BQCore):
+class SessionManager:
     """
     Manages user sessions in BigQuery.
-    Extends BQCore to leverage existing BigQuery functionality.
+    Receives BQCore instance via constructor for BigQuery functionality.
     """
 
     DATASET_ID = "QBRAIN"
-    TABLE_ID="sessions"
+    TABLE_ID = "sessions"
     # Sessions table schema
     SESSIONS_TABLE_SCHEMA = {
         "id": "INT64",
@@ -46,12 +51,15 @@ class SessionManager(BQCore):
         bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
     ]
 
-    def __init__(self):
-        """Initialize SessionManager with QBRAIN dataset."""
+    def __init__(self, qb):
+        """Initialize SessionManager with QBrainTableManager instance."""
         try:
-            BQCore.__init__(self, dataset_id=self.DATASET_ID)
-            self.ds_ref = f"{self.pid}.{self.DATASET_ID}"
-            self.qb = QBrainTableManager()
+            self.qb = qb
+            self.pid = qb.pid
+            self.ds_ref = qb.ds_ref or f"{qb.pid}.{self.DATASET_ID}"
+            self.bqclient = qb.bqclient
+            self.run_query = qb.run_query
+            self.get_table_schema = qb.get_table_schema
             print(f"{_SESSION_DEBUG} initialized with dataset: {self.DATASET_ID}")
         except Exception as e:
             print(f"{_SESSION_DEBUG} __init__ error: {e}")
@@ -130,8 +138,8 @@ class SessionManager(BQCore):
         try:
             print(f"{_SESSION_DEBUG} create_session: user_id={user_id}")
             user_check_query = f"""
-                SELECT uid FROM `{self.ds_ref}.users`
-                WHERE uid = @user_id AND (status != 'deleted' OR status IS NULL)
+                SELECT id FROM `{self.ds_ref}.users`
+                WHERE id = @user_id AND (status != 'deleted' OR status IS NULL)
                 LIMIT 1
             """
 
@@ -149,6 +157,22 @@ class SessionManager(BQCore):
 
             now = datetime.now().isoformat()
 
+            # --- Vertex RAG corpus creation (per-session) ---
+            corpus_id: Optional[str] = None
+            if create_vertex_rag_corpus is not None:
+                try:
+                    display_name = f"session_{session_id}"
+                    description = f"RAG corpus for session {session_id} (user_id={user_id})"
+                    corpus_info = create_vertex_rag_corpus(
+                        display_name=display_name,
+                        description=description,
+                    )
+                    corpus_id = corpus_info.get("corpus_id") or ""
+                    if corpus_id:
+                        print(f"{_SESSION_DEBUG} create_session: created Vertex RAG corpus_id={corpus_id}")
+                except Exception as ce:
+                    print(f"{_SESSION_DEBUG} create_session: Vertex RAG corpus creation skipped: {ce}")
+
             session_data = {
                 "id": session_id,
                 "user_id": user_id,
@@ -157,14 +181,17 @@ class SessionManager(BQCore):
                 "is_active": True,
                 "last_activity": now,
                 "status": "active",
-                "research_files": "[]"
+                "research_files": "[]",
             }
+            if corpus_id:
+                session_data["corpus_id"] = corpus_id
 
             self.qb.set_item(
                 "sessions",
                 session_data,
                 keys={"id": session_id}
             )
+
             print(f"{_SESSION_DEBUG} create_session: created session_id={session_id}")
             return session_id
         except Exception as e:
@@ -331,8 +358,9 @@ class SessionManager(BQCore):
         Uses module_manager to retrieve data.
         """
         try:
+            from core.managers_context import get_module_manager
             print(f"{_SESSION_DEBUG} get_session_modules: user_id={user_id}, session_id={session_id}")
-            modules = module_manager.retrieve_session_modules(session_id, user_id)
+            modules = get_module_manager().retrieve_session_modules(session_id, user_id)
             print(f"{_SESSION_DEBUG} get_session_modules: got {len(modules) if modules else 0} module(s)")
             return {"modules": modules}
         except Exception as e:
@@ -370,8 +398,9 @@ class SessionManager(BQCore):
             if not env_ids:
                 return {"envs": []}
 
-            envs = env_manager.retrieve_env_from_id(env_ids)
-            
+            from core.managers_context import get_env_manager
+            envs = get_env_manager().retrieve_env_from_id(env_ids)
+
             return envs
         except Exception as e:
             print(f"{_SESSION_DEBUG} get_session_envs: error: {e}")
@@ -451,29 +480,19 @@ class SessionManager(BQCore):
     def get_or_create_active_session(self, user_id: str) -> Optional[int]:
         """
         Get existing active session or create a new one.
-        Minimizes session creation per connection.
+        Returns valid session_id (int) or None.
         """
-        try:
-            print(f"{_SESSION_DEBUG} get_or_create_active_session: user_id={user_id}")
-            session_id = self.get_active_session(user_id)
-            if session_id:
-                print(f"{_SESSION_DEBUG} get_or_create_active_session: using existing session_id={session_id}")
-                return session_id
-
-            # Create a new session and rely on the returned ID instead of
-            # immediately querying BigQuery again (which can be eventually consistent).
-            new_session_id = self.create_session(user_id)
-            if not new_session_id:
-                print(f"{_SESSION_DEBUG} get_or_create_active_session: failed to create session for user_id={user_id}")
-                return None
-
-            print(f"{_SESSION_DEBUG} get_or_create_active_session: created, session_id={new_session_id}")
+        print(f"{_SESSION_DEBUG} get_or_create_active_session: user_id={user_id}")
+        session_id = self.get_active_session(user_id)
+        if session_id is not None:
+            print(f"{_SESSION_DEBUG} get_or_create_active_session: using existing session_id={session_id}")
+            return session_id
+        new_session_id = self.create_session(user_id)
+        if new_session_id is not None:
+            print(f"{_SESSION_DEBUG} get_or_create_active_session: created session_id={new_session_id}")
             return new_session_id
-        except Exception as e:
-            print(f"{_SESSION_DEBUG} get_or_create_active_session: error: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
+        print(f"{_SESSION_DEBUG} get_or_create_active_session: failed for user_id={user_id}")
+        return None
             
 
     def get_full_session_structure(self, user_id: str, session_id: str) -> Dict:
@@ -618,136 +637,96 @@ class SessionManager(BQCore):
             traceback.print_exc()
 
 
-# Instantiate
-session_manager = SessionManager()
+# Default instance for standalone use (no orchestrator context)
+_default_bqcore = BQCore(dataset_id="QBRAIN")
+_default_session_manager = SessionManager(get_qbrain_table_manager(_default_bqcore))
+session_manager = _default_session_manager  # backward compat
 
 # -- RELAY HANDLERS --
 
-def handle_get_sessions_modules(payload):
-    """
-    receive "GET_SESSIONS_MODULES": auth={user_id:str, session_id:str} -> SEND_SESSIONS_MODULES
-    """
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    session_id = auth.get("session_id")
-    
-    if not user_id or not session_id:
-        return {"error": "Missing user_id or session_id"}
-        
-    data = session_manager.get_session_modules(user_id, session_id)
-    return {
-        "type": "GET_SESSIONS_MODULES",
-        "data": data
-    }
-
-def handle_get_sessions_envs(payload):
-    """
-    receive "GET_SESSIONS_ENVS": auth={user_id:str, session_id:str} 
-    -> receive sessions_to_envs ... -> return type="GET_SESSIONS_ENVS", data=...
-    """
-    print("handle_get_sessions_envs")
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    session_id = auth.get("session_id")
-    
-    if not user_id or not session_id:
-        return {"error": "Missing user_id or session_id"}
-        
-    data = session_manager.get_session_envs(user_id, session_id)
-    
-    # data from retrieve_env_from_id is {"envs": [...] }
-    print("finished handle_get_sessions_envs:", data)
-    return {
-        "type": "GET_SESSIONS_ENVS",
-        "data": data 
-    }
-
-def handle_sessions_injections(payload):
-    """
-    receive "SESSIONS_INJECTIONS": data={}, auth={user_id:str, session_id:str}
-    -> receive sessions_to_injections ... -> return: type="", data=injections:list[injection-table rows]
-    """
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    session_id = auth.get("session_id")
-    
-    if not user_id or not session_id:
-        return {"error": "Missing user_id or session_id"}
-        
-    data = session_manager.get_session_injections(user_id, session_id)
-    # data is {"injections": [...]}
-    
-    return {
-        "type": "SESSIONS_INJECTIONS",
-        "data": data
-    }
-
-def handle_link_env_session(payload):
-    """
-    receive type="LINK_ENV_SESSION", auth={user_id:str, session_id:str, env_id} 
-    -> insert session_to_envs-table row with status = active and auth data -> SEND_SESSION_ENVS
-    """
-    print("handle_link_env_session")
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    session_id = auth.get("session_id")
-    env_id = auth.get("env_id") 
-    
-    if not all([user_id, session_id, env_id]):
-        return {"error": "Missing required fields"}
-        
-    session_manager.link_env_session(user_id, session_id, env_id)
-    
-    # Return hierarchical structure
-    structure = session_manager.get_full_session_structure(user_id, session_id)
-    print("handle_link_env_session LIST_SESSIONS_ENVS:")
-
-    pprint.pp(structure)
-
-    return {
-        "type": "LIST_SESSIONS_ENVS", 
-        "data": structure
-    }
-
-def handle_rm_link_env_session(payload):
-    """
-    receive type="RM_LINK_ENV_SESSION", auth={user_id:str, session_id:str, env_id} 
-    -> update session_to_envs-table row with status = deleted -> SEND_SESSION_ENVS
-    """
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    session_id = auth.get("session_id")
-    env_id = auth.get("env_id")
-    
-    if not all([user_id, session_id, env_id]):
-        return {"error": "Missing required fields"}
-        
-    session_manager.rm_link_env_session(user_id, session_id, env_id)
-
-        # Return hierarchical structure
-    structure = session_manager.get_full_session_structure(user_id, session_id)
-
-    return {
-        "type": "LIST_SESSIONS_ENVS", # Using same type? Or ENABLE_SM style? Requests usually imply type match.
-        "data": structure
-    }
+def handle_get_sessions_modules(data=None, auth=None):
+    """Retrieve modules for a session. Required: user_id, session_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    from core.managers_context import get_session_manager
+    return {"type": "GET_SESSIONS_MODULES", "data": get_session_manager().get_session_modules(user_id, session_id)}
 
 
-def handle_list_user_sessions(payload):
-    """
-    receive "LIST_USERS_SESSIONS": auth={user_id:str}
-    -> return type="LIST_USERS_SESSIONS", data={"sessions": [...]}
-    """
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    
-    if not user_id:
-        return {"error": "Missing user_id"}
-        
-    sessions = session_manager.list_user_sessions(user_id)
-    return {
-        "type": "LIST_USERS_SESSIONS",
-        "data": {"sessions": sessions}
-    }
+def handle_get_sessions_envs(data=None, auth=None):
+    """Retrieve environments linked to a session. Required: user_id, session_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    from core.managers_context import get_session_manager
+    return {"type": "GET_SESSIONS_ENVS", "data": get_session_manager().get_session_envs(user_id, session_id)}
+
+
+def handle_sessions_injections(data=None, auth=None):
+    """Retrieve injections linked to a session. Required: user_id, session_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    from core.managers_context import get_injection_manager
+    out_data = {"injections": get_injection_manager().retrieve_session_injections(session_id, user_id)}
+    return {"type": "SESSIONS_INJECTIONS", "data": out_data}
+
+
+def handle_link_env_session(data=None, auth=None):
+    """Link an environment to a session. Required: user_id, session_id, env_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    env_id = get_val(data, auth, "env_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    if err := require_param(env_id, "env_id"):
+        return err
+    from core.managers_context import get_session_manager
+    sm = get_session_manager()
+    sm.link_env_session(user_id, session_id, env_id)
+    return {"type": "LIST_SESSIONS_ENVS", "data": sm.get_full_session_structure(user_id, session_id)}
+
+
+def handle_rm_link_env_session(data=None, auth=None):
+    """Remove the link between an environment and a session. Required: user_id, session_id, env_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    env_id = get_val(data, auth, "env_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    if err := require_param(env_id, "env_id"):
+        return err
+    from core.managers_context import get_session_manager
+    sm = get_session_manager()
+    sm.rm_link_env_session(user_id, session_id, env_id)
+    return {"type": "LIST_SESSIONS_ENVS", "data": sm.get_full_session_structure(user_id, session_id)}
+
+
+def handle_list_user_sessions(data=None, auth=None):
+    """List all sessions owned by a user. Required: user_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    from core.managers_context import get_session_manager
+    return {"type": "LIST_USERS_SESSIONS", "data": {"sessions": get_session_manager().list_user_sessions(user_id)}}
 
 

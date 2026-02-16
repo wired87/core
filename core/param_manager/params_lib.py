@@ -8,7 +8,8 @@ from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 from a_b_c.gemw.gem import Gem
 from core.param_manager.extraction_prompt import xtract_params_prompt
 
-from core.qbrain_manager import QBrainTableManager
+from core.qbrain_manager import get_qbrain_table_manager
+from core.handler_utils import require_param, require_param_truthy, get_val
 from qf_utils.all_subs import FERMIONS, G_FIELDS, H
 from qf_utils.qf_utils import QFUtils
 
@@ -19,14 +20,15 @@ def generate_numeric_id() -> str:
     """Generate a random numeric ID."""
     return str(random.randint(1000000000, 9999999999))
 
-class ParamsManager(BQCore):
+class ParamsManager:
     DATASET_ID = "QBRAIN"
     PARAMS_TABLE = "params"
     FIELDS_TO_PARAMS_TABLE = "fields_to_params"
 
-    def __init__(self):
-        super().__init__(dataset_id=self.DATASET_ID)
-        self.qb = QBrainTableManager()
+    def __init__(self, qb):
+        self.qb = qb
+        self.pid = qb.pid
+        self.run_query = qb.run_query
         self.table = f"{self.PARAMS_TABLE}"
         self._extract_prompt = None  # built lazily to avoid circular import with case
 
@@ -112,12 +114,16 @@ class ParamsManager(BQCore):
                 param_data = [param_data]
             prev_params = []
             for p in param_data:
+                # Normalize id/name from extraction (LLM may return only "name")
+                p["id"] = p.get("id") or p.get("name") or generate_numeric_id()
+                p["name"] = p.get("name") or p.get("id")
                 p["user_id"] = user_id
                 if "is_constant" in p:
                     p["const"] = p["is_constant"]
                 if "value" in p:
                     p["value"] = json.dumps(p["value"])
-                if "axis_def" not in p or p.get("axis_def") is None and "const" in p:
+                # Only derive axis_def when we actually have a const flag
+                if ("axis_def" not in p or p.get("axis_def") is None) and "const" in p:
                     p["axis_def"] = self.get_axis_param(p["const"])
                 if "embedding" in p and p["embedding"]:
                     if isinstance(p["embedding"], str):
@@ -290,118 +296,114 @@ class ParamsManager(BQCore):
             self.set_param(batch_data, user_id)
             print(f"Uploaded {len(batch_data)} SM params")
 
-params_manager = ParamsManager()
+_default_bqcore = BQCore(dataset_id="QBRAIN")
+_default_param_manager = ParamsManager(get_qbrain_table_manager(_default_bqcore))
+params_manager = _default_param_manager  # backward compat
 
-def handle_get_users_params(payload):
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    if not user_id:
-        return {"error": "Missing user_id"}
-    
-    params = params_manager.get_users_params(user_id)
-    return {
-        "type": "LIST_USERS_PARAMS",
-        "data": {"params": params}
-    }
+def handle_get_users_params(data=None, auth=None):
+    """Retrieve all params owned by a user. Required: user_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    from core.managers_context import get_param_manager
+    params = get_param_manager().get_users_params(user_id)
+    return {"type": "LIST_USERS_PARAMS", "data": {"params": params}}
 
-def handle_list_users_params(payload):
-    return handle_get_users_params(payload)
-"""
-each p gets prevp (pp)
-"""
-def handle_set_param(payload):
-    auth = payload.get("auth", {})
-    data = payload.get("data", {})
-    # param
-    user_id = auth.get("user_id")
-    param_data = data.get("param")
-    
-    if not user_id or not param_data:
-        return {"error": "Missing user_id or param data"}
-        
-    original_id = auth.get("original_id")
+
+def handle_list_users_params(data=None, auth=None):
+    """Alias for handle_get_users_params."""
+    return handle_get_users_params(data=data, auth=auth)
+
+
+def handle_set_param(data=None, auth=None):
+    """Create or update a param. Required: user_id (auth), param (data). Optional: original_id (auth)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    param_data = data.get("param") if isinstance(data, dict) else None
+    original_id = get_val(data, auth, "original_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param_truthy(param_data, "param"):
+        return err
+    from core.managers_context import get_param_manager
+    pm = get_param_manager()
     if original_id:
-        params_manager.delete_param(original_id, user_id)
-
-    params_manager.set_param(param_data, user_id)
-    return handle_get_users_params(payload) # Return updated list
-
-def handle_del_param(payload):
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    param_id = auth.get("param_id")
-    
-    if not user_id or not param_id:
-        return {"error": "Missing params"}
-        
-    params_manager.delete_param(param_id, user_id)
-    return handle_get_users_params(payload)
+        pm.delete_param(original_id, user_id)
+    pm.set_param(param_data, user_id)
+    return handle_get_users_params(data={}, auth={"user_id": user_id})
 
 
-def handle_link_field_param(payload):
-    auth = payload.get("auth", {})
-    data = payload.get("data", {})
-    user_id = auth.get("user_id")
-    
-    # data can be {field_id, param_id, value} or list of such
-    links = data.get("links")
+def handle_del_param(data=None, auth=None):
+    """Delete a param by ID. Required: user_id, param_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    param_id = get_val(data, auth, "param_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(param_id, "param_id"):
+        return err
+    from core.managers_context import get_param_manager
+    get_param_manager().delete_param(param_id, user_id)
+    return handle_get_users_params(data={}, auth={"user_id": user_id})
+
+
+def handle_link_field_param(data=None, auth=None):
+    """Link a param to a field. Required: user_id (auth). Required: links (data) or field_id+param_id (auth/data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    links = data.get("links") if isinstance(data, dict) else None
     if not links:
-        # fallback if passed flat
-        if "field_id" in auth and "param_id" in auth:
-             links = [{
-                 "field_id": auth["field_id"],
-                 "param_id": auth["param_id"],
-                 "param_value": data.get("param_value")
-             }]
-        elif "field_id" in data and "param_id" in data:
-             links = [data]
-    
-    if not user_id or not links:
-        return {"error": "Missing data"}
-
-    params_manager.link_field_param(links, user_id)
-    
-    # Return updated field params? or just params list?
-    # Usually we want to see the params for the context we are in.
-    # If we linked to a field, maybe we want that field's params.
-    # But usually generic return or specific return.
-    
-    # Let's assume we return list of params for the first field involved?
+        fid = get_val(data, auth, "field_id")
+        pid = get_val(data, auth, "param_id")
+        pv = get_val(data, auth, "param_value")
+        if fid and pid:
+            links = [{"field_id": fid, "param_id": pid, "param_value": pv}]
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param_truthy(links, "links"):
+        return err
+    from core.managers_context import get_param_manager
+    pm = get_param_manager()
+    pm.link_field_param(links, user_id)
     target_field_id = links[0]["field_id"]
     return {
         "type": "GET_FIELDS_PARAMS",
-        "data": {"params": params_manager.get_fields_params(target_field_id, user_id)},
+        "data": {"params": pm.get_fields_params(target_field_id, user_id)},
         "auth": {"field_id": target_field_id}
     }
 
-def handle_rm_link_field_param(payload):
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    field_id = auth.get("field_id")
-    param_id = auth.get("param_id")
-    
-    if not all([user_id, field_id, param_id]):
-        return {"error": "Missing identifiers"}
-        
-    params_manager.rm_link_field_param(field_id, param_id, user_id)
-    
+
+def handle_rm_link_field_param(data=None, auth=None):
+    """Remove the link between a field and a param. Required: user_id, field_id, param_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    field_id = get_val(data, auth, "field_id")
+    param_id = get_val(data, auth, "param_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(field_id, "field_id"):
+        return err
+    if err := require_param(param_id, "param_id"):
+        return err
+    from core.managers_context import get_param_manager
+    get_param_manager().rm_link_field_param(field_id, param_id, user_id)
     return {
         "type": "GET_FIELDS_PARAMS",
         "data": {"params": params_manager.get_fields_params(field_id, user_id)},
         "auth": {"field_id": field_id}
     }
 
-def handle_get_fields_params(payload):
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    field_id = auth.get("field_id")
-    
-    if not user_id or not field_id:
-        return {"error": "Missing field_id or user_id"}
-        
-    params = params_manager.get_fields_params(field_id, user_id)
-    return {
-        "type": "GET_FIELDS_PARAMS",
-        "data": {"params": params},
-        "auth": {"field_id": field_id}
-    }
+
+def handle_get_fields_params(data=None, auth=None):
+    """Retrieve all params linked to a field. Required: user_id, field_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    field_id = get_val(data, auth, "field_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(field_id, "field_id"):
+        return err
+    from core.managers_context import get_param_manager
+    params = get_param_manager().get_fields_params(field_id, user_id)
+    return {"type": "GET_FIELDS_PARAMS", "data": {"params": params}, "auth": {"field_id": field_id}}

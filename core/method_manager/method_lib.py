@@ -7,12 +7,11 @@ from typing import Dict, Any, List, Optional
 from google.cloud import bigquery
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 from core.method_manager.gen_type import generate_methods_out_schema
-from core.method_manager.method_processor import MethodDataProcessor
 from core.method_manager.xtrct_prompt import xtrct_method_prompt
-from core.param_manager.params_lib import ParamsManager
-from core.qbrain_manager import QBrainTableManager
+from core.qbrain_manager import get_qbrain_table_manager
+from core.handler_utils import require_param, require_param_truthy, get_val
 from qf_utils.qf_utils import QFUtils
-
+# 
 # Define Schemas
 METHOD_SCHEMA = [
     bigquery.SchemaField("id", "STRING", mode="REQUIRED"),
@@ -41,22 +40,20 @@ def generate_numeric_id() -> str:
     """Generate a random numeric ID."""
     return str(random.randint(1000000000, 9999999999))
 
-class MethodManager(BQCore, MethodDataProcessor):
+class MethodManager:
     DATASET_ID = "QBRAIN"
     METHODS_TABLE = "methods"
     SESSIONS_METHODS_TABLE = "sessions_to_methods"
 
-    def __init__(self):
-        super().__init__(dataset_id=self.DATASET_ID)
-        self.qb = QBrainTableManager()
+    def __init__(self, qb):
+        self.qb = qb
+        self.pid = qb.pid
+        self.bqclient = qb.bqclient
+        self.insert_col = qb.insert_col
         self.table_ref = f"{self.METHODS_TABLE}"
         self.session_link_ref = f"{self.SESSIONS_METHODS_TABLE}"
-
         self.qfu = QFUtils()
-
-        self.param_manager = ParamsManager()
         self._extract_prompt = None  # built lazily to avoid circular import with case
-        self._ensure_method_table()
 
     def _ensure_method_table(self):
         """Check if methods table exists, create if not."""
@@ -244,123 +241,105 @@ class MethodManager(BQCore, MethodDataProcessor):
 
 
 # Instantiate
-method_manager = MethodManager()
+_default_bqcore = BQCore(dataset_id="QBRAIN")
+_default_method_manager = MethodManager(get_qbrain_table_manager(_default_bqcore))
+method_manager = _default_method_manager  # backward compat
 
 # -- RELAY HANDLERS --
 
-def handle_list_users_methods(payload):
-    """
-    receive "LIST_USERS_METHODS": auth=user_id:str -> SEND_USERS_METHODS
-    """
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    if not user_id:
-        return {"error": "Missing user_id"}
-    
-    methods = method_manager.retrieve_user_methods(user_id)
-    
-    return {
-        "type": "LIST_USERS_METHODS", 
-        "data": {"methods": methods} 
-    }
+def handle_list_users_methods(data=None, auth=None):
+    """Retrieve all methods owned by a user. Required: user_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    from core.managers_context import get_method_manager
+    return {"type": "LIST_USERS_METHODS", "data": {"methods": get_method_manager().retrieve_user_methods(user_id)}}
 
-def handle_send_sessions_methods(payload):
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    session_id = auth.get("session_id")
-    
-    if not user_id or not session_id:
-        return {"error": "Missing user_id or session_id"}
 
-    methods = method_manager.retrieve_session_methods(session_id, user_id)
-    return {
-        "type": "GET_SESSIONS_METHODS",
-        "data": {"methods": methods}
-    }
+def handle_send_sessions_methods(data=None, auth=None):
+    """Retrieve all methods linked to a session. Required: user_id, session_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    from core.managers_context import get_method_manager
+    return {"type": "GET_SESSIONS_METHODS", "data": {"methods": get_method_manager().retrieve_session_methods(session_id, user_id)}}
 
-def handle_get_sessions_methods(payload):
-    return handle_send_sessions_methods(payload)
 
-def handle_link_session_method(payload):
-    """
-    receive "LINK_SESSION_METHOD": auth={user_id:str, method_id:str, session_id:str}
-    -> LINK_SESSION_METHOD -> SEND_SESSIONS_METHODS
-    """
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    method_id = auth.get("method_id")
-    session_id = auth.get("session_id")
-    
-    if not all([user_id, method_id, session_id]):
-        return {"error": "Missing required auth fields"}
-        
-    method_manager.link_session_method(session_id, method_id, user_id)
-    return handle_send_sessions_methods(payload)
+def handle_get_sessions_methods(data=None, auth=None):
+    """Alias for handle_send_sessions_methods."""
+    return handle_send_sessions_methods(data=data, auth=auth)
 
-def handle_rm_link_session_method(payload):
-    """
-    receive type="RM_LINK_SESSION_METHOD", auth={user_id:str, session_id:str, method_id:str}
-    -> update sessions_to_methods-table row with status = deleted -> SEND_SESSION_METHODS
-    """
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    session_id = auth.get("session_id")
-    method_id = auth.get("method_id")
-    
-    if not all([user_id, session_id, method_id]):
-        return {"error": "Missing required auth fields"}
-        
-    method_manager.rm_link_session_method(session_id, method_id, user_id)
-    return handle_send_sessions_methods(payload)
 
-def handle_del_method(payload):
-    """
-    receive "DEL_METHOD". auh={method_id:str, user_id:str}
-    -> delete -> SEND_USERS_METHODS
-    """
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    method_id = auth.get("method_id")
-    
-    if not user_id or not method_id:
-        return {"error": "Missing user_id or method_id"}
-        
-    method_manager.delete_method(method_id, user_id)
-    return handle_list_users_methods(payload)
+def handle_link_session_method(data=None, auth=None):
+    """Link a method to a session. Required: user_id, method_id, session_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    method_id = get_val(data, auth, "method_id")
+    session_id = get_val(data, auth, "session_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(method_id, "method_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    from core.managers_context import get_method_manager
+    get_method_manager().link_session_method(session_id, method_id, user_id)
+    return handle_send_sessions_methods(data={"session_id": session_id}, auth={"user_id": user_id})
 
-def handle_set_method(payload):
-    """
-    receive "SET_METHOD": data={description, equation, id, params}, auth={user_id}
-    -> generate jax_code -> insert -> SEND_USERS_METHODS
-    """
-    auth = payload.get("auth", {})
-    data = payload.get("data", {})
-    user_id = auth.get("user_id")
-    
-    # Data is flat in the new payload
-    method_data = data
-    
-    # Extract specific fields
+
+def handle_rm_link_session_method(data=None, auth=None):
+    """Remove the link between a session and a method. Required: user_id, session_id, method_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    method_id = get_val(data, auth, "method_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    if err := require_param(method_id, "method_id"):
+        return err
+    from core.managers_context import get_method_manager
+    get_method_manager().rm_link_session_method(session_id, method_id, user_id)
+    return handle_send_sessions_methods(data={"session_id": session_id}, auth={"user_id": user_id})
+
+
+def handle_del_method(data=None, auth=None):
+    """Delete a method by ID. Required: user_id, method_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    method_id = get_val(data, auth, "method_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(method_id, "method_id"):
+        return err
+    from core.managers_context import get_method_manager
+    get_method_manager().delete_method(method_id, user_id)
+    return handle_list_users_methods(data={}, auth={"user_id": user_id})
+
+
+def handle_set_method(data=None, auth=None):
+    """Create or update a method. Required: user_id (auth), data (method dict with equation, description, id, params). Optional: original_id (auth)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    original_id = get_val(data, auth, "original_id")
+    method_data = data if isinstance(data, dict) else None
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param_truthy(method_data, "data"):
+        return err
     equation = method_data.get("equation")
-    params = method_data.get("params") # List of strings
-    
-    if not user_id:
-        return {"error": "Missing user_id"}
-
-    original_id = auth.get("original_id")
-    if original_id:
-        try:
-            method_manager.delete_method(original_id, user_id)
-        except:
-            pass
+    params = method_data.get("params")
 
     method_data["code"] = equation
-
-
-    # generat jax code
-    if "jax_code" not in  method_data:
-        from core.file_manager.file_lib import file_manager
-        method_data["jax_code"] = file_manager.jax_predator(method_data["code"])
+    if "jax_code" not in method_data:
+        from core.managers_context import get_file_manager
+        method_data["jax_code"] = get_file_manager().jax_predator(method_data["code"])
 
     # Ensure ID
     if "id" not in method_data or not method_data["id"]:
@@ -384,32 +363,26 @@ def handle_set_method(payload):
     if equation:
         print(f"Generating JAX code for equation: {equation}")
         try:
-            from core.file_manager.file_lib import file_manager
-            jax_code = file_manager.jax_predator(equation)
+            from core.managers_context import get_file_manager
+            jax_code = get_file_manager().jax_predator(equation)
             method_data["jax_code"] = jax_code
             print("JAX Code generated:", jax_code)
         except Exception as e:
             print(f"Failed to generate JAX code: {e}")
 
-    method_manager.set_method(method_data, user_id)
-    return handle_list_users_methods(payload)
+    from core.managers_context import get_method_manager
+    get_method_manager().set_method(method_data, user_id)
+    return handle_list_users_methods(data={}, auth={"user_id": user_id})
 
-def handle_get_method(payload):
-    """
-    receive "GET_METHOD": auth={method_id:str}
-    -> get row -> return {type: "GET_METHOD", data: ...}
-    """
-    auth = payload.get("auth", {})
-    method_id = auth.get("method_id")
-    
-    if not method_id:
-        return {"error": "Missing method_id"}
-        
-    row = method_manager.get_method_by_id(method_id)
+
+def handle_get_method(data=None, auth=None):
+    """Retrieve a single method by ID. Required: method_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    method_id = get_val(data, auth, "method_id")
+    if err := require_param(method_id, "method_id"):
+        return err
+    from core.managers_context import get_method_manager
+    row = get_method_manager().get_method_by_id(method_id)
     if not row:
         return {"error": "Method not found"}
-
-    return {
-        "type": "GET_METHOD",
-        "data": row
-    }
+    return {"type": "GET_METHOD", "data": row}

@@ -34,6 +34,9 @@ fi
 python manage.py migrate
 python manage.py collectstatic --noinput
 
+# Render Nginx configuration from template and .env (if available)
+python -m nginx.render_nginx_conf || echo "Warning: nginx.render_nginx_conf failed (no nginx config rendered)"
+
 # Gunicorn systemd service setup
 if [ ! -f "/etc/systemd/system/gunicorn.service" ]; then
   sudo bash -c "cat > /etc/systemd/system/gunicorn.service" <<EOF
@@ -57,7 +60,15 @@ fi
 
 # Nginx setup
 if [ ! -f "/etc/nginx/sites-available/bm" ]; then
-  sudo bash -c "cat > /etc/nginx/sites-available/bm" <<EOF
+  # Prefer the rendered config from nginx.render_nginx_conf if available
+  if ls nginx/*.conf >/dev/null 2>&1; then
+    # Use the first rendered config file as the site definition
+    RENDERED_CONF="$(ls nginx/*.conf | head -n 1)"
+    echo "Using rendered nginx config: $RENDERED_CONF"
+    sudo cp "$RENDERED_CONF" /etc/nginx/sites-available/bm
+  else
+    # Fallback: minimal HTTP proxy config
+    sudo bash -c "cat > /etc/nginx/sites-available/bm" <<EOF
 server {
     listen 80;
     server_name _;
@@ -67,6 +78,7 @@ server {
     }
 }
 EOF
+  fi
 
   sudo ln -sf /etc/nginx/sites-available/bm /etc/nginx/sites-enabled/bm
   sudo nginx -t

@@ -2,7 +2,8 @@
 import logging
 import uuid
 import time
-from core.env_manager.env_lib import EnvManager, handle_set_env, handle_get_env, handle_del_env
+from core.handler_utils import flatten_payload
+from core.env_manager.env_lib import EnvManager, handle_set_env, handle_get_envs_user, handle_del_env
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -34,7 +35,8 @@ def test_env_manager():
     auth = {"user_id": user_id}
     data = {"env": env_data}
     
-    resp = handle_set_env(data, auth)
+    payload = {"auth": auth, "data": data}
+    resp = handle_set_env(**flatten_payload(payload))
     print(f"Set Response: {resp}")
     
     # Verify response contains the env
@@ -47,7 +49,7 @@ def test_env_manager():
 
     # 3. Test GET
     print(f"\nTesting GET_ENV for user {user_id}...")
-    resp_get = handle_get_env(None, auth)
+    resp_get = handle_get_envs_user(**flatten_payload({"auth": auth}))
     envs_get = resp_get.get("data", {}).get("envs", [])
     found_get = any(e["id"] == env_id for e in envs_get)
     if found_get:
@@ -58,7 +60,7 @@ def test_env_manager():
     # 4. Test DELETE
     print(f"\nTesting DEL_ENV for env {env_id}...")
     auth_del = {"user_id": user_id, "env_id": env_id}
-    resp_del = handle_del_env(None, auth_del)
+    resp_del = handle_del_env(**flatten_payload({"auth": auth_del}))
     print(f"Del Response: {resp_del}")
     
     envs_del = resp_del.get("data", {}).get("envs", [])

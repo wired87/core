@@ -29,6 +29,9 @@ RUN pip install -r r.txt
 # Copy the rest of the project files into the working directory
 COPY . .
 
+# Ensure nginx templates/scripts are available inside the image (e.g. for CI rendering)
+COPY nginx ./nginx
+
 # Set environment variables
 ENV PYTHONPATH=/usr/src/app:$PYTHONPATH
 ENV PYTHONUNBUFFERED=1 \

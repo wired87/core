@@ -1,4 +1,6 @@
 import os
+import pprint
+
 from google.cloud import compute_v1
 from typing import List, Dict, Optional
 
@@ -28,7 +30,7 @@ class VMMaster:
             credentials=load_service_account_credentials()
         )
         self.project_id = project_id or os.environ.get("GCP_PROJECT_ID")
-        self.zone = zone
+        self.zone = "us-central1-a"
 
 
     def create_instance(
@@ -68,6 +70,15 @@ class VMMaster:
             boot_disk_type (str): The type of the boot disk.
         """
         print(f"Creating new VM instance: {instance_name}")
+        instance_name = instance_name.replace("_", "-")
+
+        _exists:bool = self.instance_exists(
+            project_id=self.project_id,
+            zone=self.zone,
+            instance_name=instance_name
+        )
+        if _exists:
+            self.delete_instance(instance_name)
         try:
             instance_config = {
                 "name": instance_name,
@@ -121,11 +132,21 @@ class VMMaster:
                         spec += f"        - name: {key}\n          value: {value}\n"
                 instance_config["metadata"]["items"].append({"key": "gce-container-declaration", "value": spec})
 
-            operation = self.client.insert(project=self.project_id, zone=self.zone, instance_resource=instance_config)
+            print("instance_config:")
+            pprint.pp(instance_config)
+
+            operation = self.client.insert(
+                project=self.project_id,
+                zone=self.zone,
+                instance_resource=instance_config,
+            )
             operation.result()
             print(f"VM instance {instance_name} created successfully.")
         except Exception as e:
             print("Err create_instance", e)
+            import traceback
+            traceback.print_exc()
+            raise
 
     def delete_instance(self, instance_name: str):
         """
@@ -135,7 +156,12 @@ class VMMaster:
             instance_name (str): The name of the VM instance to delete.
         """
         print(f"Deleting VM instance: {instance_name}")
-        operation = self.client.delete(project=self.project_id, zone=self.zone, instance=instance_name)
+        operation = self.client.delete(
+            project=self.project_id,
+            zone=self.zone,
+            instance=instance_name
+        )
+
         operation.result()
         print(f"VM instance {instance_name} deleted successfully.")
 
@@ -253,6 +279,27 @@ class VMMaster:
                 self.delete_instance(test_instance_name)
             except Exception as e:
                 print(f"An error occurred during cleanup: {e}")
+
+
+    def instance_exists(self, project_id: str, zone: str, instance_name: str) -> bool:
+        """
+        Prüft, ob eine Compute Engine Instanz bereits existiert.
+        """
+        try:
+            # Versuche, die Instanz-Details abzurufen
+            self.client.get(
+                project=project_id,
+                zone=zone,
+                instance=instance_name
+            )
+            print(f"VM '{instance_name}' exists.")
+            return True
+
+        except Exception as e:
+            # Andere Fehler (z.B. Berechtigungen) behandeln
+            print(f"Fehler bei der Prüfung der Instanz {instance_name}: {e}")
+            return False
+
 
 
 if __name__ == "__main__":

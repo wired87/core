@@ -1,62 +1,49 @@
+"""
+Vertex AI RAG Engine – configuration.
+Reads project, location, and optional corpus ID from environment.
+"""
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
-from core.app_utils import GCP_ID
+# Project and region (required for Vertex AI RAG)
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT_ID") or ""
+LOCATION = os.environ.get("VERTEX_AI_LOCATION", "us-central1")
+
+# Optional: pre-created RAG corpus resource name
+# Format: projects/{project}/locations/{location}/ragCorpora/{corpus_id}
+CORPUS_ID = os.environ.get("VERTEX_RAG_CORPUS_ID", "")
+CORPUS_NAME = (
+    f"projects/{PROJECT_ID}/locations/{LOCATION}/ragCorpora/{CORPUS_ID}"
+    if (PROJECT_ID and CORPUS_ID) else ""
+)
+
+
+def get_corpus_name(corpus_id: str = None) -> str:
+    """Return full RAG corpus resource name. Uses CORPUS_ID env if corpus_id not provided."""
+    cid = corpus_id or CORPUS_ID
+    if not PROJECT_ID or not cid:
+        return ""
+    return f"projects/{PROJECT_ID}/locations/{LOCATION}/ragCorpora/{cid}"
 
 
 @dataclass
 class VertexRagConfig:
-    """
-    Configuration for Vertex AI RAG Engine usage.
+    """Configuration for Vertex AI RAG (project, location, corpus)."""
+    project_id: str = field(default_factory=lambda: PROJECT_ID)
+    location: str = field(default_factory=lambda: LOCATION)
+    rag_corpus_id: str = field(default_factory=lambda: CORPUS_ID)
+    corpus_name: str = field(default="", init=False)
 
-    - project_id:    GCP project id (defaults from existing BestBrain config).
-    - location:      Vertex AI location/region.
-    - rag_corpus_id: ID of the RAG corpus (not the full resource name).
-    """
-
-    project_id: str
-    location: str = "us-central1"
-    rag_corpus_id: Optional[str] = None
-
-    @property
-    def corpus_name(self) -> Optional[str]:
-        """
-        Full resource name for the RAG corpus, if rag_corpus_id is set.
-
-        Example:
-        projects/{PROJECT_ID}/locations/{location}/ragCorpora/{rag_corpus_id}
-        """
-        if not self.rag_corpus_id:
-            return None
-        return (
-            f"projects/{self.project_id}/locations/{self.location}"
-            f"/ragCorpora/{self.rag_corpus_id}"
-        )
+    def __post_init__(self):
+        if self.project_id and self.rag_corpus_id:
+            self.corpus_name = (
+                f"projects/{self.project_id}/locations/{self.location}/ragCorpora/{self.rag_corpus_id}"
+            )
+        else:
+            self.corpus_name = ""
 
 
 def get_default_config() -> VertexRagConfig:
-    """
-    Build a default VertexRagConfig from environment and existing app config.
-
-    Priority for project_id:
-    1. core.app_utils.GCP_ID (which itself reads GCP_PROJECT_ID)
-    2. env VERTEX_PROJECT_ID
-    3. env GCP_ID
-    """
-    project_id = GCP_ID or os.environ.get("VERTEX_PROJECT_ID") or os.environ.get("GCP_ID")
-    if not project_id:
-        raise ValueError(
-            "VertexRagConfig.project_id is not set. "
-            "Set GCP_PROJECT_ID or VERTEX_PROJECT_ID or GCP_ID in the environment."
-        )
-
-    location = os.environ.get("VERTEX_LOCATION", "us-central1")
-    rag_corpus_id = os.environ.get("VERTEX_RAG_CORPUS_ID")
-
-    return VertexRagConfig(
-        project_id=project_id,
-        location=location,
-        rag_corpus_id=rag_corpus_id,
-    )
-
+    """Build a VertexRagConfig from environment variables."""
+    return VertexRagConfig()

@@ -44,7 +44,7 @@ def retrieval_query(
     text: str,
     top_k: int = 10,
     rag_file_ids: Optional[List[str]] = None,
-    vector_distance_threshold: Optional[float] = None,
+    vector_distance_threshold: Optional[float] = .1,
     config: Optional[VertexRagConfig] = None,
     corpus_name: Optional[str] = None,
 ) -> Dict[str, Any]:

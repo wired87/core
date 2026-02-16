@@ -53,8 +53,8 @@ Updated `Relay.connect()` method (lines 273-295):
 - Moved session creation from simple `generate_id()` to proper session management
 - Integrated after UserManager initialization (line 275+)
 - Creates session after successful user authentication
-- Stores session_id in `Relay.session_id`
-- **Error Handling**: Fallback to `generate_id()` if session creation fails (ensures functional stability per user requirement)
+- Stores valid session_id in `Relay.session_id` via `_save_session_locally()`
+- **Session resolution**: Flat flow via `_resolve_session()` → `get_or_create_active_session()`; no fallback; connection declined if session creation fails
 
 **Workflow**:
 ```
@@ -62,18 +62,17 @@ Updated `Relay.connect()` method (lines 273-295):
 2. Extract user_id from query params
 3. Initialize UserManager
 4. Create/verify user record in BigQuery
-5. Initialize SessionManager          ← NEW
-6. Create session with foreign key    ← NEW
-7. Store session_id in Relay instance  ← NEW
-8. Continue with Guard, etc.
+5. Resolve session (get active or create)  ← _resolve_session()
+6. Save valid session_id locally           ← _save_session_locally()
+7. Continue with Guard, send SET_SID, etc.
 ```
 
 ## 🎯 Key Features
 
 ### Functional Stability
-- ✅ Comprehensive error handling with try-except blocks
-- ✅ Fallback mechanism using `generate_id()` if BigQuery unavailable
-- ✅ Non-blocking: session creation errors don't break connection flow
+- ✅ Flat session resolution (get active → create if missing)
+- ✅ No fallback: connection declined if session creation fails
+- ✅ Valid session_id saved locally on Relay instance
 - ✅ Detailed logging for debugging
 
 ### Foreign Key Integrity

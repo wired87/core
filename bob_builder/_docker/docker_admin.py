@@ -2,18 +2,28 @@ import os
 import subprocess
 import sys
 
-import docker
-
 from bob_builder._docker.dockerfile import get_custom_dockerfile_content
 from bob_builder._docker.dynamic_docker import generate_dockerfile
 from utils.run_subprocess import pop_cmd
 
 
 class DockerAdmin:
-    # pip install "docker==6.1.3"
+    """
+    Thin wrapper around the `docker` CLI.
 
-    def __init__(self):
-        self.client = docker.api.client.APIClient()
+    We intentionally avoid the Python Docker Engine API client and instead
+    shell out to `docker` so that behavior is consistent across Windows
+    and Linux. Minor OS-specific handling is controlled via `os.name`.
+    """
+
+    def __init__(self, allow_no_daemon: bool = False):
+        # We keep the allow_no_daemon parameter for backward compatibility,
+        # but CLI-based calls simply fail with clear messages if Docker
+        # isn't installed or the daemon isn't running.
+        self.allow_no_daemon = allow_no_daemon
+        self.is_windows = os.name == "nt"
+        # On both Windows and Linux we expect `docker` to be on PATH.
+        self.docker_bin = "docker"
 
     def login_to_artifact_registry(self, region: str):
         """Authenticates Docker with Google Artifact Registry."""
@@ -21,20 +31,42 @@ class DockerAdmin:
         try:
             cmd = ["gcloud", "auth", "configure-docker", f"{region}-docker.pkg.dev", "--quiet"]
             subprocess.run(cmd, check=True, capture_output=True, text=True)
-            print("✅ Docker authenticated with Artifact Registry successfully.")
+            print("Docker authenticated with Artifact Registry successfully.")
         except subprocess.CalledProcessError as e:
-            print(f"❌ Failed to authenticate with Artifact Registry: {e.stderr}")
+            print(f"Failed to authenticate with Artifact Registry: {e.stderr}")
             raise
         except FileNotFoundError:
-            print("❌ 'gcloud' command not found. Is the Google Cloud SDK installed and in your PATH?")
+            print("'gcloud' command not found. Is the Google Cloud SDK installed and in your PATH?")
             raise
 
 
-    def build_docker_image(self, image_name, dockerfile_path='.', e=None):
-        cmd = f"docker build -t {image_name} {dockerfile_path}"
-        if e is not None:
-            env_str = " ".join([f'--env {name}="{val}"' for name, val in e.items()])
-            cmd +=  f"-e {env_str}"
+    def build_docker_image(self, image_name: str, dockerfile_path: str = ".", env: dict | None = None):
+        """
+        Build a Docker image using a specific Dockerfile.
+
+        Args:
+            image_name: Tag to apply to the built image (e.g. "core").
+            dockerfile_path: Absolute or relative path to the Dockerfile.
+            env: Optional environment variables to inject via --build-arg.
+        """
+        # Docker expects a build *context* directory plus an optional -f Dockerfile.
+        dockerfile_path = os.path.abspath(dockerfile_path)
+        if os.path.isdir(dockerfile_path):
+            # If a directory is passed, assume "Dockerfile" inside it.
+            context_dir = dockerfile_path
+            dockerfile_path = os.path.join(dockerfile_path, "Dockerfile")
+        else:
+            context_dir = os.path.dirname(dockerfile_path) or "."
+
+        cmd = [self.docker_bin, "build", "-t", image_name, "-f", dockerfile_path]
+
+        # Translate env dict to build-args so that builds are reproducible and explicit.
+        if env:
+            for name, val in env.items():
+                cmd += ["--build-arg", f"{name}={val}"]
+
+        cmd.append(context_dir)
+        print("Running docker build:", " ".join(cmd))
         pop_cmd(cmd)
 
 
@@ -100,7 +132,7 @@ class DockerAdmin:
                 tag: The tag for the Docker image (e.g., 'qfs').
                 context_path: The build context path (e.g., '.').
             """
-        command = ["docker", "build", "-t", image_name]
+        command = [self.docker_bin, "build", "-t", image_name, path]
         print(f"Running command: {' '.join(command)}")
         try:
             # Use subprocess.run to execute the command.
@@ -127,25 +159,72 @@ class DockerAdmin:
             print(f"An unexpected error occurred: {e}", file=sys.stderr)
             sys.exit(1)
 
-    def force_build_image(self, image_name: str, tag: str = "latest"):
-        """Baut ein Image immer neu."""
-        print(f"🔨 Force-building: {image_name}:{tag}")
+    def force_build_image(self, image_name: str, tag: str = "latest", context_path: str = "."):
+        """
+        Force-build an image using the docker CLI.
+
+        Equivalent to:
+            docker build -t image_name:tag context_path
+        """
+        full_tag = f"{image_name}:{tag}"
+        command = [self.docker_bin, "build", "-t", full_tag, context_path]
+        print(f"Running command: {' '.join(command)}")
         try:
-            image, logs = self.client.images.build(
-                path=str(self.context_path),
-                tag=f"{image_name}:{tag}"
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
             )
-            for line in logs:
-                if 'stream' in line:
-                    print(line['stream'].strip())
-            print(f"✅ Build successful: {image_name}:{tag}")
+            if process.stdout:
+                for line in iter(process.stdout.readline, ""):
+                    print(line, end="")
+            process.wait()
+            if process.returncode != 0:
+                print(
+                    f"Error: Docker force-build failed with exit code {process.returncode}",
+                    file=sys.stderr,
+                )
+                if not self.allow_no_daemon:
+                    sys.exit(process.returncode)
+            else:
+                print(f"\nDocker image built successfully: {full_tag}")
+        except FileNotFoundError:
+            print(
+                "Error: 'docker' command not found. Is Docker installed and in your PATH?",
+                file=sys.stderr,
+            )
+            if not self.allow_no_daemon:
+                sys.exit(1)
         except Exception as e:
-            print(f"❌ Build error: {e}")
+            print(f"An unexpected error occurred during force_build_image: {e}", file=sys.stderr)
+            if not self.allow_no_daemon:
+                sys.exit(1)
 
     def image_exists(self, image_name: str, tag: str = "latest") -> bool:
-        """Prüft, ob ein Image mit Tag existiert."""
-        images = self.client.images.list(name=image_name)
-        return any(f"{image_name}:{tag}" in img.tags for img in images)
+        """
+        Check if an image with the given tag exists locally using the docker CLI.
+
+        Uses:
+            docker image inspect image_name:tag
+        """
+        full_tag = f"{image_name}:{tag}"
+        command = [self.docker_bin, "image", "inspect", full_tag]
+        try:
+            result = subprocess.run(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                text=True,
+            )
+            return result.returncode == 0
+        except FileNotFoundError:
+            print(
+                "Error: 'docker' command not found while checking image existence.",
+                file=sys.stderr,
+            )
+            return False
 
 vars_dict = {
     "DOMAIN": os.environ.get("DOMAIN"),

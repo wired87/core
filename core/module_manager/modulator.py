@@ -166,7 +166,7 @@ class Modulator(
             )
         except Exception as e:
             print("Err set_field_data:", e)
-    print("create_modules finished")
+        print("create_modules finished")
 
 
     def set_pattern(self):

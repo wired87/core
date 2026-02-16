@@ -1,5 +1,7 @@
 import ast
-from typing import Union, Optional
+import importlib
+import json
+from typing import Union, Optional, Callable, Dict, Any, Tuple
 
 from qf_utils.qf_utils import QFUtils
 from utils.graph.local_graph_utils import GUtils
@@ -14,6 +16,173 @@ def _get_type_name(node: Optional[ast.expr]) -> str:
     return ast.unparse(node) if node else 'Any'
 
 
+def _has_self_param(node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> bool:
+    """True if function has 'self' as first parameter (i.e. is a class method)."""
+    if node.args.args:
+        return node.args.args[0].arg == "self"
+    return False
+
+
+def _make_direct_callable(
+    module_name: str,
+    method_name: str,
+    class_name: Optional[str] = None,
+    has_self: bool = False,
+) -> Callable:
+    """
+    Create a callable that invokes the function/method without requiring the caller
+    to pass self or a class instance. Accepts payload (dict) and flattens to **kwargs
+    for handler methods. For class methods: instantiates the class (no-arg __init__).
+    """
+    def invoke(*args, **kwargs):
+        from core.handler_utils import flatten_payload
+        mod = importlib.import_module(module_name)
+        if class_name and has_self:
+            cls = getattr(mod, class_name)
+            instance = cls()
+            func = getattr(instance, method_name)
+            if args and len(args) == 1 and isinstance(args[0], dict) and not kwargs:
+                return func(**flatten_payload(args[0]))
+            return func(*args, **kwargs)
+        else:
+            func = getattr(mod, method_name)
+            if args and len(args) == 1 and isinstance(args[0], dict) and not kwargs:
+                return func(**flatten_payload(args[0]))
+            return func(*args, **kwargs)
+    return invoke
+
+
+def _extract_param_tree(method_node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> Dict[str, Any]:
+    """
+    Extract the full data structure required by a method from its body.
+    Infers structure from: payload.get("auth", {}), auth.get("user_id"),
+    require_param(x, "key"), require_param_truthy(x, "key").
+    Returns a nested dict (p_tree) with param paths and inferred types.
+    """
+    param_names = {arg.arg for arg in method_node.args.args if arg.arg != "self"}
+    var_to_path: Dict[str, Tuple[str, ...]] = {}
+    tree: Dict[str, Any] = {}
+
+    def _get_path(expr) -> Optional[Tuple[str, ...]]:
+        if isinstance(expr, ast.Name):
+            if expr.id in param_names:
+                return (expr.id,)
+            return var_to_path.get(expr.id)
+        return None
+
+    def _get_key_from_call(call_node) -> Optional[str]:
+        if not isinstance(call_node, ast.Call) or not call_node.args:
+            return None
+        first_arg = call_node.args[0]
+        if isinstance(first_arg, ast.Constant):
+            return first_arg.value
+        if isinstance(first_arg, ast.Str):
+            return first_arg.s
+        return None
+
+    def _set_in_tree(path: Tuple[str, ...], value: Any = "Any", required: bool = False):
+        if not path:
+            return
+        d = tree
+        for key in path[:-1]:
+            d = d.setdefault(key, {})
+        d[path[-1]] = {"_type": value, "_required": required}
+
+    def _ensure_branch(path: Tuple[str, ...]):
+        d = tree
+        for key in path:
+            d = d.setdefault(key, {})
+
+    def _extract_get_call(value) -> Optional[ast.Call]:
+        """Extract payload.get(...) from value, handling IfExp like 'x if cond else y'."""
+        if isinstance(value, ast.Call):
+            return value
+        if isinstance(value, ast.IfExp):
+            if isinstance(value.body, ast.Call):
+                return value.body
+        return None
+
+    class BodyVisitor(ast.NodeVisitor):
+        def visit_Assign(self, node: ast.Assign):
+            if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+                self.generic_visit(node)
+                return
+            lhs = node.targets[0].id
+            value = node.value
+
+            call_node = _extract_get_call(value)
+            if call_node is not None:
+                func = call_node.func
+                if isinstance(func, ast.Attribute) and func.attr == "get":
+                    obj_path = _get_path(func.value)
+                    key = _get_key_from_call(call_node)
+                    if obj_path is not None and key:
+                        new_path = obj_path + (key,)
+                        var_to_path[lhs] = new_path
+                        _ensure_branch(new_path)
+            elif isinstance(value, ast.Subscript):
+                slice_val = getattr(value.slice, "value", value.slice) if hasattr(value.slice, "value") else value.slice
+                key = slice_val.value if isinstance(slice_val, ast.Constant) else None
+                if key is not None:
+                    obj_path = _get_path(value.value)
+                    if obj_path is not None:
+                        new_path = obj_path + (str(key),)
+                        var_to_path[lhs] = new_path
+                        _ensure_branch(new_path)
+            self.generic_visit(node)
+
+        def visit_Call(self, node: ast.Call):
+            func = node.func
+            if isinstance(func, ast.Attribute) and func.attr == "get":
+                obj_path = _get_path(func.value)
+                key = _get_key_from_call(node)
+                if obj_path is not None and key:
+                    _ensure_branch(obj_path + (key,))
+            elif isinstance(func, ast.Name):
+                if func.id in ("require_param", "require_param_truthy") and len(node.args) >= 2:
+                    val_arg = node.args[0]
+                    key_arg = node.args[1]
+                    key_str = None
+                    if isinstance(key_arg, ast.Constant):
+                        key_str = key_arg.value
+                    elif isinstance(key_arg, ast.Str):
+                        key_str = key_arg.s
+                    if key_str:
+                        val_path = _get_path(val_arg)
+                        inferred_type = "dict" if func.id == "require_param_truthy" else "str"
+                        if val_path:
+                            _set_in_tree(val_path, inferred_type, required=True)
+                        else:
+                            for param in param_names:
+                                _ensure_branch((param, key_str))
+            self.generic_visit(node)
+
+    try:
+        visitor = BodyVisitor()
+        for _ in range(3):
+            prev_len = len(var_to_path)
+            visitor.visit(method_node)
+            if len(var_to_path) == prev_len:
+                break
+    except Exception:
+        pass
+
+    def _to_clean_tree(d: dict) -> dict:
+        out = {}
+        for k, v in d.items():
+            if k.startswith("_"):
+                continue
+            if isinstance(v, dict) and "_type" in v:
+                out[k] = v.get("_type", "Any")
+            elif isinstance(v, dict):
+                out[k] = _to_clean_tree(v)
+            else:
+                out[k] = v
+        return out
+
+    return _to_clean_tree(tree) if tree else {}
+
+
 class StructInspector(ast.NodeVisitor):
 
     """
@@ -25,8 +194,15 @@ class StructInspector(ast.NodeVisitor):
     def __init__(self, G):
         self.current_class: Optional[str] = None
         self.g = GUtils(G=G)
-
         self.qfu = QFUtils(G=G)
+
+    def visit_ClassDef(self, node: ast.ClassDef):
+        """Track current class for method resolution."""
+        prev = self.current_class
+        self.current_class = node.name
+        self.generic_visit(node)
+        self.current_class = prev
+
     # B. Visit Methods (Sync/Async)
     def visit_FunctionDef(self, node: ast.FunctionDef):
         self._process_function(node)
@@ -35,44 +211,53 @@ class StructInspector(ast.NodeVisitor):
         self._process_function(node)
 
     def _process_function(self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]):
-        """Processes methods (or standalone functions, if not in class)."""
+        """Processes methods (or standalone functions, if not in class).
+        Creates a direct callable for each function/method that can be invoked
+        without passing self or class instance (for methods, instantiates internally).
+        """
         try:
-            #print("node", node, type(node))
-
             method_name = node.name
-
-            method_id = method_name
+            has_self = _has_self_param(node)
+            method_id = f"{self.current_class}.{method_name}" if self.current_class else method_name
             print(f"CREATE METHOD:{self.module_name}:", method_id)
 
-            if not method_id.startswith("_"):
+            if not method_name.startswith("_"):
 
                 print("Get Method Data")
                 return_type = _get_type_name(node.returns)
-                #print("return_type", return_type)
-
                 docstring = _get_docstring(node)
-                #print("docstring", docstring)
 
                 return_key = self.extract_return_statement_expression(
                     method_node=node,
                 )
                 print(f"RETURN KEY FOR METHOD {method_name}", return_key)
-                # VALID RETURN VARIABEL NAMES
                 if len(return_key.split(" ")) == 0:
-                    return_key=method_id
+                    return_key = method_id
 
                 entire_def = ast.unparse(node)
+
+                callable_fn = _make_direct_callable(
+                    module_name=self.module_name,
+                    method_name=method_name,
+                    class_name=self.current_class,
+                    has_self=has_self,
+                )
+
+                p_tree = _extract_param_tree(node)
+                #p_tree_str = json.dumps(p_tree) if p_tree else "{}"
 
                 data = {
                     "nid": method_id,
                     "tid": 0,
                     "parent": ["MODULE"],
                     "type": "METHOD",
-                    'return_key': return_key,
-                    'returns': return_type,
-                    'docstring': docstring,
+                    "return_key": return_key,
+                    "returns": return_type,
+                    "docstring": docstring,
                     "code": entire_def,
                     "module_id": self.module_name,
+                    "callable": callable_fn,
+                    "p_tree": p_tree,
                 }
 
                 # 1. METHOD Node

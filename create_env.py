@@ -240,26 +240,39 @@ class EnvCreatorProcess:
     def create_env_variables(self, env_id, cfg:dict=None) -> dict:
         print("create_env_variables...")
         cfg = cfg or {}
+        # Resolve project/dataset for guard VM data upserts
+        bq_project = (
+            os.environ.get("BQ_PROJECT")
+            or os.environ.get("GCP_PROJECT_ID")
+            or os.environ.get("GCP_ID")
+            or "aixr-401704"
+        )
+
+        bq_dataset = (
+            os.environ.get("BQ_DATASET")
+            or os.environ.get("DATASET_ID")
+            or "QBRAIN"
+        )
+
+        testing_flag = os.environ.get("TESTING", "false")
+        cfg = {
+            str(k): str(v) #(json.dumps(v) if not isinstance(v, str) else v)
+            for k, v in cfg.items()
+        }
         env_vars_dict = {
             "DOMAIN": "www.bestbrain.tech",
             "GCP_ID": "aixr-401704",
             "DATASET_ID": "QBRAIN",
             "BQ_DATA_TABLE": f"{env_id}_data",
-            "LOGGING_DIR": "tmp/ray",
             "ENV_ID": env_id,
             "USER_ID": self.user_id,
-            #"FIREBASE_RTDB": os.environ.get("FIREBASE_RTDB"),
-            #"FB_DB_ROOT": f"users/{self.user_id}/env/{env_id}",
             "DELETE_POD_ENDPOINT": "gke/delete-pod/",
-            #"GKE_SIM_CLUSTER_NAME": os.environ.get("GKE_SIM_CLUSTER_NAME"),
             "SG_DB_ID": env_id,
-            #"GEMINI_API_KEY": os.environ["GEMINI_API_KEY"],
-            **{
-                k: v #(json.dumps(v) if not isinstance(v, str) else v)
-                for k, v in cfg.items()
-            },
+            "BQ_PROJECT": bq_project,
+            "BQ_DATASET": bq_dataset,
+            **cfg,
         }
-        pprint.pp(env_vars_dict)
+        #pprint.pp(env_vars_dict)
         print("create_env_variables... done")
         return env_vars_dict
 

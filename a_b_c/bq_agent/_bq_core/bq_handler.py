@@ -59,7 +59,16 @@ class BQGroundZero:
             print(f"Dataset '{ds_name}' created successfully.")
 
 
-
+    def seelct_item(self, table):
+        return f"""
+                    SELECT *
+                    FROM (
+                        SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY created_at DESC) as row_num
+                        FROM `{self.ds_ref}.{table}`
+                        WHERE (user_id = @user_id OR user_id = 'public') AND (status != 'deleted' OR status IS NOT NULL)
+                    )
+                    WHERE row_num = 1
+                """
 
     def upsert_query(self, table_id):
         return f"""
@@ -660,8 +669,7 @@ class BQCore(BQGroundZero):
             alter_query = f"ALTER TABLE `{table_ref}` ADD COLUMN {column_name} {column_type}"
             self.bqclient.query(alter_query).result()
             print(f"[OK] Column '{column_name}' added successfully.")
-        else:
-            print(f"[OK] Column '{column_name}' already exists.")
+
 
 
     def list_tables(self) -> list:

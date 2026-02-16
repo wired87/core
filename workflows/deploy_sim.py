@@ -3,7 +3,6 @@ import os
 from typing import Union, List, Any
 
 from auth.set_gcp_auth_creds_path import set_gcp_auth_path
-from bob_builder.artifact_registry.artifact_admin import ArtifactAdmin
 from compute_engine import VMMaster
 from create_env import EnvCreatorProcess
 from utils.run_subprocess import exec_cmd
@@ -183,20 +182,23 @@ class DeploymentHandler(VMMaster):
     All gcloud/docker commands are executed via a simple function.
     """
     def __init__(self, user_id):
-        VMMaster.__init__(self)
-        # --- Load and Assign Variables using os.getenv ---
-        self.project_id = self._get_env("GCP_PROJECT_ID", "Project ID")
-        self.region = self._get_env("GCP_REGION", "GCP Region")
-        self.zone = self._get_env("GCP_ZONE", "Compute Engine Zone")
+        # Load env first so VMMaster gets correct project/zone
+        project_id = self._get_env("GCP_PROJECT_ID", "Project ID")
+        zone = self._get_env("GCP_ZONE", "Compute Engine Zone")
+        region = self._get_env("GCP_REGION", "GCP Region")
+        VMMaster.__init__(self, project_id=project_id, zone=zone)
+        self.project_id = project_id
+        self.region = region
+        self.zone = zone
 
-        self.user_id=user_id
+        self.user_id = user_id
         self.env_creator = EnvCreatorProcess(self.user_id)
         self.port = 8000
 
         self.test_vm_cfg: dict[str, Any] = {
             "instance_name": "test-vm-minimal-01",
             "machine_type": "e2-micro",
-            "source_image": "projects/debian-cloud/global/images/family/debian-11",
+            "source_image": "projects/deeplearning-platform-release/global/images/family/common-cu121-debian-11", #"projects/debian-cloud/global/images/family/debian-11",
             "network": "global/networks/default",
             "tags": ["test-vm", "ephemeral"],
             "metadata": {
@@ -219,8 +221,6 @@ class DeploymentHandler(VMMaster):
             "boot_disk_type": "pd-balanced",
         }
 
-
-
     def _get_env(self, key, description):
         """Helper function to retrieve env var or exit if missing."""
         value = os.getenv(key)
@@ -229,68 +229,190 @@ class DeploymentHandler(VMMaster):
             sys.exit(1)
         return value
 
-    def get_vm_cfg(
-        self,
-        testing,
-        instance_name,
-        image,
-        container_env,
-    ):
-        print(f"{testing} create_vm {instance_name}")
-
-        if testing is True:
-                cfg = self.test_vm_cfg
-        else:
-            cfg = self.get_prod_vm_cfg(
-                instance_name,
-                image,
-                container_env,
-            )
-        return cfg
-
-    def create_vm(
-            self,
-            cfg,
-        ):
-        try:
-            self.create_instance(
-                **cfg
-            )
-            print("Created vm")
-        except Exception as e:
-            print(f"Err creating vm: {e}")
 
     def get_prod_vm_cfg(
             self,
-            instance_name,
-            container_image,
-            container_env,
+            instance_name: str,
+            container_image: str,
+            container_env: dict,
+            testing: bool = False  # Neuer Parameter
     ) -> dict[str, Any]:
-        return {
+        print(f"Generiere VM-Config (Mode: {'TESTING' if testing else 'PROD'}) für {instance_name}")
+
+        # Standard-Werte für Produktion
+        machine_type = "n1-standard-16"
+        gpu_type = "nvidia-tesla-t4"
+        gpu_count = 1
+        tags = [
+            "allow-ssh-via-iap",
+            "http-server",
+            "https-server",
+            "lb-health-check",
+        ]
+        env_label = "prod"
+        # Fallback für Testing (2 Cores, No GPU)
+        if testing is True:
+            machine_type = "e2-standard-2"  # 2 Cores, günstigere E2-Serie
+            gpu_type = None
+            gpu_count = 0
+            env_label = "test"
+
+        startup_script_content = self.generate_startup_script(
+            container_env,
+            container_image,
+        )
+
+        config = {
             "instance_name": instance_name,
-            "machine_type": "n1-standard-16",
-            "source_image": "projects/debian-cloud/global/images/family/debian-11",
+            "machine_type": machine_type,
+            "source_image": "projects/deeplearning-platform-release/global/images/family/common-cu121-debian-11",#"projects/debian-cloud/global/images/family/debian-11",
             "network": "global/networks/default",
-            "tags": ["production", "gpu-worker", "quantum-sim"],
+            "tags": tags,
             "metadata": {
                 "owner": instance_name,
-                "env": "prod",
-                "project_id": "aixr-401704"
+                "env": env_label,
+                "project_id": "aixr-401704",
+                "startup-script":startup_script_content
             },
-            # IMPORTANT: Replace with your actual GSA that has Compute Instance Admin role
-            #"service_account": os.getenv("SACC_NAME"),
+            #
             "scopes": [
                 "https://www.googleapis.com/auth/cloud-platform"
             ],
-            # 2. GPU Configuration (1 GPU requested)
-            "gpu_type": "nvidia-tesla-t4",
-            "gpu_count": 1,
-            # 3. Custom Container Image
             "container_image": container_image,
             "container_env": container_env,
             "boot_disk_size_gb": 30,
             "boot_disk_type": "pd-balanced",
         }
+
+        # Nur GPU-Felder hinzufügen, wenn wir nicht im Testmodus sind
+        if not testing:
+            config["gpu_type"] = gpu_type
+            config["gpu_count"] = gpu_count
+        return config
+
+
+    def generate_startup_script2(
+            self,
+            container_env,
+            image_name,
+    ):
+        """
+        Erstellt ein dynamisches Bash-Script für den VM-Start.
+        """
+        # Wandelt das Dictionary {KEY: VAL} in Docker-Format "-e KEY=VAL" um
+        env_flags = " ".join([f"-e {k}='{v}'" for k, v in container_env.items()])
+
+        script = f"""
+        #!/bin/bash
+        
+        
+        apt-get update
+        apt-get install -y nvidia-container-toolkit
+        nvidia-ctk runtime configure --runtime=docker
+        systemctl restart docker
+        
+        
+        
+        docker run --restart always --gpus all \\
+            {env_flags} \\
+            {image_name}         
+        echo "Startup script finished - Container is running."
+        """
+        return script
+
+    import os
+
+    def generate_startup_script(
+            self,
+            container_env: dict,
+            container_image: str = "us-central1-docker.pkg.dev/aixr-401704/qfs-repo/qfs:latest",
+            image_name: str = None,
+    ):
+        """
+        Erstellt ein Bash-Script, das Docker + GPU-Treiber installiert und den Container startet.
+        Extrahiert Default-Werte dynamisch aus dem container_image Pfad.
+        """
+
+        # 1. Fallback für den lokalen Container-Namen (z.B. extrahiert 'qfs' aus dem Pfad)
+        if image_name is None:
+            # Extrahiert den Teil nach dem letzten '/' und vor dem ':'
+            # us-central1-docker.pkg.dev/.../qfs:latest -> qfs
+            image_name = container_image.split('/')[-1].split(':')[0]
+
+        # 2. Wandelt das Dictionary in Docker-Format "-e KEY=VAL" um
+        env_flags = " ".join([f"-e {k}='{v}'" for k, v in container_env.items()])
+
+        # 3. Extrahiere die Region für die Registry-Auth (us-central1, europe-west10, etc.)
+        try:
+            registry_region = container_image.split('-docker.pkg.dev')[0].split('/')[-1]
+        except IndexError:
+            registry_region = "us-central1"  # Sicherer Fallback
+
+        # WICHTIG: Text nach links gerückt, damit keine Leerzeichen vor #!/bin/bash landen
+        script = f"""#!/bin/bash
+        set -e
+    
+        echo "--- Starte System-Vorbereitung ---"
+        
+        # 1. Docker installieren (falls nicht vorhanden)
+        if ! command -v docker &> /dev/null; then
+            apt-get update
+            apt-get install -y docker.io
+            systemctl start docker
+            systemctl enable docker
+        fi
+    
+        # 2. NVIDIA Container Toolkit installieren
+        if ! dpkg -l | grep -q nvidia-container-toolkit; then
+            curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+            curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \\
+                sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \\
+                tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+            apt-get update
+            apt-get install -y nvidia-container-toolkit
+            nvidia-ctk runtime configure --runtime=docker
+            systemctl restart docker
+        fi
+    
+        # 3. Authentifizierung an der Google Artifact Registry
+        gcloud auth configure-docker {registry_region}-docker.pkg.dev --quiet
+    
+        # 4. Container ziehen und starten
+        echo "--- Starte Container: {image_name} ---"
+        docker pull {container_image}
+    
+        # Falls ein alter Container mit gleichem Namen läuft, diesen entfernen
+        docker rm -f {image_name} || true
+    
+        docker run -d \\
+            --name {image_name} \\
+            --restart always \\
+            --gpus all \\
+            {env_flags} \\
+            {container_image}
+    
+        echo "--- Startup script finished - Container is running ---"
+        """
+
+        # Debug Output
+        print(f"Startup Script erstellt für Image: {container_image}")
+        print(f"Lokaler Container-Name: {image_name}")
+
+        # Lokales Speichern zur Kontrolle
+        save_path = r"C:\Users\bestb\PycharmProjects\BestBrain\test_startup.sh"
+        try:
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            with open(save_path, "w", newline='\n') as outfile:
+                outfile.write(script)
+        except Exception as e:
+            print(f"Hinweis: Konnte Datei nicht lokal speichern ({e}), gebe Script aber zurück.")
+
+        return script
+
+
+
+
+
 
 
 

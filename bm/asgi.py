@@ -41,10 +41,10 @@ def initialize_qbrain_tables():
     try:
         if os.getenv("TABLE_EXISTS") != "True":
             # Use centralized table manager
-            from core.qbrain_manager import QBrainTableManager
+            from core.qbrain_manager import get_qbrain_table_manager
 
             print("\n🔧 Initializing QBRAIN Table Manager...")
-            table_mgr = QBrainTableManager()
+            table_mgr = get_qbrain_table_manager()
 
             # Initialize all tables
             results = table_mgr.initialize_all_tables()

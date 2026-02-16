@@ -3,29 +3,28 @@ import networkx as nx
 from datetime import datetime
 from typing import List, Dict, Tuple
 
-from core.method_manager import MethodManager
-from core.param_manager.params_lib import ParamsManager
 from qf_utils.qf_utils import QFUtils
 from qf_utils.field_utils import FieldUtils
 from core.module_manager.mcreator import ModuleCreator
-from core.module_manager.ws_modules_manager.modules_lib import module_manager, generate_numeric_id
-from core.fields_manager.fields_lib import fields_manager
-from core.user_manager.user import UserManager
-from core.qbrain_manager import QBrainTableManager
+from core.module_manager.ws_modules_manager.modules_lib import generate_numeric_id
+from core.handler_utils import require_param, get_val
+from core.qbrain_manager import get_qbrain_table_manager
 
 _SM_DEBUG = "[SMManager]"
 
 
 class SMManager:
     def __init__(self):
-        self.module_db_manager = module_manager
-        self.field_manager = fields_manager
-
-        # Managers
-        self.user_manager = UserManager()
-        self.param_manager = ParamsManager()
-        self.method_manager = MethodManager()
-        self.qb = QBrainTableManager()
+        from core.managers_context import (
+            get_module_manager, get_field_manager,
+            get_user_manager, get_param_manager, get_method_manager,
+        )
+        self.module_db_manager = get_module_manager()
+        self.field_manager = get_field_manager()
+        self.user_manager = get_user_manager()
+        self.param_manager = get_param_manager()
+        self.method_manager = get_method_manager()
+        self.qb = get_qbrain_table_manager()
 
     def check_sm_exists(self, user_id: str = "public"):
         try:
@@ -363,21 +362,16 @@ class SMManager:
 # Instantiate
 sm_manager = SMManager()
 
-def handle_enable_sm(payload):
-    print("handle_enable_sm...")
-    auth = payload.get("auth", {})
-    user_id = auth.get("user_id")
-    session_id = auth.get("session_id")
-    env_id = auth.get("env_id")
-
-    if not all([user_id, session_id, env_id]):
-         return {"error": "Missing param for ENABLE_SM"}
-
-    # Call SM Manager to link SM modules to env
-    res = sm_manager.enable_sm(user_id, session_id, env_id)
-
-    # Returns {envs:[], fields:[]}
-    return {
-        "type": "ENABLE_SM",
-        "data": res
-    }
+def handle_enable_sm(data=None, auth=None):
+    """Enable SM (Stimulus Model) for a session and environment. Required: user_id, session_id, env_id (auth or data)."""
+    data, auth = data or {}, auth or {}
+    user_id = get_val(data, auth, "user_id")
+    session_id = get_val(data, auth, "session_id")
+    env_id = get_val(data, auth, "env_id")
+    if err := require_param(user_id, "user_id"):
+        return err
+    if err := require_param(session_id, "session_id"):
+        return err
+    if err := require_param(env_id, "env_id"):
+        return err
+    return {"type": "ENABLE_SM", "data": sm_manager.enable_sm(user_id, session_id, env_id)}
