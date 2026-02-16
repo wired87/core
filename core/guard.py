@@ -52,6 +52,8 @@ class Guard(
         field_manager=None,
         method_manager=None,
         injection_manager=None,
+        env_manager=None,
+        module_db_manager=None,
     ):
         print("Initializing Guard...")
 
@@ -63,19 +65,12 @@ class Guard(
         self.field_manager = field_manager
         self.method_manager = method_manager
         self.injection_manager = injection_manager
+        self.env_manager = env_manager
+        self.module_db_manager=module_db_manager
 
         self.deployment_handler = DeploymentHandler(
             user_id
         )
-
-        # DB MANAGERS (reuse shared instances where appropriate)
-        from core.managers_context import get_field_manager, get_method_manager, get_injection_manager
-        if self.field_manager is None:
-            self.field_manager = get_field_manager()
-        if self.method_manager is None:
-            self.method_manager = get_method_manager()
-        if self.injection_manager is None:
-            self.injection_manager = get_injection_manager()
 
         self.qb = get_qbrain_table_manager()
         print("DEBUG: QBrainTableManager initialized")

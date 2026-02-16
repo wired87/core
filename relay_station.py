@@ -24,7 +24,6 @@ from urllib.parse import parse_qs
 from predefined_case import RELAY_CASES_CONFIG
 from qf_utils.qf_utils import QFUtils
 
-
 from utils.deserialize import deserialize
 
 from chat_manger.main import AIChatClassifier

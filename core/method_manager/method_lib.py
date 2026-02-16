@@ -333,6 +333,7 @@ def handle_set_method(data=None, auth=None):
         return err
     if err := require_param_truthy(method_data, "data"):
         return err
+
     equation = method_data.get("equation")
     params = method_data.get("params")
 

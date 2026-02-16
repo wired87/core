@@ -113,7 +113,6 @@ class OrchestratorManager:
         self.user_manager = UserManager(_qb)
         self.param_manager = ParamsManager(_qb)
 
-
         self.research_agent = ResearchAgent(
             self.file_manager,
             self.gem,
@@ -130,8 +129,10 @@ class OrchestratorManager:
             self.g,
             user_id,
             self.field_manager,
-        self.method_manager,
+            self.method_manager,
             self.injection_manager,
+            self.env_manager,
+            self.module_db_manager,
         )
 
         self.cases = cases
