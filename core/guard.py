@@ -1,3 +1,4 @@
+import ast
 import base64
 import pprint
 
@@ -6,12 +7,15 @@ from itertools import product
 import numpy as np
 from bob_builder.artifact_registry.artifact_admin import ArtifactAdmin
 import networkx as nx
+
+from code_manipulation.graph_creator import StructInspector
 from utils.graph.local_graph_utils import GUtils
 from qf_utils.qf_utils import QFUtils
 
 from core.qbrain_manager import get_qbrain_table_manager
 
 from core.module_manager.mcreator import ModuleCreator
+from utils.math.operator_handler import OperatorHandler, EqExtractor, eq_extractor_main
 from qf_utils.all_subs import ALL_SUBS
 from utils._np.expand_array import expand_structure
 from utils.get_shape import extract_complex, get_shape
@@ -49,11 +53,12 @@ class Guard(
         qfu,
         g,
         user_id,
-        field_manager=None,
-        method_manager=None,
-        injection_manager=None,
-        env_manager=None,
-        module_db_manager=None,
+        field_manager,
+        method_manager,
+        injection_manager,
+        env_manager,
+        module_db_manager,
+        params_manager,
     ):
         print("Initializing Guard...")
 
@@ -67,7 +72,7 @@ class Guard(
         self.injection_manager = injection_manager
         self.env_manager = env_manager
         self.module_db_manager=module_db_manager
-
+        self.params_manager = params_manager
         self.deployment_handler = DeploymentHandler(
             user_id
         )
@@ -97,9 +102,16 @@ class Guard(
             self.qfu,
         )
 
+        self.eq_extractor = EqExtractor()
+        self.operator_handler = OperatorHandler(self.g)
+
         self.prev_state = None
         self.model_params = None
         self.fnished_modules = False
+
+        self.code_extractor = StructInspector(
+            G=self.g.G,
+        )
 
         self.fields = []
         print("Guard Initialized!")
@@ -155,6 +167,11 @@ class Guard(
         injections = env_data.get("injections", {})
         inj_ids = self.handle_injections(injections)
 
+
+        ##########
+        # OPERATORS
+        self.operator_handler.add_ops()
+
         print("create_nodes... done")
         return module_ids, field_ids, inj_ids
 
@@ -175,6 +192,7 @@ class Guard(
                         "type": "INJECTION",
                     }
                 )
+
                 # FIELD -> INJ
                 self.g.add_edge(
                     field_id,
@@ -498,6 +516,41 @@ class Guard(
             except Exception:
                 pass
 
+
+    def create_init_param_nodes(self, fid, param_ids):
+        print("create_init_param_nodes...")
+        res = self.qb.row_from_id(
+            param_ids,
+            table=self.params_manager.PARAMS_TABLE
+        )
+
+        fetched_params = {
+            item["id"]: item
+            for item in res
+        }
+
+        for k, v in fetched_params.items():
+            self.g.add_node(dict(
+                nid=k,
+                type="PARAMS",
+                param_type=v["param_type"],
+                value=v["value"],
+            ))
+
+            # FIELD -> PARAM
+            self.g.add_edge(
+                fid,
+                k,
+                attrs={
+                    "rel": "has_param",
+                    "src_layer": "FIELD",
+                    "trgt_layer": "PARAM",
+                }
+            )
+        print("create_init_param_nodes... done")
+
+
+
     def data_handler(self, env_id, env_data):
         """
         1. Parse payload to get IDs.
@@ -563,6 +616,13 @@ class Guard(
                     self.g.add_node(attrs)
                 else:
                     self.g.add_node({"nid": fid, "type": "FIELD"})
+
+                    # ADD PARAMS -> FIELDS
+                    self.create_init_param_nodes(
+                        fid,
+                        param_ids=attrs["params"]
+                    )
+
 
         # GET INJ BQ
         if inj_ids:
@@ -651,9 +711,7 @@ class Guard(
                     })
 
 
-
         self.handle_methods(module_ids=list(module_ids))
-
 
         print("Handling field interactants...")
         self.handle_field_interactants(
@@ -665,6 +723,45 @@ class Guard(
         self.extend_fields_keys()
 
         print("data_hanadler... done")
+
+
+
+
+    def process_methods(self):
+        # todo frontend usr must mark method as surrounding
+        # extend Graph with params -> connect operator edges (das system arbeitet
+        # wirklich nur auf Basis von Datentypen und
+        # operatoren
+        # am ende kalkulieren wir nur einzelne eq schritte (p->o->p) auf Basis von operator nd datentyp
+
+        """
+        Create a Operator handler class whcih handls the followoing workflows:
+        - receive GUtils instance in __init__
+        - create OPERATOR node (any possible)
+        - receives env_ids METHOD neighbors
+        - splits and convert each method["code"] to list -> Goal: [param, operator, param,...]
+        - create nodes for each param & operator and link logically together (p -> o -> p)
+       Implement the operator workflow withini the Gaurd.main workflow
+
+
+
+       cehck
+
+
+       Use method sys as db storage -> values (like) overlap ?
+       Pre define goal-> execute pathway
+
+
+
+        """
+
+
+
+
+
+
+
+
 
 
     def add_field_index(self, fid):
@@ -699,16 +796,23 @@ class Guard(
             modules,
         )
 
+        # create emthod strucutre to fill with
+        self.operator_handler.method_schema = self.get_empty_method_structure()
+
+
         # create iterator last
         iterators = self.set_iterator_from_humans()
 
         db_to_method_struct:dict = self.set_edge_db_to_method(modules, env_id)
 
-        method_struct:dict = self.method_layer(modules)
+        method_struct:dict = self.method_layer(
+            modules,
+            db_to_method_struct["VARIATION_INDICES"],
+        )
 
         method_to_db = self.set_edge_method_to_db()
 
-        injection_patterns = self.set_inj_pattern(env_node)
+        injection_patterns, flatten_e_map = self.handle_energy_components(env_node)
 
         components = {
             **self.DB,
@@ -717,10 +821,10 @@ class Guard(
             **injection_patterns,
             **db_to_method_struct,
             "METHOD_TO_DB": method_to_db,
+            "E_KEY_MAP_PER_FIELD": flatten_e_map,
         }
 
-        print("components created")
-        #pprint.pp(components)
+
         print("Main... done")
         return components
 
@@ -770,21 +874,21 @@ class Guard(
         return world_cfg
 
 
-
-
-    def set_inj_pattern(
+    def handle_energy_components(
             self,
             env_attrs,
             trgt_keys=["energy", "j_nu", "vev"], # injectable parameters
     ):
         # exact same format
-        print("set_inj_pattern...")
+        print("handle_energy_components...")
 
         INJECTOR = {
             "INJECTOR_TIME":[],
             "INJECTOR_INDICES":[],
             "INJECTOR_VALUES":[],
         }
+
+        flatten_e_map = []
 
         try:
             amount_nodes = env_attrs["amount_of_nodes"]
@@ -795,6 +899,8 @@ class Guard(
                 filter_key="type",
                 filter_value="MODULE"
             )
+
+            E_KEY_MAP_PER_FIELD = [[] for _ in range(len(modules))]
 
             for i, (mid, mattrs) in enumerate(modules):
                 if "GHOST" in mid.upper(): continue
@@ -816,6 +922,10 @@ class Guard(
                         if key_opt in f_keys:
                             # CKPT PARAM INDEX
                             field_rel_param_trgt_index = f_keys.index(key_opt)
+
+                            E_KEY_MAP_PER_FIELD[midx].append(
+                                field_rel_param_trgt_index
+                            )
 
                             # 5. Loop Injections
                             injections = self.g.get_neighbor_list_rel(
@@ -850,10 +960,14 @@ class Guard(
 
                                 print(f"set param pathway db from mod {midx} -> field {fattrs['nid']}({fi})")
                             break
-            print(f"set_inj_pattern... done")
+
+            # flatten E_KEY_MAP_PER_FIELD
+            for mod in E_KEY_MAP_PER_FIELD:
+                flatten_e_map.extend(mod)
+            print(f"handle_energy_components... done")
         except Exception as e:
-            print("Err set_inj_pattern", e)
-        return INJECTOR
+            print("Err handle_energy_components", e)
+        return INJECTOR, flatten_e_map
 
 
 
@@ -1075,7 +1189,55 @@ class Guard(
 
 
 
-    def method_layer(self, modules):
+
+
+    def create_method_param_nodes(self, modules):
+        """
+        todo before: fetch and add param nodes include type
+        Create Param nodes form fiedls
+        Goal:
+        """
+        for mid, module in modules:
+            # ghost does not have equation
+            if "GHOST" in mid.upper(): continue
+            # print("method_layer... working", mid)
+
+            fields = self.g.get_neighbor_list_rel(
+                trgt_rel="has_field",
+                node=mid,
+                as_dict=True,
+            )
+            for fid, fattrs in fields.items():
+                # PARAMS from METHOD
+                values = fattrs.get("fields", [])
+                keys = fattrs.get("keys", [])
+
+                for param, value in zip(keys, values):
+                    # type already exists
+                    self.g.update_node({
+                        "nid": param,
+                        "type": "PARAM",
+                        "value": value,
+                    })
+
+                    # PARAM -> FIELD
+                    self.g.add_edge(
+                        fid,
+                        param,
+                        attrs={
+                            "rel": "has_param",
+                            "src_layer": "FIELD",
+                            "trgt_layer": "PARAM",
+                        }
+                    )
+
+
+
+
+
+
+
+    def method_layer(self, modules, VARIATION_INDICES):
         print("method_layer... ")
 
         mod_len_exclude_ghost = len(modules) -1
@@ -1086,6 +1248,7 @@ class Guard(
             "METHODS": [[] for _ in range(mod_len_exclude_ghost)],
             "METHODS_PER_MOD_LEN_CTLR": [0 for _ in range(mod_len_exclude_ghost)],
         }
+
         mnames = [[] for _ in range(mod_len_exclude_ghost)]
         try:
             #print("method_layer compilation...")
@@ -1095,18 +1258,16 @@ class Guard(
                 #print("method_layer... working", mid)
 
                 midx:int = module.get("module_index")
-                #print("midx", midx)
 
-                #print("method_layer... module_index")
-
-                # GET MODULES METHODS
                 methods = self.g.get_neighbor_list_rel(
                     trgt_rel="has_method",
                     node=mid,
                     as_dict=True,
                 )
+
                 mids = list(methods.keys())
                 mlen:int = len(mids)
+
                 if not mlen:
                     print("method_layer... len methods", mlen)
                     continue
@@ -1117,7 +1278,7 @@ class Guard(
                 mnames[midx].extend(mids)
 
                 # Iterate Equations
-                for eqid, eqattrs in methods.items():
+                for i, (eqid, eqattrs) in enumerate(methods.items()):
                     # PARAMS from METHOD
                     params = eqattrs.get("params", [])
 
@@ -1128,17 +1289,22 @@ class Guard(
                         len(params)
                     )
 
+                    equation = eqattrs.get("equation")
+                    print("eq extracted", equation)
+
+                    # EXTRACT PARAMS & OPERATORS -> retrun inndice map to equation for each block
+                    method_indices: list[int] = eq_extractor_main(
+                        equation,
+                        eq_store_item=VARIATION_INDICES[i],
+                    )
+
                     method_struct["METHODS"][midx].append(
-                        eqattrs.get("jax_code", eqattrs.get("code"))
+                        method_indices
                     )
 
             # flatten
             flattened_methods = []
             for i, sublist in enumerate(method_struct["METHODS"]):
-                """
-                for j, mid in enumerate(mnames[i]):
-                    print(f"mod {i} method {j}: {mid}")
-                """
                 flattened_methods.extend(sublist)
 
             method_struct["METHODS"] = flattened_methods
@@ -1153,6 +1319,56 @@ class Guard(
         #pprint.pp(method_struct)
         print(f"method_layer... done")
         return method_struct
+
+    """
+    Todo
+    classfiy same (p-type -> operator -> p-type) - pairs
+    calc pairs in batch
+    """
+
+    def set_eq_operator_ctlr(self, modules):
+        # print("method_layer compilation...")
+        for mid, module in modules:
+            # ghost does not have equation
+            if "GHOST" in mid.upper(): continue
+            # print("method_layer... working", mid)
+
+            midx: int = module.get("module_index")
+
+            methods = self.g.get_neighbor_list_rel(
+                trgt_rel="has_method",
+                node=mid,
+                as_dict=True,
+            )
+
+            mids = list(methods.keys())
+            mlen: int = len(mids)
+
+            if not mlen:
+                print("method_layer... len methods", mlen)
+                continue
+
+            # Iterate Equations
+            for eqid, eqattrs in methods.items():
+                params = eqattrs.get("params")
+                equation = eqattrs.get("equation")
+                print("eq extractted", equation)
+
+                # set operator map eq based
+                self.operator_handler.process_code(
+                    code=equation,
+                    params=params,
+                    midc=midx
+                )
+        return self.operator_handler.operator_pathway_ctlr
+
+
+
+
+
+
+
+
 
 
     def set_edge_method_to_db(self):
@@ -1229,13 +1445,15 @@ class Guard(
         # todo for field index includ again
         mlen = len(modules)-1
         import json
+
         # db out gnn
         db_to_method = {
             "DB_TO_METHOD_EDGES": [[] for _ in range(mlen)],
             "DB_CTL_VARIATION_LEN_PER_EQUATION": [[] for _ in range(mlen)],
             "DB_CTL_VARIATION_LEN_PER_FIELD": [[] for _ in range(mlen)],
             "LEN_FEATURES_PER_EQ": self.get_empty_method_structure(set_zero=False),
-            "VARIATION_KEYS": [[] for _ in range(mlen)]
+            "VARIATION_KEYS": [[] for _ in range(mlen)],
+            "VARIATION_INDICES": [[] for _ in range(mlen)]
         }
 
         ghost_fields = self.g.get_neighbor_list_rel(
@@ -1308,10 +1526,15 @@ class Guard(
                             as_dict=True
                         )
 
-                        # > 500 ?
-
                         # LOOP EQ-PARAMS
+
+                        # todo if 3 (or more) identical keys include dict field, bool - map
+                        worked_params = {}
                         for pidx, pid in enumerate(params):
+                            if pid not in worked_params:
+                                # space collect fields
+                                worked_params[pid] = []
+
                             collected = False
 
                             param_collector = []
@@ -1324,10 +1547,17 @@ class Guard(
                             id_prev_val = pid.startswith("prev")
                             EXCLUDED_ORIGINS = ["neighbor", "interactant"]
 
+
                             if (
-                                pid in keys and (not is_prefixed or is_self_prefixed) and params_origin[pidx] not in EXCLUDED_ORIGINS
+                                pid in keys and
+                                    (not is_prefixed or is_self_prefixed) and
+                                    params_origin[pidx] not in EXCLUDED_ORIGINS and
+                                    fid not in worked_params[pid]
                             ):
                                 print(f"{pid} in {fid}")
+
+                                # Add field to param collection
+                                worked_params[pid].append(fid)
 
                                 time_dim = None
 
@@ -1341,6 +1571,7 @@ class Guard(
                                 elif is_self_prefixed:
                                     pid = pid[:-1]
 
+                                # directly sort in param arrays
                                 if time_dim is None:
                                     time_dim = 0
 
@@ -1369,11 +1600,12 @@ class Guard(
                                         ikeys = json.loads(ikeys)
 
                                     # param key in interactant field?
-                                    if pid in ikeys:
-                                        fmod = self.g.get_node(nid=fiattrs.get("module_id"))
+                                    if pid in ikeys and finid not in worked_params[pid]:
 
-                                        # collect maps for all interactants
-                                        #print("interactant pid", pid, o)
+                                        # Add field to param collection
+                                        worked_params[pid].append(fid)
+
+                                        fmod = self.g.get_node(nid=fiattrs.get("module_id"))
 
                                         nfield_index = fiattrs["field_index"]
 
@@ -1399,7 +1631,11 @@ class Guard(
                                         #print("convert ikeys", gikeys)
                                         gikeys = json.loads(gikeys)
 
-                                    if pid in gikeys:
+                                    if pid in gikeys and gfid not in worked_params[pid]:
+
+                                        # Add field to param collection
+                                        worked_params[pid].append(fid)
+
                                         gfield_index = gfattrs["field_index"]
 
                                         pindex = gikeys.index(pid)
@@ -1433,15 +1669,16 @@ class Guard(
 
                             field_eq_param_struct.append(param_collector)
 
-                        #print(f"finished field_eq_param_struct for {fid}:")
-                        #print(f"field_eq_param_struct {eqid} {fid}", len(field_eq_param_struct))
-                        #pprint.pp(field_eq_param_struct)
-
+                        # get scaled soa [[a,a], [b,b]
                         expand_field_eq_variation_struct = expand_structure(
                             struct=field_eq_param_struct
                         )
 
-                        # fehelr: eq_idx ist relativ an modul bound.
+                        param_struct = {}
+                        for key, value in zip(params, expand_field_eq_variation_struct):
+                            param_struct[key] = value
+                        db_to_method["VARIATION_INDICES"][m_idx].append(param_struct)
+
                         # todo: untertiele method nach modul index.
                         #  mach heir das gleiche und flatte im Anschlusse
 
@@ -1450,8 +1687,6 @@ class Guard(
                             db_to_method["DB_TO_METHOD_EDGES"][m_idx].extend(item)
                             #print(f"module {mid} ({m_idx}) expand_field_eq_variation_struct item {eqid}", item)
                             # todo calc just / len(method_param) to sort them
-
-                        #print("expand_field_eq_variation_struct", len(expand_field_eq_variation_struct))
 
                         field_variations_eq = len(expand_field_eq_variation_struct)
                         EQ_AMOUNT_VRIATIONS += field_variations_eq
@@ -1483,6 +1718,7 @@ class Guard(
             for item in db_to_method["DB_CTL_VARIATION_LEN_PER_EQUATION"]:
                 flatten_amount_variations.extend(item)
             db_to_method["DB_CTL_VARIATION_LEN_PER_EQUATION"] = flatten_amount_variations
+
 
             # for sepparation for the sum process
             flatten_amount_variations_per_field = []
@@ -1665,7 +1901,6 @@ class Guard(
 
 
     def get_modules_methods(self, mid):
-        import json
         methods = {}
         method_nodes = self.g.get_neighbor_list_rel(
             trgt_rel="has_method",
@@ -1724,7 +1959,6 @@ class Guard(
             filter_key="type",
             filter_value="MODULE",
         )
-        import json
         modules_struct = []
         try:
 

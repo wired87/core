@@ -25,10 +25,11 @@ ENV_SCHEMA = [
 
 class EnvManager:
     DATASET_ID = "QBRAIN"
-    TABLE_ID = "envs"
+
 
     def __init__(self, qb):
         self.qb = qb
+        self.TABLE_ID = "envs"
         self.pid = qb.pid
         self.bqclient = qb.bqclient
         self.run_query = qb.run_query

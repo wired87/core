@@ -9,7 +9,6 @@ import networkx as nx
 from code_manipulation.graph_creator import StructInspector
 from core.orchestrator_manager.orchestrator import OrchestratorManager
 
-from core.guard import Guard
 
 import asyncio
 
@@ -159,8 +158,6 @@ class Relay(
 
         # Core components (g, qfu, guard, orchestrator) created in connect() when user_id is known
         self.g = GUtils(nx_only=False, G=nx.Graph(), g_from_path=None)
-        self.qfu = QFUtils(g=self.g)
-        self.guard = Guard(self.qfu, self.g, self.user_id)
         self.orchestrator = None
 
 
@@ -505,7 +502,7 @@ class Relay(
                 return
 
             if isinstance(orchestrator_response, dict):
-                self.send_message(orchestrator_response)
+                await self.send_message(orchestrator_response)
 
             print(f"{_RELAY_DEBUG} receive: unknown command type (unhandled): {data_type}")
         except Exception as e:
@@ -527,58 +524,6 @@ class Relay(
         print(f"{_RELAY_DEBUG} receive: orchestrator handled type={res_type}")
         return_data = json.dumps(orchestrator_response, default=str)
         await self.send(text_data=return_data)
-
-
-    async def batch_inject_env(self, payload):
-        try:
-            print(f"{_RELAY_DEBUG} batch_inject_env: parsing payload")
-            data = payload.get("data", {})
-            config = payload.get("config", {})
-            if not config and "data" in payload and "config" in payload["data"]:
-                config = payload["data"]["config"]
-            elif not config and "config" in data:
-                config = data["config"]
-            if not config:
-                print(f"{_RELAY_DEBUG} batch_inject_env: no config found in payload; skipping")
-                return
-            print(f"{_RELAY_DEBUG} batch_inject_env: processing {len(config)} env(s): {list(config.keys())}")
-
-            for env_id, env_data in config.items():
-                try:
-                    print(f"{_RELAY_DEBUG} batch_inject_env: env_id={env_id}")
-                    if not getattr(self, "world_creator", None) or not getattr(self.world_creator, "env_id_map", None):
-                        print(f"{_RELAY_DEBUG} batch_inject_env: skipping invalid env_id (no world_creator.env_id_map): {env_id}")
-                        await self.send(text_data=json.dumps({
-                            "type": "deployment_error",
-                            "admin_data": {"msg": f"skipping invalid env id: {env_id}"},
-                        }))
-                        continue
-                    self.guard.sim_start_process(env_id, env_data)
-                    await self.send(text_data=json.dumps({
-                        "type": "deployment_success",
-                        "admin_data": {"msg": f"Deployed machine to {env_id}"},
-                    }))
-                    print(f"{_RELAY_DEBUG} batch_inject_env: deployed env_id={env_id}")
-                except Exception as e:
-                    print(f"{_RELAY_DEBUG} batch_inject_env: deployment error for env_id={env_id}: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    await self.send(text_data=json.dumps({
-                        "type": "deployment_error",
-                        "admin_data": {"msg": f"Failed to deploy machine to {env_id}: {str(e)}"},
-                    }))
-            print(f"{_RELAY_DEBUG} batch_inject_env: finished")
-        except Exception as e:
-            print(f"{_RELAY_DEBUG} batch_inject_env: error: {e}")
-            import traceback
-            traceback.print_exc()
-            try:
-                await self.send(text_data=json.dumps({
-                    "type": "deployment_error",
-                    "admin_data": {"msg": str(e)},
-                }))
-            except Exception as send_err:
-                print(f"{_RELAY_DEBUG} batch_inject_env: could not send error response: {send_err}")
 
 
 

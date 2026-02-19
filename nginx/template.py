@@ -21,7 +21,6 @@ server {
     # --- Application proxy (Django/FastAPI/ASGI on localhost) ---
     location / {
         proxy_pass http://127.0.0.1:<APP_PORT>;
-
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Real-IP $remote_addr;

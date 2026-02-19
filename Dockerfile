@@ -1,53 +1,51 @@
-# Use a slim Python image
-FROM python:3.10-slim AS base
+# --- Build Stage ---
+FROM python:3.10-slim AS builder
 
-# Set build argument for GitHub Access Key (Passed at build time)
-
-# Set a dedicated working directory (not root)
 WORKDIR /usr/src/app
 
-### 🔹 SUBMODULE HANDLING (Using HTTPS with Token)
-
-# Install git
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
-
-
-### 🔹 MAIN BUILD
-
-# Install system dependencies for building
+# System-Abhängigkeiten für Build-Prozesse
 RUN apt-get update && apt-get install -y \
-    build-essential  \
-    libpq-dev && \
-    rm -rf /var/lib/apt/lists/*
+    build-essential \
+    libpq-dev \
+    git \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy only requirements first for caching dependencies
-COPY r.txt ./
+# Cache-Optimierung für Pip
+COPY r.txt .
+RUN pip install --user --no-cache-dir -r r.txt
 
-# Install dependencies with no cache
-RUN pip install -r r.txt
+# --- Final Stage ---
+FROM python:3.10-slim AS runner
 
-# Copy the rest of the project files into the working directory
+WORKDIR /usr/src/app
+
+# Kopiere installierte Pakete vom Builder
+COPY --from=builder /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
+
+# Installiere Nginx (falls du beides in einem Container/Pod nutzt)
+# Hinweis: In Cloud-Umgebungen läuft Nginx oft separat.
+RUN apt-get update && apt-get install -y nginx && rm -rf /var/lib/apt/lists/*
+
+# Projekt-Dateien kopieren
 COPY . .
 
-# Ensure nginx templates/scripts are available inside the image (e.g. for CI rendering)
-COPY nginx ./nginx
-
-# Set environment variables
-ENV PYTHONPATH=/usr/src/app:$PYTHONPATH
-ENV PYTHONUNBUFFERED=1 \
+# Umgebungsvariablen für JAX/Django/Nginx
+ENV PYTHONPATH=/usr/src/app \
+    PYTHONUNBUFFERED=1 \
     PORT=8080 \
-    DJANGO_SETTINGS_MODULE=bm.settings \
-    #DEBUG=0 \
-    GCS_MOUNT_PATH=/mnt/bucket/
+    NGINX_APP_PORT=8080 \
+    DJANGO_SETTINGS_MODULE=bm.settings
 
-# Copy the startup script
-COPY startup.sh .
+# 🔹 Rendering der Nginx-Config während des Builds (für Default-Werte)
+# Dies nutzt dein render_nginx_conf.py Skript
+RUN python3 -m nginx.render_nginx_conf
 
-# Make the script executable
+# Startup-Skript ausführbar machen
 RUN chmod +x startup.sh
 
-# Expose the application port
-EXPOSE 8080
+# Port 80 für Nginx und 8080 für Daphne
+EXPOSE 80 8080
 
-# Run Django using Gunicorn
-CMD ["./startup.sh"]
+# Nutze das Startup-Skript, um Env-Variablen zur Laufzeit in Nginx zu injizieren
+CMD ["/bin/bash", "./startup.sh"]

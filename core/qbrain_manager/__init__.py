@@ -163,7 +163,7 @@ class QBrainTableManager:
                 "created_at": "TIMESTAMP",
                 "updated_at": "TIMESTAMP",
                 "code": "STRING",
-                "jax_code": "STRING",
+                "derivate": "STRING",
                 "module_id": "STRING",
             }
         },
