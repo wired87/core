@@ -4,7 +4,6 @@ entwickel und teste ein ravity modell.
 zeig mir alle files an
 
 """
-from vertex_rag import VertexRagEngine
 
 """
 Orchestrator Manager
@@ -53,7 +52,7 @@ from core.injection_manager import InjectionManager
 from core.module_manager.ws_modules_manager import ModuleWsManager
 from core.param_manager.params_lib import ParamsManager
 from core.user_manager import UserManager
-
+from core.file_manager.file_lib import FileManager
 from chat_manger.main import AIChatClassifier
 from core.env_manager.env_lib import EnvManager
 from core.guard import Guard
@@ -65,7 +64,7 @@ from core.researcher2.researcher2.core import ResearchAgent
 from predefined_case import RELAY_CASES_CONFIG
 from qf_utils.qf_utils import QFUtils
 from utils.graph.local_graph_utils import GUtils
-from core.file_manager.file_lib import FileManager
+
 from core.managers_context import set_orchestrator, reset_orchestrator
 
 
@@ -123,11 +122,12 @@ class OrchestratorManager:
         self.user_id = user_id
 
         self.g = GUtils()
-        self.qfu = QFUtils()
+        self.qfu = QFUtils(g=self.g)
+
         self.guard = Guard(
-            self.qfu,
-            self.g,
-            user_id,
+            qfu=self.qfu,
+            g=self.g,
+            user_id=user_id,
             field_manager=self.field_manager,
             method_manager=self.method_manager,
             injection_manager=self.injection_manager,

@@ -158,7 +158,7 @@ class WorldCreationWf:
             # print("admin_data[metadata]", admin_data["metadata"])
             for node_id, metadata in data["metadata"].items():
                 meta_of_interst = {k: v for k, v in metadata.items() if k not in ["id"]}
-                print(f"add {meta_of_interst} to {node_id}")
+                #print(f"add {meta_of_interst} to {node_id}")
 
                 # NODE FROM ALL_SUBS?
                 node_valid:bool = self.validate_meta_nid(

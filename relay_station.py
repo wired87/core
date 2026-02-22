@@ -21,7 +21,6 @@ from asgiref.sync import sync_to_async
 from urllib.parse import parse_qs
 
 from predefined_case import RELAY_CASES_CONFIG
-from qf_utils.qf_utils import QFUtils
 
 from utils.deserialize import deserialize
 
@@ -280,11 +279,6 @@ class Relay(
                 return
             self.user_id = resolved_user_id
             print(f"{_RELAY_DEBUG} connect: user_id saved locally: {self.user_id}")
-
-            # Create graph, query utils, guard once (user_id known); inject into orchestrator to avoid duplicates
-            # OrchestratorManager init is sync (BQCore, managers, Guard) - must run in thread pool
-            # to avoid blocking the event loop and causing "took too long to shut down and was killed"
-            print(f"{_RELAY_DEBUG} connect: initializing g, qfu, guard, orchestrator")
 
             def _create_orchestrator(cases, user_id):
                 return OrchestratorManager(cases, user_id=user_id)

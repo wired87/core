@@ -281,7 +281,7 @@ class BQGroundZero:
             s.append(bigquery.SchemaField(k, v, mode="NULLABLE"))
         return s
 
-    def run_query(self, query: str or list, conv_to_dict=False, job_config=None):
+    def run_query(self, query: str or list, conv_to_dict=False, job_config=None, await_result=False):
         try:
             if isinstance(query, list):
                 query = ";\n".join(query)
@@ -457,12 +457,10 @@ class BQCore(BQGroundZero):
             try:
                 table = self.bqclient.get_table(self.get_table_name(table_name))
                 schema = {field.name: field.field_type for field in table.schema}
-                # print(f"table schema {table_name}", schema)
-                print(f"schema received: {schema}")
                 return schema
             except Exception as e:
                 print("table name not exists", e)
-                table=self.get_create_bq_table(
+                table = self.get_create_bq_table(
                     table_name=table_name,
                     ttype="edge" if any(c.islower() for c in table_name) else "node",
                 )
@@ -472,12 +470,23 @@ class BQCore(BQGroundZero):
 
     def update_bq_schema(self, table, rows):
         try:
+            #if schema is None:
             schema = self.bq_get_table_schema(table_name=table)
-            print(f"Schema for {table}:{schema}")
+
+            if isinstance(schema, list):
+                existing_columns = list(field.name for field in schema)
+            elif isinstance(schema, dict):
+                existing_columns = list(schema.keys())
+            else:
+                existing_columns = []
+
+            print(f"Schema for {table}:{existing_columns}")
+            #print("rows", rows)
             all_queries = []
             for r in rows:
                 for k, v in r.items():
-                    if schema is not None and k not in schema:
+                    if schema is not None and k not in existing_columns:
+                        print(f"add {k} to {existing_columns}")
                         all_queries.append(self.add_col_query(
                             col_name=k,
                             table=table,
@@ -488,7 +497,7 @@ class BQCore(BQGroundZero):
             if len(all_queries):
                 print("Update BQ schema")
                 for query in all_queries:
-                    self.run_query(query)
+                    self.run_query(query, await_result=True)
             print("finished update_bq_schema")
         except Exception as e:
             print("Err update_bq_schema:", e)
@@ -602,7 +611,6 @@ class BQCore(BQGroundZero):
         ds_id = ds_id or self.ds_id
         return f"{self.pid}.{ds_id}"
 
-    import json
 
     def bq_insert(self, table_id: str, rows: List[dict], upsert=False, ds_id=None):
         table_ref, schema = self.ensure_table_exists(table_id, rows, ds_id)
@@ -636,7 +644,7 @@ class BQCore(BQGroundZero):
                 else:
                     errors = self.bqclient.insert_rows_json(table=table_ref, json_rows=batch_chunk)
                     if errors:  # Retry logic
-                        print(f"Warning: Insert failed, retrying in 5s... Errors: {errors}")
+                        print(f"Warning: Insert failed for {batch_chunk}, retrying in 5s... Errors: {errors}")
                         time.sleep(5)
                         errors = self.bqclient.insert_rows_json(table=table_ref, json_rows=batch_chunk)
                         if errors:

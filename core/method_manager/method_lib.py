@@ -8,7 +8,7 @@ from google.cloud import bigquery
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 from core.method_manager.gen_type import generate_methods_out_schema
 from core.method_manager.xtrct_prompt import xtrct_method_prompt
-from core.qbrain_manager import get_qbrain_table_manager
+from core.qbrain_manager import get_qbrain_table_manager, QBrainTableManager
 from core.handler_utils import require_param, require_param_truthy, get_val
 from qf_utils.qf_utils import QFUtils
 # 
@@ -45,7 +45,7 @@ class MethodManager:
     METHODS_TABLE = "methods"
     SESSIONS_METHODS_TABLE = "sessions_to_methods"
 
-    def __init__(self, qb):
+    def __init__(self, qb:QBrainTableManager):
         self.qb = qb
         self.pid = qb.pid
         self.bqclient = qb.bqclient
@@ -366,7 +366,7 @@ def handle_set_method(data=None, auth=None):
         try:
             from core.managers_context import get_file_manager
             jax_code = get_file_manager().jax_predator(equation)
-            method_data["jax_code"] = jax_code
+            #method_data["jax_code"] = jax_code
             print("JAX Code generated:", jax_code)
         except Exception as e:
             print(f"Failed to generate JAX code: {e}")

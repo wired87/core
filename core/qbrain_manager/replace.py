@@ -4,10 +4,13 @@ if __name__ == "__main__":
     qbrain_manager = get_qbrain_table_manager()
     qbrain_manager.reset_tables(
         [
-            #"methods",
-            #"fields",
-            "users",
-            #"params",
+            "methods",
+            "fields",
+            "modules",
+            #"users",
+            "params",
             #"injections",
         ]
     )
+
+

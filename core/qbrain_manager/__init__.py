@@ -15,6 +15,7 @@ from utils.str_size import get_str_size
 from google import genai
 
 dotenv.load_dotenv()
+from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 
 from google.cloud import bigquery
 
@@ -31,7 +32,7 @@ class QBrainTableManager:
     DATASET_ID = "QBRAIN"
 
     def __init__(self, bqcore):
-        self.bq = bqcore
+        self.bq:BQCore = bqcore
         self.pid = bqcore.pid
         self.bqclient = bqcore.bqclient
         self.ds_id = bqcore.ds_id
@@ -125,7 +126,7 @@ class QBrainTableManager:
                 "binary_data": "STRING",
                 "methods": "STRING",
                 "fields": "STRING",
-                "rag_file_ids": "JSON",
+                "origin": "STRING",
             }
         },
         {
@@ -377,7 +378,7 @@ class QBrainTableManager:
         # filters out deleted
         session_rows = [entry for entry in session_rows if entry.get("status") != "deleted"]
         return session_rows
-    
+
     
     def get_envs_linked_rows(
             self, 
@@ -446,7 +447,7 @@ class QBrainTableManager:
         
 
     def row_from_id(self, nid:list or str, table, select="*", user_id=None):
-        print("retrieve_env_from_id")
+        print("retrieve_env_from_id...", nid)
         if isinstance(nid, str):
             nid = [nid]
 
@@ -897,13 +898,12 @@ class QBrainTableManager:
             if keys:
                 if self.upsert_copy(table_name, keys, items[0]):
                     return True
-
         except Exception as e:
             print(f"Error in set_item: {e}")
             pass
         
         # Fallback to insert
-        print("insert", table_name, items)
+        print("insert", table_name)
         return self.bq.bq_insert(table_name, items)
 
     def reset_tables(self, table_list: List[str]):

@@ -279,7 +279,7 @@ class StructInspector(ast.NodeVisitor):
                 )
 
                 #print("METHOD-module edge created", method_id)
-                self.process_method_params(node, method_id)
+                self.process_method_params(node, method_id, return_key)
 
         except Exception as e:
             print("Err _process_function", e)
@@ -287,7 +287,7 @@ class StructInspector(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-    def process_method_params(self, node, method_id):
+    def process_method_params(self, node, method_id, return_key):
         # 3. Process Parameters
         #print("process_method_params node", node, type(method_id))
 
@@ -330,6 +330,37 @@ class StructInspector(ast.NodeVisitor):
                         ))
             except Exception as e:
                 print("Err node.args.args", e)
+
+            # RETURN PARAM
+            self.g.add_node(
+                attrs=dict(
+                    nid=return_key,
+                    type='PARAM',
+                    param_type="Any",
+                )
+            )
+            # METHOD -> PARAM
+            self.g.add_edge(
+                src=method_id,
+                trt=return_key,
+                attrs=dict(
+                    rel='requires_param',
+                    type="Any",
+                    trgt_layer='PARAM',
+                    src_layer='METHOD',
+                ))
+
+            # MODULE -> PARAM
+            if not self.g.G.has_edge(self.module_name, return_key):
+                self.g.add_edge(
+                    src=self.module_name,
+                    trt=return_key,
+                    attrs=dict(
+                        rel='requires_param',
+                        trgt_layer='PARAM',
+                        src_layer='MODULE',
+                    ))
+
 
 
     def extract_return_statement_expression(self, method_node: ast.FunctionDef) -> Optional[str]:

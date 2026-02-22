@@ -1,97 +1,68 @@
-# --------------------
-# Higgs Potential & Parameters
-# --------------------
-from jax.numpy import stack, sqrt
-
+# -----------------------------------------------------------------------------
+# HIGGS FIELD DYNAMICS - ATOMIC EQUATIONS
+# -----------------------------------------------------------------------------
 
 def calc_lambda_H(_mass, vev):
-    # λ_H = m^2 / (2 v^2)
-    return (_mass ** 2) / (2.0 * vev ** 2)
+    # Self-coupling constant: λ_H = m^2 / (2 v^2)
+    lambda_H = (_mass ** 2) / (2.0 * vev ** 2)
+    return lambda_H
 
-def calc_mu_higgs(vev, lambda_H):
-    # μ = v * sqrt(λ)
-    return vev * sqrt(lambda_H)
+def calc_mu_sq(vev, lambda_H):
+    # Squared mass parameter of the potential: μ^2 = v^2 * λ_H
+    mu_sq = (vev ** 2) * lambda_H
+    return mu_sq
 
-def calc_dV_dh(vev, lambda_H, h, mu):
-    """
-    Higgs potential derivative dV/dh.
-    Note: 'mu' is passed from calc_mu_higgs.
-    """
-    # dV_dh = -mu^2 * (vev + h) + lambda_H * (vev + h)^3
-    dV_dh = -mu ** 2 * (vev + h) + lambda_H * (vev + h) ** 3
+def calc_dV_dh(vev, lambda_H, h, mu_sq):
+    # Higgs potential derivative: dV/dh = -μ^2(v+h) + λ(v+h)^3
+    dV_dh = -mu_sq * (vev + h) + lambda_H * (vev + h) ** 3
     return dV_dh
 
-# --------------------
-# Laplacian & Derivatives
-# --------------------
+def calc_spatial_diff(field_forward, field_backward, d):
+    # Central difference for spatial derivative: (ψ_p - ψ_m) / 2d
+    spatial_diff = (field_forward - field_backward) / (2.0 * d)
+    return spatial_diff
 
-def calc_spatial_diff(field_forward, field_backward, d_space):
-    """Zentraldifferenz: (Psi_{i+1} - Psi_{i-1}) / (2.0 * d)"""
-    spacial_diffusion = (field_forward - field_backward) / (2.0 * d_space)
-    return spacial_diffusion
+def calc_time_diff(field_current, field_prev, dt):
+    # First order backward difference for time: (ψ_t - ψ_t-dt) / dt
+    time_diff = (field_current - field_prev) / dt
+    return time_diff
 
-def calc_time_diff(field_current, field_prev, d_time):
-    """Zeitliche Ableitung: (Psi(t) - Psi(t-dt)) / dt"""
-    t_diff = (field_current - field_prev) / d_time
-    return t_diff
+def calc_laplacian_h(spatial_diff_sum):
+    # Summation of second derivatives or spatial differences for scalar laplacian
+    laplacian_h = sum(spatial_diff_sum)
+    return laplacian_h
 
-def calc_laplacian_h(h, d):
-    """
-    Sum of spatial derivatives for the Laplacian.
-    In the pathway, roll/shift is treated as an operator.
-    """
-    # result = sum(calc_spatial_diff(roll(h, p), roll(h, m), d))
-    return sum(calc_spatial_diff(h, h, d))
+def calc_mass_term(_mass, h):
+    # Mass contribution to the Klein-Gordon equation: -m^2 * h
+    mass_term = -(_mass ** 2) * h
+    return mass_term
 
-def calc_dmu_h(h, prev_h, d, dt):
-    """
-    Derivative vector for Higgs field.
-    """
-    time_res = calc_time_diff(h, prev_h, dt)
-    spatial_res = calc_spatial_diff(h, h, d)
-    return [time_res, spatial_res]
+def calc_h(h, prev_h, dt, laplacian_h, mass_term, dV_dh):
+    # Discrete second-order time evolution: h_new = 2h - h_prev + dt^2 * (∇^2 h - m^2h - dV/dh)
+    h = 2.0 * h - prev_h + (dt ** 2) * (laplacian_h + mass_term - dV_dh)
+    return h
 
+def calc_phi_component(vev, h):
+    # Physical Higgs component of the doublet: (v + h) / sqrt(2)
+    phi_component = (vev + h) / (2.0 ** 0.5)
+    return phi_component
 
-# --------------------
-# Field Updates (Evolution)
-# --------------------
+def calc_kinetic_energy(time_diff):
+    # Local kinetic energy density: 0.5 * (∂t h)^2
+    kinetic_energy = 0.5 * (time_diff ** 2)
+    return kinetic_energy
 
-def calc_mass_term_h(h, mass):
-    return -(mass ** 2) * h
+def calc_gradient_energy(spatial_diff_vector):
+    # Local gradient energy density: 0.5 * |∇h|^2
+    gradient_energy = 0.5 * sum(spatial_diff_vector ** 2)
+    return gradient_energy
 
-def calc_h_update(h, prev_h, dt, laplacian_h, mass_term, dV_dh):
-    """
-    Second-order time evolution for scalar field h.
-    """
-    dt2 = dt ** 2
-    # h_new = 2.0 * h - prev_h + dt2 * (laplacian_h + mass_term - dV_dh)
-    return 2.0 * h - prev_h + dt2 * (laplacian_h + mass_term - dV_dh)
+def calc_potential_energy(_mass, h, vev, lambda_H):
+    # Higgs potential energy density: 0.5*m^2*h^2 + λ*v*h^3 + 0.25*λ*h^4
+    potential_energy = 0.5 * (_mass ** 2) * (h ** 2) + lambda_H * vev * (h ** 3) + 0.25 * lambda_H * (h ** 4)
+    return potential_energy
 
-def calc_phi(h, vev):
-    """
-    Returns the scalar doublet components.
-    """
-    # phi = [0.0, (vev + h) / sqrt(2)]
-    return stack([0.0, (vev + h) / sqrt(2.0)])
-
-
-# --------------------
-# Energy Analysis
-# --------------------
-
-def calc_higgs_potential_energy(_mass, h, vev, lambda_h_val):
-    """
-    Potential energy density.
-    Note: uses lambda_h_val as coupling factor.
-    """
-    m2 = _mass ** 2
-    # 0.5 * m^2 * h^2 + λ * vev * h^3 + 0.25 * λ * h^4
-    return 0.5 * m2 * h ** 2 + lambda_h_val * vev * h ** 3 + 0.25 * lambda_h_val * h ** 4
-
-def calc_energy_density(dmu_h, potential_energy):
-    """
-    Total energy density: Kinetic + Gradient + Potential
-    """
-    kinetic = 0.5 * (dmu_h[0] ** 2)
-    gradient = 0.5 * sum(dmu_h[1:] ** 2)
-    return kinetic + gradient + potential_energy
+def calc_energy_density(kinetic_energy, gradient_energy, potential_energy):
+    # Total energy density of the scalar field
+    energy_density = kinetic_energy + gradient_energy + potential_energy
+    return energy_density

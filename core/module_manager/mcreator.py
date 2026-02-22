@@ -55,9 +55,12 @@ class ModuleCreator(
             if os.path.isdir(os.path.join(ARSENAL_PATH, module_file)) or module_file.startswith("__"):
                 continue
 
+            print("load_sm:", module_file)
+
             if not self.g.G.has_node(module_file):
-                mod_id = module_file.split(".")[0]
+                mod_id = module_file.split(".")[0].upper()
                 new_modules.append(mod_id)
+
                 self.create_modulator(
                     mod_id,
                     code=open(
@@ -89,7 +92,6 @@ class ModuleCreator(
                     self.create_modulator(
                         f,
                     )
-
         print("modules updated")
 
 

@@ -1,106 +1,71 @@
-# --------------------
-# gg_coupling (Gluon-Gluon)
-# --------------------
+# --- Yang-Mills / Gluon-Gluon Dynamics ---
 
-def calc_gg_eff_coupling(g_, g):
-    # symmetric effective coupling strength
-    return 0.5 * (g_ + g)
+def calc_g_eff(g_neighbor, g_self):
+    """Symmetric effective coupling strength."""
+    g_eff = 0.5 * (g_neighbor + g_self)
+    return g_eff
 
-def calc_gg_interaction(g_eff, field_value, field_value_):
-    # simplified antisymmetric field interaction term: [Aμ, Aν]
-    return g_eff * (field_value * field_value_ - field_value_ * field_value)
+def calc_j_pair(g_eff, field_val_self, field_val_neighbor):
+    """Antisymmetric field interaction term: [Aμ, Aν]."""
+    j_pair = g_eff * (field_val_self * field_val_neighbor - field_val_neighbor * field_val_self)
+    return j_pair
 
-def calc_gg_coupling(g_, field_value_, g, field_value):
-    g_eff = calc_gg_eff_coupling(g_, g)
-    return calc_gg_interaction(g_eff, field_value, field_value_)
+# --- Gluon-Fermion Interaction (Currents) ---
 
+def calc_spinor_scalar(psi_bar, gamma_mu, psi_color):
+    """Contraction of bar-spinor, gamma matrix and spinor: ψ_bar γ^μ ψ."""
+    scalar = psi_bar @ gamma_mu @ psi_color
+    return scalar
 
-# --------------------
-# gf_coupling (Gluon-Fermion)
-# --------------------
+def calc_color_current(scalar, color_factor):
+    """Weighting the spinor scalar with color matrix element."""
+    c_current = scalar * color_factor
+    return c_current
 
-def calc_spinor_scalar(psi_bar, gamma_mu, psi_b):
-    # psi_bar @ gamma_mu @ psi_b → Skalar
-    return psi_bar @ gamma_mu @ psi_b
+def calc_j_nu_base(g, psi_bar, gamma_mu, o_operator, psi):
+    """Fundamental current density: g * (ψ_bar γ^μ T ψ)."""
+    j_nu = g * (psi_bar @ gamma_mu @ o_operator @ psi)
+    return j_nu
 
-def calc_j_nu_gluon_quark(psi, psi_bar, gamma_mu, o_operator, g, quark_index):
-    # Logic for b in range(3) summation
-    # j_nu += (psi_bar @ gamma_mu @ psi[b]) * o_operator[quark_index, b]
-    # Note: In the pathway, this sum is treated as an iterative or vectorized sum
-    return g * sum(calc_spinor_scalar(psi_bar, gamma_mu, psi) * o_operator)
+def calc_j_nu_mu(j_nu_base, field_mu):
+    """Interaction current for specific component mu."""
+    j_mu = j_nu_base * field_mu
+    return j_mu
 
-def calc_j_nu_non_qg(psi, psi_bar, gamma_mu, o_operator, g):
-    # j_nu = g * (psi_bar @ gamma_mu @ o_operator @ psi)
-    return g * (psi_bar @ gamma_mu @ o_operator @ psi)
+# --- Current Summation ---
 
-def calc_gf_coupling(psi, psi_bar, field_value, g, gamma, o_operator):
-    """
-    Calculates Gluon-Fermion coupling.
-    The logic decides between gluon_quark or non_qg based on context.
-    """
-    # Result is essentially the sum over indices: sum(j_nu * field_value[index])
-    return sum(calc_j_nu_non_qg(psi, psi_bar, gamma, o_operator, g) * field_value)
+def calc_j_total(gf_coupling, gg_coupling):
+    """Total current density from fermion and boson contributions."""
+    j_total = gf_coupling + gg_coupling
+    return j_total
 
+# --- Field Strength Tensor (F_munu) ---
 
-# --------------------
-# j_nu (Current Density)
-# --------------------
+def calc_f_munu(dmu_nu, dnu_mu):
+    """Field strength tensor: F_μν = ∂_μ A_ν - ∂_ν A_μ."""
+    f_munu = dmu_nu - dnu_mu
+    return f_munu
 
-def calc_j_nu(gg_coupling, gf_coupling):
-    # j_nu = sum(gf_coupling) + sum(gg_coupling)
-    return sum(gf_coupling) + sum(gg_coupling)
+# --- Derivatives (Finite Differences) ---
 
+def calc_d_spatial(field_forward, field_backward, d_space):
+    """Spatial central difference for field gradients."""
+    d_grad = (field_forward - field_backward) / (2.0 * d_space)
+    return d_grad
 
-# --------------------
-# field_value update
-# --------------------
+def calc_d_time(field_current, field_prev, d_time):
+    """Temporal backward difference for field evolution."""
+    d_time_val = (field_current - field_prev) / d_time
+    return d_time_val
 
-def calc_field_value(dt, dmu_fmunu, j_nu, field_value):
-    """
-    ∂_μ F^{μν} = j^ν -> Evolution step
-    """
-    # field_value = field_value + dt * (dmu_fmunu - j_nu)
-    return field_value + dt * (dmu_fmunu - j_nu)
+# --- Field Evolution (Proca / Maxwell Equation) ---
 
+def calc_field_delta(dmu_fmunu, j_nu):
+    """Source term for field update: (∂_μ F^μν - j^ν)."""
+    f_delta = dmu_fmunu - j_nu
+    return f_delta
 
-# --------------------
-# fmunu (Field Strength Tensor)
-# --------------------
-
-def calc_fmunu(dmuG):
-    """
-    Calculates the antisymmetric tensor F from the derivative tensor dmu.
-    F[mu, nu] = dmu[mu, nu] - dmu[nu, mu]
-    """
-    # term1 = dmu[:13, :4], term2 = dmu[:4, :13].T
-    return dmuG - dmuG.T
-
-
-# --------------------
-# Derivatives (dmuG & dmu_fmunu)
-# --------------------
-
-def calc_spatial_diff(field_forward, field_backward, d_space):
-    """Berechnet (Psi_{i+1} - Psi_{i-1}) / (2.0 * d)"""
-    return (field_forward - field_backward) / (2.0 * d_space)
-
-def calc_time_diff(field_current, field_prev, d_time):
-    """Berechnet (Psi(t) - Psi(t-dt)) / dt"""
-    return (field_current - field_prev) / d_time
-
-def calc_dmuG(field_value, prev_field_value, d, dt):
-    """
-    Extracts time and spatial derivatives.
-    In the extractor, 'roll' is treated as a shift operator.
-    """
-    time_part = calc_time_diff(field_value, prev_field_value, dt)
-    spatial_part = calc_spatial_diff(field_value, field_value, d)
-    return [time_part, spatial_part]
-
-def calc_dmu_fmunu(fmunu, prev_fmunu, d, dt):
-    """
-    Derivative of the field strength tensor.
-    """
-    time_part = calc_time_diff(fmunu, prev_fmunu, dt)
-    spatial_part = calc_spatial_diff(fmunu, fmunu, d)
-    return [time_part, spatial_part]
+def calc_field_update(field_value, dt, f_delta):
+    """Time-stepping for the gauge field A_μ."""
+    updated_field = field_value + dt * f_delta
+    return updated_field

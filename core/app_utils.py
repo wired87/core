@@ -1,8 +1,6 @@
 import os
 import sys
-
 from qf_utils.all_subs import ALL_SUBS
-
 import dotenv
 
 dotenv.load_dotenv()

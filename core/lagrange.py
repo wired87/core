@@ -8,7 +8,7 @@ from utils._jax.arsenal.HIGGS import dmu_h, lambda_H, dV_dh, h
 
 
 # Assume all helper functions (dmu_h, dirac, h, fmunu, etc.)
-# from HIGGS.py, FERMION.py, and GAUGE.py are available in the scope.
+# from higgs.py, FERMION.py, and GAUGE.py are available in the scope.
 
 @jit
 def sm(

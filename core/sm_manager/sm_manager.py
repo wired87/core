@@ -25,6 +25,7 @@ class SMManager:
         self.param_manager = get_param_manager()
         self.method_manager = get_method_manager()
         self.qb = get_qbrain_table_manager()
+        # METHODS
 
     def check_sm_exists(self, user_id: str = "public"):
         try:
@@ -51,13 +52,14 @@ class SMManager:
         print("PROCESSING STANDARD MANAGER WORKFLOW")
 
         # Create module stack
-        qf = self._initialize_graph()
+        qf:QFUtils = self._initialize_graph()
 
         # Upsert Nodes and Edges
         self._upsert_graph_content(qf, user_id)
 
         self.user_manager.set_standard_stack(user_id)
         print("FINISHED SM WORKFLOW")
+
 
     def _check_standard_stack(self, user_id: str) -> bool:
         """Check if standard stack exists for the user."""
@@ -84,6 +86,7 @@ class SMManager:
             }
         }
         """
+
         try:
             print(f"ENABLING SM FOR Env: {env_id}, Session: {session_id}")
             fu = FieldUtils()
@@ -193,8 +196,6 @@ class SMManager:
         if methods:
             self.method_manager.set_method(methods, user_id)
 
-        # 2. Upsert Edges
-        logging.info("Upserting standard edges...")
 
     def _extract_nodes(
             self,
@@ -211,22 +212,13 @@ class SMManager:
             ntype = attrs.get("type")
 
             if ntype == "MODULE":
-                """# Get PARAM neighbors
-                param_ids = qf.g.get_neighbor_list_rel(
-                    node=nid,
-                    trgt_rel="requires_param",
-                    as_dict=True
-                )
-                #print(f"{nid} requires_param: {param_ids}")
-                param_ids = list(param_ids.keys())"""
-
-
                 # Get METHOD neighbors
                 methods = qf.g.get_neighbor_list_rel(
                     node=nid,
                     trgt_rel="has_method",
                     as_dict=True
                 )
+
                 method_ids = list(methods.keys())
                 print(f"{nid} has method ids: {method_ids}")
 
@@ -242,12 +234,11 @@ class SMManager:
                 # Upsert Module
                 module_data = {
                     "id": attrs.get("nid", nid),
-                    "file_type": None,
-                    "binary_data": None,
                     "user_id": user_id,
                     "status": "active",
                     "fields": field_ids,
                     "methods": method_ids,
+                    "origin": "SM",
                     **{
                         k: v
                         for k, v in attrs.items() if k not in [
@@ -259,8 +250,6 @@ class SMManager:
                     },
                 }
                 modules.append(module_data)
-
-
 
             # FIELDS
             elif ntype == "FIELD":
@@ -291,6 +280,7 @@ class SMManager:
                         "module_id",
                         attrs["parent"][0]
                     ),
+                    "origin": "SM",
                     "interactant_fields": interactant_fields,
                 }
                 field_rows.append(field_data)
@@ -320,9 +310,9 @@ class SMManager:
                     "id": nid,
                     'return_key': attrs.get("return_key"),
                     "params": param_ids,
-                    "jax_code": attrs.get("jax_code", attrs.get("code", None)),
+                    #"jax_code": attrs.get("jax_code", attrs.get("code", None)),
                     "code": attrs.get("code", None),
-                    "axis_def": attrs.get("code", None),
+                    "axis_def": attrs.get("axis_def", None),
                 }
                 method_rows.append(method_data)
         
