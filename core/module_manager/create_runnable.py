@@ -1,22 +1,33 @@
+import jax
+import jax.numpy as jnp
 
+LIBS={
+    "jax": jax,
+    "vmap": jax.vmap,
+    "jnp": jnp,
+    "jit": jax.jit,
+}
 
-def create_runnable(
-        eq_code,
-        eq_key,
-        xtrn_mods
-):
-    print(f"create_runnable, {eq_key}")
+def create_runnable(eq_code):
     try:
-        local_vars = {}
+        namespace = {}
 
-        exec(eq_code, xtrn_mods, local_vars)
+        # Wir fügen die LIBS direkt in den globalen Scope des exec ein
+        exec(eq_code, LIBS, namespace)
 
-        # Extract the function (must be defined as def f(...))
-        f = local_vars.get(eq_key)
+        # Filtere alle Funktionen heraus
+        callables = {
+            k: v for k, v in namespace.items()
+            if callable(v) and not k.startswith("__")
+        }
 
-        if f is None:
-            raise ValueError(f"Function {eq_key} not found in eq_code")
-        return f
+        if not callables:
+            raise ValueError("Keine Funktion im eq_code gefunden.")
+
+        func_name = list(callables.keys())[-1]
+        func = callables[func_name]
+        return func
     except Exception as e:
-        print(f"Err create_runnable ({eq_key}):", e)
+        print(f"Err create_runnable: {e}")
+        raise e
 

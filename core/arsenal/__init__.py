@@ -13,4 +13,11 @@ avoid unnecessary def wrappers  e.g. just return apram,
 methods must collect, avoid optional unused params,
 the equations must have highly field specific (math/physics etc)
 relevance, return in single file block
+
+interaction and differential equations requeire the same parameter twice must start with _ (self) or end with _
+(neighbor - (single (_) for plus neighbor, double (__) for minus neighbor and more for another)
+
+
+interaction equaitons never cary the sam value of more then 2 point inside
+
 """

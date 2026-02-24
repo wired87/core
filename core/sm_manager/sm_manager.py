@@ -190,9 +190,10 @@ class SMManager:
         if fields:
             self.field_manager.set_field(fields, user_id)
 
+        # MUST be called before method upsertion
         if params:
             self.param_manager.set_param(params, user_id)
-
+        
         if methods:
             self.method_manager.set_method(methods, user_id)
 

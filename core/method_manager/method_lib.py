@@ -2,12 +2,14 @@ import base64
 import json
 import logging
 import random
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Callable
 
+import numpy as np
 from google.cloud import bigquery
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 from core.method_manager.gen_type import generate_methods_out_schema
 from core.method_manager.xtrct_prompt import xtrct_method_prompt
+from core.module_manager.create_runnable import create_runnable
 from core.qbrain_manager import get_qbrain_table_manager, QBrainTableManager
 from core.handler_utils import require_param, require_param_truthy, get_val
 from qf_utils.qf_utils import QFUtils
@@ -45,8 +47,9 @@ class MethodManager:
     METHODS_TABLE = "methods"
     SESSIONS_METHODS_TABLE = "sessions_to_methods"
 
-    def __init__(self, qb:QBrainTableManager):
+    def __init__(self, qb:QBrainTableManager, params_manager):
         self.qb = qb
+        self.params_manager=params_manager
         self.pid = qb.pid
         self.bqclient = qb.bqclient
         self.insert_col = qb.insert_col
@@ -70,6 +73,75 @@ class MethodManager:
             table = bigquery.Table(table_ref, schema=METHOD_SCHEMA)
             self.bqclient.create_table(table)
             logging.info(f"Table {table_ref} created.")
+
+
+    def execute_method_testwise(self, methods:list[dict]):
+        return_key_param_entries = self.qb.row_from_id([m["return_key"] for m in methods.values()], table="params")
+        param_entries = self.qb.row_from_id(list(set([m["params"] for m in methods.values()])), table="params")
+        param_entries = {p["id"]: p for p in param_entries}
+        adapted_return_params = []
+
+        for i, _def_content in enumerate(methods):
+            params = _def_content.get("params")
+            equation = _def_content.get("equation")
+            return_key = _def_content.get("return_key")
+            code = _def_content.get("code")
+            _def_id = _def_content["id"]
+
+            # try get param shape from db
+            param_shape=None
+            param_entry = return_key_param_entries[i]
+            if param_entry:
+                param_shape = param_entry["shape"]
+
+            if not param_shape or not param_shape:
+                # need calc testwise to infer
+                # collect param values (shape? type?)
+                val_params = []
+                for p_key in params:
+                    is_array = p_key["shape"] and isinstance(p_key, (list, tuple)) and len(p_key)
+                    if is_array:
+                        val_params.append(np.ones(param_entries[p_key]["shape"]))
+                    else:
+                        val_params.append(1)
+
+                runnable: Callable = create_runnable(code)
+                result = runnable(*params)
+                if result:
+                    result_shape = np.array(result).shape
+
+                    # upsert resul
+                    if param_entry:
+                        payload = param_entry
+
+                    else:
+                        payload = dict(
+                            id=return_key,
+                            param_type=type(result),
+                            axis_def=0,
+                            description=f"return key of {_def_id}"
+                        )
+                    payload["shape"]=result_shape
+                    adapted_return_params.append(payload)
+
+                else:
+                    print("no result shape found...")
+            else:
+                raise Exception(f"runnable failed for code {code}, params {params},")
+
+            self.params_manager.set_param(
+                param_data=adapted_return_params
+            )
+            print("eq extractted", equation)
+
+
+
+
+
+
+
+
+
 
     def extract_from_file_bytes(
             self,
@@ -135,6 +207,10 @@ class MethodManager:
                 for p in param_data
             ]
 
+
+
+
+
         print("set method rows", len(rows))
         self.qb.set_item(self.METHODS_TABLE, rows)
 
@@ -148,7 +224,6 @@ class MethodManager:
             "user_id": user_id,
             "status": "active"
         }
-
         self.qb.set_item(self.SESSIONS_METHODS_TABLE, row)
 
     def delete_method(self, method_id: str, user_id: str):
@@ -238,6 +313,12 @@ class MethodManager:
             table=self.METHODS_TABLE
         )
         return {"methods": rows}
+
+
+
+
+
+
 
 
 # Instantiate
@@ -371,8 +452,15 @@ def handle_set_method(data=None, auth=None):
         except Exception as e:
             print(f"Failed to generate JAX code: {e}")
 
+    # handle set method
     from core.managers_context import get_method_manager
-    get_method_manager().set_method(method_data, user_id)
+    mm = get_method_manager()
+    # test_exec_method
+
+    mm.execute_method_testwise([method_data])
+
+    # set
+    mm.set_method(method_data, user_id)
     return handle_list_users_methods(data={}, auth={"user_id": user_id})
 
 

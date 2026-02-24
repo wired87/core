@@ -118,13 +118,13 @@ class ParamsManager:
                 p["id"] = p.get("id") or p.get("name") or generate_numeric_id()
                 p["name"] = p.get("name") or p.get("id")
                 p["user_id"] = user_id
-                if "is_constant" in p:
-                    p["const"] = p["is_constant"]
                 if "value" in p:
                     p["value"] = json.dumps(p["value"])
+
                 # Only derive axis_def when we actually have a const flag
                 if ("axis_def" not in p or p.get("axis_def") is None) and "const" in p:
-                    p["axis_def"] = self.get_axis_param(p["const"])
+                    p["axis_def"] = self.get_axis_param(p["is_constant"])
+
                 if "embedding" in p and p["embedding"]:
                     if isinstance(p["embedding"], str):
                         try:

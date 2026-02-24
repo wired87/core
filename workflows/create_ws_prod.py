@@ -130,16 +130,6 @@ class WorldCreationWf:
         if os.path.isfile(self.g.demo_G_save_path) is True:
             print("Build Demo G")
             self.g.load_graph(local_g_path=self.g.demo_G_save_path)
-        """else:
-            initial_data = self.db_manager._fetch_g_data(
-                db_root=self.database
-            )
-
-            # Build a G from init admin_data and load in self.g
-            self.g.build_G_from_data(initial_data,)
-
-        # EXTEND WITH METADATA
-        self.metadata_process()"""
 
 
     def metadata_process(self):
@@ -158,7 +148,6 @@ class WorldCreationWf:
             # print("admin_data[metadata]", admin_data["metadata"])
             for node_id, metadata in data["metadata"].items():
                 meta_of_interst = {k: v for k, v in metadata.items() if k not in ["id"]}
-                #print(f"add {meta_of_interst} to {node_id}")
 
                 # NODE FROM ALL_SUBS?
                 node_valid:bool = self.validate_meta_nid(

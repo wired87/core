@@ -106,7 +106,7 @@ class QBrainTableManager:
                 "created_at": "TIMESTAMP",
                 "updated_at": "TIMESTAMP",
                 "status": "STRING",
-                "pattern": "STRING", # use for ml 
+                "pattern": "STRING",
                 "model": "STRING",
             }
         },
@@ -136,8 +136,6 @@ class QBrainTableManager:
             "schema": {
                 "id": "STRING",
                 "keys": "STRING",
-                "values": "STRING",
-                "axis_def": "STRING",
                 "user_id": "STRING",
                 "module_id": "STRING",
                 "status": "STRING",
@@ -154,17 +152,14 @@ class QBrainTableManager:
             "schema": {
                 "id": "STRING",
                 "user_id": "STRING",
-                "origin": "STRING",
                 "description": "STRING",
                 "equation": "STRING",
                 "status": "STRING",
                 "params": "STRING",
-                "axis_def": "STRING",
                 "return_key": "STRING",
                 "created_at": "TIMESTAMP",
                 "updated_at": "TIMESTAMP",
                 "code": "STRING",
-                "derivate": "STRING",
                 "module_id": "STRING",
             }
         },
@@ -176,12 +171,11 @@ class QBrainTableManager:
                 "id": "STRING",
                 "param_type": "STRING",
                 "user_id": "STRING",
-                "value": "STRING",
-                "origin": "STRING",
+                "axis_def": "STRING",
                 "description": "STRING",
                 "embedding": "ARRAY<FLOAT64>",
                 "status": "STRING",
-                "const": "BOOL",
+                "shape": "STRING",
                 "created_at": "TIMESTAMP",
                 "updated_at": "TIMESTAMP",
             }

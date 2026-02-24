@@ -253,14 +253,6 @@ class FieldsManager:
             field_data: Dict[str, Any] or List[dict],
             user_id: str
     ):
-        """
-        "id": "STRING",
-        "user_id": "STRING",
-        "status": "STRING",
-        "params": "STRING",
-        "created_at": "TIMESTAMP",
-        "updated_at": "TIMESTAMP",
-        """
         print("set_field")
         if not isinstance(field_data, list):
             field_data = [field_data]

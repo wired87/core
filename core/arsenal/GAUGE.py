@@ -1,13 +1,13 @@
 # --- Yang-Mills / Gluon-Gluon Dynamics ---
 
-def calc_g_eff(g_neighbor, g_self):
+def calc_g_eff(g_, _g):
     """Symmetric effective coupling strength."""
-    g_eff = 0.5 * (g_neighbor + g_self)
+    g_eff = 0.5 * (g_ + _g)
     return g_eff
 
-def calc_j_pair(g_eff, field_val_self, field_val_neighbor):
+def calc_j_pair(g_eff, _field_val, field_val_):
     """Antisymmetric field interaction term: [Aμ, Aν]."""
-    j_pair = g_eff * (field_val_self * field_val_neighbor - field_val_neighbor * field_val_self)
+    j_pair = g_eff * (_field_val * field_val_ - field_val_ * _field_val)
     return j_pair
 
 # --- Gluon-Fermion Interaction (Currents) ---
@@ -48,14 +48,14 @@ def calc_f_munu(dmu_nu, dnu_mu):
 
 # --- Derivatives (Finite Differences) ---
 
-def calc_d_spatial(field_forward, field_backward, d_space):
+def calc_d_spatial(field_value_, field_value__, d_space):
     """Spatial central difference for field gradients."""
-    d_grad = (field_forward - field_backward) / (2.0 * d_space)
+    d_grad = (field_value_ - field_value__) / (2.0 * d_space)
     return d_grad
 
-def calc_d_time(field_current, field_prev, d_time):
+def calc_d_time(field_current, field_value_prev, d_time):
     """Temporal backward difference for field evolution."""
-    d_time_val = (field_current - field_prev) / d_time
+    d_time_val = (field_current - field_value_prev) / d_time
     return d_time_val
 
 # --- Field Evolution (Proca / Maxwell Equation) ---

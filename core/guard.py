@@ -2,6 +2,7 @@ import base64
 import pprint
 
 from itertools import product
+from typing import Callable
 
 import numpy as np
 from bob_builder.artifact_registry.artifact_admin import ArtifactAdmin
@@ -10,6 +11,7 @@ import asyncio
 import json
 import websockets
 from code_manipulation.graph_creator import StructInspector
+from core.module_manager.create_runnable import create_runnable
 from utils.graph.local_graph_utils import GUtils
 from qf_utils.qf_utils import QFUtils
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
@@ -509,7 +511,7 @@ class Guard(
 
         method_struct:dict = self.method_layer(
             modules,
-            db_to_method_struct["VARIATION_INDICES"],
+            #db_to_method_struct["VARIATION_INDICES"],
         )
 
         method_to_db = self.set_edge_method_to_db()
@@ -642,6 +644,7 @@ class Guard(
                             if not injections or not len(injections):
                                 continue
 
+
                             for inj_id, inj_attrs in injections:
 
                                 # set the index within the extracted value slice of the 1d db
@@ -649,6 +652,10 @@ class Guard(
                                 pos_index_slice:int or None = schema_positions.index(
                                     tuple(eval(inj_id.split("__")[0]))
                                 )
+
+                                # check str
+                                if isinstance(inj_attrs["data"], str):
+                                    inj_attrs["data"] = json.loads(inj_attrs["data"])
 
                                 ### BAUSTELLE
                                 for time, data in zip(inj_attrs["data"][0], inj_attrs["data"][1]):
@@ -979,13 +986,59 @@ class Guard(
 
                     self._edge(fid, param, "has_param", "FIELD", "PARAM")
 
+    def is_differnetial_equation(self, params):
+        normalized = [p.replace("_", "") for p in params]
+        has_duplicates = any(normalized.count(np) == 2 for np in set(normalized) if np)
+
+        # Zusammenführung
+        if has_duplicates and self.has_special_params(params):
+            return True
+        return False
+
+    def has_special_params(self, params):
+        return any(p.endswith("__") for p in params) or any(p.startswith("_prev") or p.startswith("prev_") for p in params)
 
 
+    def is_interaction_eq(self, params, modules_params:list[str], modules_return_map:list[str]):
+        normalized = [p.replace("_", "") for p in params]
+        has_duplicates = any(normalized.count(np) == 2 for np in set(normalized) if np)
+        prefixed_dublet = any(pid.endswith("_") for pid in params) and any(pid.startswith("_") for pid in params)
+        params_of_different_fields = any(p not in modules_params for p in params) or any(p not in modules_return_map for p in params)
+        if has_duplicates or prefixed_dublet or params_of_different_fields:
+            return True
+        return False
 
+    def classify_equations_for_module(
+        self,
+        methods: dict,
+        fields: dict,
+    ) -> dict:
+        """
+        Classify equations for a specific module into a dict with keys:
+        - differential: method includes same param min 2 times (param.replace("_","") for param in params)
+        - interaction: method params originate from min 2 fields of different types
+        - core: method requires params of just single field type, or uses return_key of other methods in the module
+        """
+        classification = {"differential": [], "interaction": [], "core": []}
+        module_return_keys = [eqattrs.get("return_key") for eqattrs in methods.values() if eqattrs.get("return_key")]
+        modules_params = [fattrs.get("keys") for fattrs in fields.values()]
 
+        for eqid, eqattrs in methods.items():
+            params = eqattrs.get("params")
+            _code = eqattrs.get("code")
+            if self.is_differnetial_equation(params):
+                classification["differential"].append(_code)
 
+            elif self.is_interaction_eq(params, modules_params, module_return_keys):
+                classification["interaction"].append(_code)
+            else:
+                classification["core"].append(_code)
+        return classification
 
-    def method_layer(self, modules, VARIATION_INDICES):
+    def method_layer(self, modules):
+        # For each method: use params and neighbor_vals to collect the params index for each item of
+        # neighbor_vals within a list (if neighbor_vals else None), and append it to a NEIGHBOR_CTLR
+        # struct under the same index as the specific method (and overlying module_idx).
         print("method_layer... ")
         mod_len_exclude_ghost = len(modules) -1
         #print("method_layer mod_len_exclude_ghost", mod_len_exclude_ghost)
@@ -994,9 +1047,12 @@ class Guard(
             "METHOD_PARAM_LEN_CTLR": [[] for _ in range(mod_len_exclude_ghost)],
             "METHODS": [[] for _ in range(mod_len_exclude_ghost)],
             "METHODS_PER_MOD_LEN_CTLR": [0 for _ in range(mod_len_exclude_ghost)],
+            "NEIGHBOR_CTLR": [[] for _ in range(mod_len_exclude_ghost)],
+            "EQ_CLASSIFICATION": [[] for _ in range(mod_len_exclude_ghost)],
         }
 
         mnames = [[] for _ in range(mod_len_exclude_ghost)]
+
         try:
             #print("method_layer compilation...")
             for mid, module in modules:
@@ -1018,56 +1074,46 @@ class Guard(
                     print("method_layer... len methods", mlen)
                     continue
 
+                fields = self.g.get_neighbor_list_rel(
+                    node=mid,
+                    trgt_rel="has_field",
+                    as_dict=True,
+                )
+
+                # Classification struct per module
+                method_struct["METHODS"][midx] = self.classify_equations_for_module(
+                    methods,
+                    fields,
+                )
+
                 # len methods per module
                 method_struct["METHODS_PER_MOD_LEN_CTLR"][midx] = mlen
-
                 mnames[midx].extend(mids)
-
-                # Iterate Equations
-                for i, (eqid, eqattrs) in enumerate(methods.items()):
-                    # PARAMS from METHOD
-                    params = eqattrs.get("params", [])
-
-                    if isinstance(params, str):
-                        params = json.loads(params)
-
-                    method_struct["METHOD_PARAM_LEN_CTLR"][midx].append(
-                        len(params)
-                    )
-
-                    """equation = eqattrs.get("equation")
-                    print("eq extracted", equation)
-
-                    # EXTRACT PARAMS & OPERATORS
-                    # -> method indices to all ops functions (VARIATION_INDICES is indexed by [module_idx][eq_idx])
-                    raw_store = VARIATION_INDICES[midx][i] if midx < len(VARIATION_INDICES) and i < len(VARIATION_INDICES[midx]) else None
-                    eq_store = list(raw_store.keys()) if isinstance(raw_store, dict) else (raw_store if isinstance(raw_store, list) else (list(params) if params else []))
-                    method_indices: list[int] = eq_extractor_main(
-                        equation,
-                        eq_store_item=eq_store,
-                    )"""
-
-                    #
-                    method_struct["METHODS"][midx].append(
-                        eqattrs.get("code")
-                    )
-
-            # flatten METHODS
-            flattened_methods = []
-            for i, sublist in enumerate(method_struct["METHODS"]):
-                flattened_methods.extend(sublist)
-
-            method_struct["METHODS"] = flattened_methods
 
             flatten_ctlr = []
             for sublist in method_struct["METHOD_PARAM_LEN_CTLR"]:
                 flatten_ctlr.extend(sublist)
             method_struct["METHOD_PARAM_LEN_CTLR"] = flatten_ctlr
 
+            flatten_neighbor_ctlr = []
+            for sublist in method_struct["NEIGHBOR_CTLR"]:
+                flatten_neighbor_ctlr.append(sublist)
+            method_struct["NEIGHBOR_CTLR"] = flatten_neighbor_ctlr
+
+            print("METHODS raw", method_struct["METHODS"])
+            flatten_eq_classification_ctlr = []
+            for struct in method_struct["METHODS"]:
+                flatten_eq_classification_ctlr.append(
+                    [v.values() for v in struct]
+                )
+            method_struct["METHODS"] = flatten_eq_classification_ctlr
+            print("METHODS processed", method_struct["METHODS"])
+
         except Exception as e:
             print("Err method_layer", e)
         print(f"method_layer... done")
         return method_struct
+
 
 
     def set_eq_operator_ctlr(self, modules):
@@ -1196,8 +1242,8 @@ class Guard(
             "DB_CTL_VARIATION_LEN_PER_EQUATION": [[] for _ in range(mlen)],
             "DB_CTL_VARIATION_LEN_PER_FIELD": [[] for _ in range(mlen)],
             "LEN_FEATURES_PER_EQ": self.get_empty_method_structure(set_zero=False),
-            "VARIATION_KEYS": [[] for _ in range(mlen)],
-            "VARIATION_INDICES": [[] for _ in range(mlen)]
+            #"VARIATION_KEYS": [[] for _ in range(mlen)],
+            #"VARIATION_INDICES": [[] for _ in range(mlen)]
         }
 
         ghost_fields = self.g.get_neighbor_list_rel(
@@ -1245,7 +1291,6 @@ class Guard(
                             ""
                             for _ in range(len(params))
                         ]
-                    #print("methods params_origin", params_origin)
 
                     #
                     if isinstance(params, str):
@@ -1289,15 +1334,18 @@ class Guard(
                             # Field's own param
                             is_prefixed = pid.endswith("_")
                             is_self_prefixed = pid.startswith("_")
-                            id_prev_val = pid.startswith("prev")
-                            EXCLUDED_ORIGINS = ["neighbor", "interactant"]
+                            is_prev_pre = pid.startswith("prev_")
+                            is_prev_after = pid.endswith("_prev")
 
+                            # is_double_after_marked = pid.endswih("__")
+
+                            EXCLUDED_ORIGINS = ["neighbor", "interactant"]
 
                             if (
                                 pid in keys and
                                     (not is_prefixed or is_self_prefixed) and
                                     params_origin[pidx] not in EXCLUDED_ORIGINS and
-                                    fid not in worked_params[pid_orig]
+                                    fid not in worked_params[pid_orig] or not is_self_prefixed or (is_prev_pre or is_prev_after)
                             ):
                                 print(f"{pid} in {fid}")
 
@@ -1307,10 +1355,13 @@ class Guard(
                                 time_dim = None
 
                                 # RM start "_"
-                                if id_prev_val:
+                                if is_prev_pre:
                                     #print("prev etected:", pid)
                                     # _prev must be in keys!!!
                                     pid = pid.replace("prev_","").strip()
+                                    time_dim = 1
+                                elif is_prev_after:
+                                    pid = pid.replace("_prev","").strip()
                                     time_dim = 1
 
                                 elif is_self_prefixed:
@@ -1320,6 +1371,9 @@ class Guard(
                                 if time_dim is None:
                                     time_dim = 0
 
+
+                                # todo problem: params of method apply to field keys
+                                # A: SMManager: params liked tomodule not in field (for each) append to it -> how infer type? scale to nDim struct?
                                 pindex = keys.index(pid)
 
                                 result = self.get_db_index(
@@ -1423,7 +1477,7 @@ class Guard(
                         for key, value in zip(params, expand_field_eq_variation_struct):
                             param_struct[key] = value
 
-                        db_to_method["VARIATION_INDICES"][m_idx].append(param_struct)
+                        #db_to_method["VARIATION_INDICES"][m_idx].append(param_struct)
 
                         # todo: untertiele method nach modul index.
                         #  mach heir das gleiche und flatte im Anschlusse
@@ -1444,9 +1498,7 @@ class Guard(
 
                         db_to_method[
                             "DB_CTL_VARIATION_LEN_PER_FIELD"
-                        ][m_idx].append(
-                            len(expand_field_eq_variation_struct)
-                        )
+                        ][m_idx].append(len(expand_field_eq_variation_struct))
 
                     # todo combine amount variation / field -&- shape / field / eq:
                     #  DB_CTL_VARIATION_LEN_PER_FIELD, LEN_FEATURES_PER_EQ
@@ -1454,7 +1506,6 @@ class Guard(
                     db_to_method[
                         "DB_CTL_VARIATION_LEN_PER_EQUATION"
                     ][m_idx].append(EQ_AMOUNT_VRIATIONS)
-
 
             flatten_variations = []
             for i, item in enumerate(db_to_method["DB_TO_METHOD_EDGES"]):
@@ -1471,6 +1522,7 @@ class Guard(
             for item in db_to_method["DB_CTL_VARIATION_LEN_PER_FIELD"]:
                 flatten_amount_variations_per_field.extend(item)
             db_to_method["DB_CTL_VARIATION_LEN_PER_FIELD"] = flatten_amount_variations_per_field
+
             print("set_edge_db_to_method... done")
         except Exception as e:
             print(f"Err set_edge_db_to_method: {e}")
@@ -1852,11 +1904,12 @@ class Guard(
             param_in_field_idx,
         )
 
-    def get_empty_method_structure(self, set_zero=True):
+    def get_empty_method_structure(self, set_zero=True, ):
         modules: list = self.g.get_nodes(
             filter_key="type",
             filter_value="MODULE",
         )
+
         mlen_excl_ghost = len(modules)-1
 
         method_struct = [
@@ -1957,3 +2010,62 @@ async def run_start_sim_via_ws():
     except Exception as e:
         print(f"Failed: {e}")
 
+
+"""
+
+equation = eqattrs.get("equation")
+print("eq extracted", equation)
+
+# EXTRACT PARAMS & OPERATORS
+# -> method indices to all ops functions (VARIATION_INDICES is indexed by [module_idx][eq_idx])
+raw_store = VARIATION_INDICES[midx][i] if midx < len(VARIATION_INDICES) and i < len(VARIATION_INDICES[midx]) else None
+eq_store = list(raw_store.keys()) if isinstance(raw_store, dict) else (raw_store if isinstance(raw_store, list) else (list(params) if params else []))
+method_indices: list[int] = eq_extractor_main(
+    equation,
+    eq_store_item=eq_store,
+    
+    
+    
+
+# Iterate Equations
+                for i, (eqid, eqattrs) in enumerate(methods.items()):
+                    # PARAMS from METHOD
+                    params = eqattrs.get("params", [])
+
+                    if isinstance(params, str):
+                        params = json.loads(params)
+
+                    params_origin = eqattrs.get("origin", [])
+                    if isinstance(params_origin, str):
+                        params_origin = json.loads(params_origin)
+                    if not params_origin:
+                        params_origin = [""] * len(params)
+                    if params_origin is None:
+                        params_origin = [""] * len(params)
+
+                    # neighbor_vals: params whose origin is neighbor or interactant
+                    neighbor_vals = [
+                        params[pidx]
+                        for pidx in range(len(params))
+                        if pidx < len(params_origin) and params_origin[pidx] in ["neighbor", "interactant"]
+                    ] if params else []
+
+                    # params index for each item of neighbor_vals
+                    neighbor_ctlr_entry = (
+                        [params.index(nv) for nv in neighbor_vals]
+                        if neighbor_vals else None
+                    )
+
+                    # param index for params of different origins
+                    method_struct["NEIGHBOR_CTLR"][midx].append(neighbor_ctlr_entry)
+
+                    method_struct["METHOD_PARAM_LEN_CTLR"][midx].append(
+                        len(params)
+                    )
+
+# Field's own param
+is_prefixed = pid.endswith("_")
+is_self_prefixed = pid.startswith("_")
+id_prev_val = pid.startswith("prev")
+EXCLUDED_ORIGINS = ["neighbor", "interactant"]
+)"""

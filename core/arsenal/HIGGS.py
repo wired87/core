@@ -2,9 +2,9 @@
 # HIGGS FIELD DYNAMICS - ATOMIC EQUATIONS
 # -----------------------------------------------------------------------------
 
-def calc_lambda_H(_mass, vev):
+def calc_lambda_H(mass, vev):
     # Self-coupling constant: λ_H = m^2 / (2 v^2)
-    lambda_H = (_mass ** 2) / (2.0 * vev ** 2)
+    lambda_H = (mass ** 2) / (2.0 * vev ** 2)
     return lambda_H
 
 def calc_mu_sq(vev, lambda_H):
@@ -17,9 +17,9 @@ def calc_dV_dh(vev, lambda_H, h, mu_sq):
     dV_dh = -mu_sq * (vev + h) + lambda_H * (vev + h) ** 3
     return dV_dh
 
-def calc_spatial_diff(field_forward, field_backward, d):
+def calc_spatial_diff(h_, h__, d):
     # Central difference for spatial derivative: (ψ_p - ψ_m) / 2d
-    spatial_diff = (field_forward - field_backward) / (2.0 * d)
+    spatial_diff = (h_ - h__) / (2.0 * d)
     return spatial_diff
 
 def calc_time_diff(field_current, field_prev, dt):
@@ -32,9 +32,9 @@ def calc_laplacian_h(spatial_diff_sum):
     laplacian_h = sum(spatial_diff_sum)
     return laplacian_h
 
-def calc_mass_term(_mass, h):
+def calc_mass_term(mass, h):
     # Mass contribution to the Klein-Gordon equation: -m^2 * h
-    mass_term = -(_mass ** 2) * h
+    mass_term = -(mass ** 2) * h
     return mass_term
 
 def calc_h(h, prev_h, dt, laplacian_h, mass_term, dV_dh):
@@ -57,9 +57,9 @@ def calc_gradient_energy(spatial_diff_vector):
     gradient_energy = 0.5 * sum(spatial_diff_vector ** 2)
     return gradient_energy
 
-def calc_potential_energy(_mass, h, vev, lambda_H):
+def calc_potential_energy(mass, h, vev, lambda_H):
     # Higgs potential energy density: 0.5*m^2*h^2 + λ*v*h^3 + 0.25*λ*h^4
-    potential_energy = 0.5 * (_mass ** 2) * (h ** 2) + lambda_H * vev * (h ** 3) + 0.25 * lambda_H * (h ** 4)
+    potential_energy = 0.5 * (mass ** 2) * (h ** 2) + lambda_H * vev * (h ** 3) + 0.25 * lambda_H * (h ** 4)
     return potential_energy
 
 def calc_energy_density(kinetic_energy, gradient_energy, potential_energy):
