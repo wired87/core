@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
+import numpy as np
 from google.cloud import bigquery
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 from a_b_c.gemw.gem import Gem
@@ -15,6 +16,7 @@ from qf_utils.qf_utils import QFUtils
 
 _PARAMS_DEBUG = "[ParamsManager]"
 
+import jax.numpy as jnp
 
 def generate_numeric_id() -> str:
     """Generate a random numeric ID."""
@@ -28,7 +30,6 @@ class ParamsManager:
     def __init__(self, qb):
         self.qb = qb
         self.pid = qb.pid
-        self.run_query = qb.run_query
         self.table = f"{self.PARAMS_TABLE}"
         self._extract_prompt = None  # built lazily to avoid circular import with case
 
@@ -119,11 +120,14 @@ class ParamsManager:
                 p["name"] = p.get("name") or p.get("id")
                 p["user_id"] = user_id
                 if "value" in p:
-                    p["value"] = json.dumps(p["value"])
+                    if isinstance(p["value"], (np.ndarray, )):
+                        p["value"] = json.dumps(p["value"].tolist())
+                    else:
+                        p["value"] = json.dumps(p["value"], default=str)
 
                 # Only derive axis_def when we actually have a const flag
                 if ("axis_def" not in p or p.get("axis_def") is None) and "const" in p:
-                    p["axis_def"] = self.get_axis_param(p["is_constant"])
+                    p["axis_def"] = 0 # todo , self.get_axis_param(p["is_constant"])
 
                 if "embedding" in p and p["embedding"]:
                     if isinstance(p["embedding"], str):
@@ -148,7 +152,7 @@ class ParamsManager:
         try:
             print(f"{_PARAMS_DEBUG} delete_param: param_id={param_id}, user_id={user_id}")
             self.qb.del_entry(
-                nid=param_id,
+                id=param_id,
                 table=self.table,
                 user_id=user_id
             )
@@ -221,7 +225,7 @@ class ParamsManager:
                 bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
             ]
         )
-        links = self.run_query(query, conv_to_dict=True, job_config=job_config)
+        links = self.qb.db.run_query(query, conv_to_dict=True, job_config=job_config)
         
         if not links:
             return []
@@ -232,7 +236,7 @@ class ParamsManager:
         param_ids = list(set(param_ids))
         
         params_details = self.qb.row_from_id(
-            nid=param_ids,
+            id=param_ids,
             table=self.PARAMS_TABLE,
             select="*"
         )

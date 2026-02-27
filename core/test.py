@@ -3,7 +3,7 @@ from core.app_utils import USER_ID, ENV_ID
 from main import fetch_world_content
 from qf_utils.qf_utils import QFUtils
 from qf_utils.runtime_utils_creator import RuntimeUtilsCreator
-from utils.graph.local_graph_utils import GUtils
+from graph.local_graph_utils import GUtils
 
 g=GUtils()
 qfu=QFUtils(g)

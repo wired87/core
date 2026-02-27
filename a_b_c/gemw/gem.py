@@ -8,13 +8,15 @@ class Gem:
 
     def __init__(self, model="gemini-2.5-flash"):
         self.model = model
-        self.client = genai.Client(
-            api_key=os.environ.get("GEMINI_API_KEY")
-        )
+        _key = os.environ.get("GEMINI_API_KEY")
+        self.client = genai.Client(api_key=_key) if _key else None
         print("GEMW INITIALIZED")
         self.max_try =10
 
     def ask(self, content, config:dict=None):
+        if not self.client:
+            print("[Gem] GEMINI_API_KEY not set; skipping LLM call")
+            return None
         print("================== ASK GEM ===============")
         for i in range(self.max_try):
             try:
@@ -30,6 +32,9 @@ class Gem:
 
 
     def ask_mm(self, file_content_str:str, prompt:str):
+        if not self.client:
+            print("[Gem] GEMINI_API_KEY not set; skipping LLM call")
+            return None
         print("================== ASK GEM MultiModal ===============")
         print("file_content_str", file_content_str)
         print("prompt", prompt)

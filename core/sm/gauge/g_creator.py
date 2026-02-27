@@ -22,7 +22,7 @@ class GaugeCreator(GaugeUtils):
             pos,
             px_id: str,
             light=None,
-            nid=None,
+            id=None,
     ) -> list:
 
         field_key = self._field_value(ntype)
@@ -92,7 +92,7 @@ class GaugeCreator(GaugeUtils):
             item_index,
     ):
         attrs = dict(
-            nid=nid,
+            id=nid,
             tid=0,
             parent=["GAUGE"],
             type=ntype,
@@ -263,7 +263,7 @@ class GaugeCreator(GaugeUtils):
 
             attrs = self.get_gauge_params(
                 pos=pos,
-                nid=gauge_id,
+                id=gauge_id,
                 px_id=gattrs[src_qfn_id],
                 ntype=ntype
             )
@@ -300,7 +300,7 @@ class GaugeCreator(GaugeUtils):
         gauge_id = f"{g_field}_{src_qfn_id}"
 
         parent_attrs = self.get_gauge_params(
-            nid=gauge_id,
+            id=gauge_id,
             ntype=g_field,
             gluon_index=None,
             gattrs=attrs,

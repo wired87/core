@@ -29,7 +29,7 @@ from chat_manger.main import AIChatClassifier
 from utils.dj_websocket.handler import ConnectionManager
 
 
-from utils.graph.local_graph_utils import GUtils
+from graph.local_graph_utils import GUtils
 from utils.utils import Utils
 
 
@@ -51,8 +51,6 @@ dotenv.load_dotenv()
 
 # Debug prefix for relay manager methods (grep-friendly)
 _RELAY_DEBUG = "[Relay]"
-
-
 
 class Relay(
     AsyncWebsocketConsumer
@@ -154,6 +152,8 @@ class Relay(
 
         self.auth_data = None
         self.relay_cases: list[RelayCase] = RELAY_CASES_CONFIG
+
+        self._grid_streamer = None
 
         # Core components (g, qfu, guard, orchestrator) created in connect() when user_id is known
         self.g = GUtils(nx_only=False, G=nx.Graph(), g_from_path=None)
@@ -280,13 +280,22 @@ class Relay(
             self.user_id = resolved_user_id
             print(f"{_RELAY_DEBUG} connect: user_id saved locally: {self.user_id}")
 
-            def _create_orchestrator(cases, user_id):
-                return OrchestratorManager(cases, user_id=user_id)
+            def _create_orchestrator(cases, user_id, relay=None):
+                return OrchestratorManager(cases, user_id=user_id, relay=relay)
 
             self.orchestrator = await sync_to_async(_create_orchestrator)(
                 self.relay_cases,
                 self.user_id,
+                relay=self,
             )
+
+            self._grid_streamer = None
+            if os.getenv("GRID_STREAM_ENABLED", "false").lower() in ("true", "1"):
+                from grid.streamer import GridStreamer
+                async def _send_grid_frame(b: bytes):
+                    await self.send(bytes_data=b)
+                self._grid_streamer = GridStreamer(_send_grid_frame)
+                self._grid_streamer.start()
 
             print(f"{_RELAY_DEBUG} connect: core components initialized")
 
@@ -524,6 +533,9 @@ class Relay(
     async def disconnect(self, close_code):
         """Called when the websocket is disconnected."""
         try:
+            if getattr(self, "_grid_streamer", None) is not None:
+                self._grid_streamer.stop()
+                self._grid_streamer = None
             print(f"{_RELAY_DEBUG} disconnect: close_code={close_code}, env_node={getattr(self, 'env_node', None) is not None}")
             if self.env_node is not None:
                 print(f"{_RELAY_DEBUG} disconnect: env_node present; WebSocket disconnected with code: {close_code}")

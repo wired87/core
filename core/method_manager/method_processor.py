@@ -77,7 +77,7 @@ class MethodDataProcessor:
         try:
             self.g.update_node(
                 dict(
-                    nid=module_id,
+                    id=module_id,
                     arsenal_struct=self.arsenal_struct,
                     params=modules_params,
                 ),

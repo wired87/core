@@ -11,11 +11,11 @@ from typing import Dict, Any, List, Optional
 import os
 import dotenv
 
+from _db.manager import get_db_manager
 from utils.str_size import get_str_size
 from google import genai
 
 dotenv.load_dotenv()
-from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 
 from google.cloud import bigquery
 
@@ -31,17 +31,23 @@ class QBrainTableManager:
 
     DATASET_ID = "QBRAIN"
 
-    def __init__(self, bqcore):
-        self.bq:BQCore = bqcore
-        self.pid = bqcore.pid
-        self.bqclient = bqcore.bqclient
-        self.ds_id = bqcore.ds_id
-        self.ds_ref = bqcore.ds_ref or f"{bqcore.pid}.{self.DATASET_ID}"
-        self.run_query = bqcore.run_query
-        self.get_table_schema = bqcore.get_table_schema
-        self.insert_col = bqcore.insert_col
-        self.genai_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+    def __init__(self, db):
+        self.db = db
+        self.insert_col = db.insert_col
+        self.pid = db.pid
+        self.ds_ref = db.ds_ref
+        self._local = db.local
+        self.duck_con = db.connection
+        self.bqcore = db.bqcore
+        self.bqclient = getattr(db, "bqclient", None)
+        self.run_db = db.run_db
+        self.run_query = db.run_query
+        self.get_table_schema = db.get_table_schema
+        self._table_ref = lambda t: t if db.local else f"{db.pid}.{self.DATASET_ID}.{t}"
+        _gemini_key = os.environ.get("GEMINI_API_KEY")
+        self.genai_client = genai.Client(api_key=_gemini_key) if _gemini_key else None
         print(f"{_QBRAIN_DEBUG} initialized with dataset: {self.DATASET_ID}")
+
 
     MANAGERS_INFO = [
         {
@@ -319,28 +325,42 @@ class QBrainTableManager:
         Retrieve all modules for a user.
         Groups by ID and returns only the newest entry per ID (based on created_at).
         """
+        job_config=None
+        try:
+            query = f"""
+                    SELECT {select}
+                    FROM (
+                        SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY created_at DESC) as row_num
+                        FROM {self._table_ref(table)}
+                        WHERE (user_id = @user_id OR user_id = 'public') AND (status != 'deleted' OR status IS NOT NULL)
+                    )
+                    WHERE row_num = 1
+                """
 
-        query = f"""
-            SELECT {select}
-            FROM (
-                SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY created_at DESC) as row_num
-                FROM `{self.ds_ref}.{table}`
-                WHERE (user_id = @user_id OR user_id = 'public') AND (status != 'deleted' OR status IS NOT NULL)
+            if self.db.local is True:
+                query = sqlglot.transpile(
+                    query,
+                    read="bigquery",
+                    write="duckdb"
+                )[0]
+            else:
+                job_config = bigquery.QueryJobConfig(
+                    query_parameters=[
+                        bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
+                    ]
+                )
+            result = self.db.run_query(
+                sql=query,
+                params={"user_id": user_id},
+                job_config=job_config,
+                conv_to_dict=True
             )
-            WHERE row_num = 1
-        """
 
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
-            ]
-        )
-        result = self.run_query(query, conv_to_dict=True, job_config=job_config)
-        
-        # filter out deleted entries
-        result = [entry for entry in result if entry["status"] != "deleted"]
-        return result
-
+            # filter out deleted entries
+            result = [entry for entry in result if entry["status"] != "deleted"]
+            return result
+        except Exception as e:
+            print(f"Error in get_users_entries: {e}")
 
     def list_session_entries(self, user_id: str, session_id:str, table:str, select: str = "*", partition_key: str = "id") -> Dict[str, list]:
         """
@@ -353,7 +373,7 @@ class QBrainTableManager:
             SELECT {select}, status
             FROM (
                 SELECT *, ROW_NUMBER() OVER (PARTITION BY {partition_key} ORDER BY created_at DESC) as row_num
-                FROM `{self.ds_ref}.{table}`
+                FROM {self._table_ref(table)}
                 WHERE user_id = @user_id AND session_id = @session_id
             )
             WHERE row_num = 1
@@ -387,7 +407,7 @@ class QBrainTableManager:
             SELECT {select}
             FROM (
                 SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY created_at DESC) as row_num
-                FROM `{self.ds_ref}.{table_name}`
+                FROM {self._table_ref(table_name)}
                 WHERE env_id = @env_id AND {linked_row_id_name} = @{linked_row_id_name} AND user_id = @user_id AND (status != 'deleted' OR status IS NULL)
             )
             WHERE row_num = 1
@@ -421,7 +441,7 @@ class QBrainTableManager:
             SELECT {select}
             FROM (
                 SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY created_at DESC) as row_num
-                FROM `{self.ds_ref}.{table_name}`
+                FROM {self._table_ref(table_name)}
                 WHERE module_id = @module_id AND {linked_row_id_name} = @{linked_row_id_name} AND user_id = @user_id AND (status != 'deleted' OR status IS NULL)
             )
             WHERE row_num = 1
@@ -444,32 +464,42 @@ class QBrainTableManager:
         print("retrieve_env_from_id...", nid)
         if isinstance(nid, str):
             nid = [nid]
-
-        query = f"""
-            SELECT {select}
-            FROM (
-                SELECT {select}, ROW_NUMBER() OVER (PARTITION BY id ORDER BY created_at DESC) as row_num
-                FROM `{self.ds_ref}.{table}`
-                WHERE id IN UNNEST(@nid) AND (status != 'deleted' OR status IS NOT NULL)
-            )
-            WHERE row_num = 1
-        """
-
-        query_parameters=[
-            bigquery.ArrayQueryParameter("nid", "STRING", nid)
-        ]
-
-        if user_id:
-            query += " AND user_id = @user_id"
-            query_parameters.append(
-                bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
-            )
-
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=query_parameters
-        )
-
-        items = self.run_query(query, conv_to_dict=True, job_config=job_config)
+        
+        if self._local:
+            # DuckDB: use list param with unnest
+            tbl = self._table_ref(table)
+            id_placeholders = ", ".join(["?"] * len(nid))
+            user_filter = " AND user_id = ?" if user_id else ""
+            params = list(nid)
+            
+            if user_id:
+                params.append(user_id)
+            query = f"""
+                SELECT {select}
+                FROM (
+                    SELECT {select}, ROW_NUMBER() OVER (PARTITION BY id ORDER BY created_at DESC) as row_num
+                    FROM {tbl}
+                    WHERE id IN ({id_placeholders}) AND (status != 'deleted' OR status IS NOT NULL){user_filter}
+                )
+                WHERE row_num = 1
+            """
+            items = self.db.run_query(query, params=params, conv_to_dict=True)
+        else:
+            query = f"""
+                SELECT {select}
+                FROM (
+                    SELECT {select}, ROW_NUMBER() OVER (PARTITION BY id ORDER BY created_at DESC) as row_num
+                    FROM {tbl}
+                    WHERE id IN UNNEST(@id) AND (status != 'deleted' OR status IS NOT NULL)
+                )
+                WHERE row_num = 1
+            """
+            query_parameters = [bigquery.ArrayQueryParameter("id", "STRING", nid)]
+            if user_id:
+                query += " AND user_id = @user_id"
+                query_parameters.append(bigquery.ScalarQueryParameter("user_id", "STRING", user_id))
+            job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
+            items = self.run_query(query, conv_to_dict=True, job_config=job_config)
         return items
 
 
@@ -500,16 +530,21 @@ class QBrainTableManager:
             """
             # Use schema types for params (sessions.id is INT64, not STRING)
             schema = self.TABLES_SCHEMA.get(clean_table_name, {})
-            params = []
-            for k, v in keys.items():
-                col_type = schema.get(k, "STRING")
-                if col_type in ("INTEGER", "INT64"):
-                    params.append(bigquery.ScalarQueryParameter(k, "INT64", int(v)))
-                else:
-                    params.append(bigquery.ScalarQueryParameter(k, "STRING", str(v)))
-            job_config = bigquery.QueryJobConfig(query_parameters=params)
-            
-            rows = list(self.bqclient.query(query, job_config=job_config).result())
+            if self._local:
+                # DuckDB: use table name only, no project.dataset prefix
+                duck_query = f"SELECT * FROM {clean_table_name} WHERE " + " AND ".join([f"{k} = ?" for k in keys.keys()]) + " ORDER BY created_at DESC LIMIT 1"
+                ordered = [int(v) if schema.get(k) in ("INTEGER", "INT64") else str(v) for k, v in keys.items()]
+                rows = self.db.run_db(duck_query, conv_to_dict=True, params=ordered)
+            else:
+                bq_params = []
+                for k, v in keys.items():
+                    col_type = schema.get(k, "STRING")
+                    if col_type in ("INTEGER", "INT64"):
+                        bq_params.append(bigquery.ScalarQueryParameter(k, "INT64", int(v)))
+                    else:
+                        bq_params.append(bigquery.ScalarQueryParameter(k, "STRING", str(v)))
+                job_config = bigquery.QueryJobConfig(query_parameters=bq_params)
+                rows = list(self.bqclient.query(query, job_config=job_config).result())
             if not rows:
                 print(f"Row not found for upsert_copy in {ref} with keys {keys}")
                 return False
@@ -548,8 +583,7 @@ class QBrainTableManager:
                 row["created_at"] = now
                 
             # Re-insert
-            self.bq.bq_insert(clean_table_name, [row], upsert=False)
-            #print("row overwritten: ", row)
+            self.db.insert(clean_table_name, [row])
             return True
             
         except Exception as e:
@@ -688,12 +722,13 @@ class QBrainTableManager:
     def _ensure_dataset(self) -> bool:
         """
         Check if QBRAIN dataset exists, create if it doesn't.
-        
-        Returns:
-            True if dataset was created or already exists
+        No-op for DuckDB (local).
         """
         try:
-            self.bq.ensure_dataset_exists(self.DATASET_ID)
+            if self._local:
+                print(f"✓ Dataset '{self.DATASET_ID}' ready (DuckDB)")
+                return True
+            self.bqcore.ensure_dataset_exists(self.DATASET_ID)
             print(f"✓ Dataset '{self.DATASET_ID}' ready")
             return True
         except Exception as e:
@@ -722,52 +757,35 @@ class QBrainTableManager:
                     verified_tables.append(table_name)
                     print(f"      ✓ Table '{table_name}' verified")
                     
-                    # Get or create table schema
-                    # We expect get_table_schema to return the current schema dict if table exists
                     current_schema = self.get_table_schema(
                         table_id=table_name,
                         schema=schema,
                         create_if_not_exists=True
                     )
 
-                    # Check for missing columns and extend schema
-                    missing_cols = []
-                    for col_name, col_type in schema.items():
-                        if col_name not in current_schema:
-                            missing_cols.append((col_name, col_type))
-                    
-                    if missing_cols:
-                        print(f"      ⚠ Found missing columns in '{table_name}': {missing_cols}")
-                        print(f"      Extending schema for '{table_name}'...")
-                        
-                        for col_name, col_type in missing_cols:
-                            try:
-                                # Use ALTER TABLE to add column
-                                # Note: BQCore.pid is project_id
-                                query = f"ALTER TABLE `{self.pid}.{self.DATASET_ID}.{table_name}` ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
-                                print(f"        Executing: ADD COLUMN {col_name} {col_type}")
-                                self.bqclient.query(query).result()
-                                print(f"        ✓ Added column {col_name}")
-                            except Exception as e:
-                                print(f"        ❌ Failed to add column {col_name}: {e}")
-                        
-                        print(f"      ✓ Schema extension completed for '{table_name}'")
+                    if not self._local:
+                        missing_cols = [(cn, ct) for cn, ct in schema.items() if cn not in current_schema]
+                        if missing_cols:
+                            print(f"      ⚠ Found missing columns in '{table_name}': {missing_cols}")
+                            for col_name, col_type in missing_cols:
+                                try:
+                                    query = f"ALTER TABLE `{self.pid}.{self.DATASET_ID}.{table_name}` ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+                                    self.bqclient.query(query).result()
+                                    print(f"        ✓ Added column {col_name}")
+                                except Exception as e:
+                                    print(f"        ❌ Failed to add column {col_name}: {e}")
 
                 else:
-                    # Create table
                     print(f"      Creating table '{table_name}'...")
-                    schema_list = []
-                    for col_name, col_type in schema.items():
-                        # Handle Nested JSON or simple
-                        # Basic schema mapping since TABLES_SCHEMA uses strings like "STRING", "JSON"
-                        # BigQuery SchemaField expects "JSON" as type for JSON.
-                        schema_list.append(bigquery.SchemaField(col_name, col_type))
-                        
-                    table_ref = f"{self.pid}.{self.DATASET_ID}.{table_name}"
-                    table = bigquery.Table(table_ref, schema=schema_list)
-                    self.bqclient.create_table(table)
-                    
-                    created_tables.append(table_name)
+                    if self._local:
+                        self.get_table_schema(table_id=table_name, schema=schema, create_if_not_exists=True)
+                        created_tables.append(table_name)
+                    else:
+                        schema_list = [bigquery.SchemaField(cn, ct) for cn, ct in schema.items()]
+                        table_ref = f"{self.pid}.{self.DATASET_ID}.{table_name}"
+                        table = bigquery.Table(table_ref, schema=schema_list)
+                        self.bqclient.create_table(table)
+                        created_tables.append(table_name)
                     print(f"      ✓ Table '{table_name}' created")
                     
             except Exception as e:
@@ -777,16 +795,11 @@ class QBrainTableManager:
         return created_tables, verified_tables
 
     def _table_exists(self, table_name: str) -> bool:
-        """
-        Check if a table exists in the dataset.
-        
-        Args:
-            table_name: Name of the table to check
-            
-        Returns:
-            True if table exists, False otherwise
-        """
+        """Check if a table exists in the dataset."""
         try:
+            if self._local:
+                r = self.duck_con.execute(f"SELECT 1 FROM information_schema.tables WHERE table_name = '{table_name}'").fetchone()
+                return r is not None
             table_ref = f"{self.pid}.{self.DATASET_ID}.{table_name}"
             self.bqclient.get_table(table_ref)
             return True
@@ -898,7 +911,9 @@ class QBrainTableManager:
         
         # Fallback to insert
         print("insert", table_name)
-        return self.bq.bq_insert(table_name, items)
+        self.db.insert(table_name, rows=items)
+        return True
+
 
     def reset_tables(self, table_list: List[str]):
         """
@@ -916,24 +931,22 @@ class QBrainTableManager:
 
                 # Construct columns definition
                 cols_def = []
+                default_ts = "CURRENT_TIMESTAMP" if self._local else self.bqcore.DEFAULT_TIMESTAMP
                 for col, dtype in schema.items():
                     col_def = f"{col} {dtype}"
                     if col in ["created_at", "updated_at"]:
-                        col_def += f" DEFAULT {self.bq.DEFAULT_TIMESTAMP}"
+                        col_def += f" DEFAULT {default_ts}"
                     cols_def.append(col_def)
 
                 cols_str = ",\n  ".join(cols_def)
-
-                query = f"""
-                    CREATE OR REPLACE TABLE `{self.pid}.{self.DATASET_ID}.{table_name}` (
-                      {cols_str}
-                    );
-                """
+                if self._local:
+                    query = f"CREATE OR REPLACE TABLE {table_name} ({cols_str})"
+                else:
+                    query = f"CREATE OR REPLACE TABLE `{self.pid}.{self.DATASET_ID}.{table_name}` (\n  {cols_str}\n)"
 
                 print(f"Recreating table {table_name}...")
-                # print(query)
                 try:
-                    self.run_query(query)
+                    self.run_db(query)
                     print(f"Table {table_name} reset.")
                 except Exception as e:
                     print(f"Error resetting table {table_name}: {e}")
@@ -946,17 +959,18 @@ class QBrainTableManager:
 # Default singleton for standalone use (no orchestrator context)
 _default_bqcore = None
 _qbrain_table_manager_instance: Optional["QBrainTableManager"] = None
-
+LOCAL_DB:str = os.getenv("LOCAL_DB", "True")
 
 def get_qbrain_table_manager(bqcore=None) -> "QBrainTableManager":
-    """Return QBrainTableManager. If bqcore given, creates new instance. Else returns default singleton."""
+    """Return QBrainTableManager. Uses BigQuery when LOCAL_DB=False and bqcore given; else DuckDB."""
     global _qbrain_table_manager_instance, _default_bqcore
-    if bqcore is not None:
-        return QBrainTableManager(bqcore)
+
     if _qbrain_table_manager_instance is None:
-        from a_b_c.bq_agent._bq_core.bq_handler import BQCore
-        _default_bqcore = BQCore(dataset_id="QBRAIN")
-        _qbrain_table_manager_instance = QBrainTableManager(_default_bqcore)
+        db = get_db_manager()
+        _qbrain_table_manager_instance = QBrainTableManager(
+            db=db,
+
+        )
     return _qbrain_table_manager_instance
 
 

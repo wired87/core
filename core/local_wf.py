@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 from _ray_core.base.base import BaseActor
 from core.qf_utils.qf_utils import QFUtils
 from utils.file._csv import dict_2_csv_buffer, collect_keys
-from utils.graph.local_graph_utils import GUtils
+from graph.local_graph_utils import GUtils
 
 
 @ray.remote
@@ -26,7 +26,7 @@ class DataStoreWorker(BaseActor):
         data:list[dict] =  ray.get(data_ref)
         # format id:tid:admin_data
         for attrs in data:
-            nid = attrs["nid"]
+            nid = attrs["id"]
             if nid not in self.datastore:
                 self.datastore[nid] = []
             self.datastore[nid].append(attrs)
@@ -94,7 +94,7 @@ class StateDataWorker(BaseActor, QFUtils):
                         npx_id = npx[0]
                         print("npx_id", npx_id)
                         for nid in changed_nids:
-                            #print("nid", nid)
+                            #print("id", nid)
                             ntype = nid.split("__")[0]
 
                             # retun its nids

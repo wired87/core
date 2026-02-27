@@ -53,7 +53,7 @@ class EqExtractor:
             operator_node_id = f"{parent_id}_{op_symbol}_{hash(expression_node)}"
 
             self.g.add_node(attrs={
-                "nid": operator_node_id,
+                "id": operator_node_id,
                 "type": "OPERATOR",
                 "op": op_symbol
             })
@@ -82,7 +82,7 @@ class EqExtractor:
             func_name = ast.unparse(expression_node.func)
             call_node_id = f"{parent_id}_call_{func_name}_{hash(expression_node)}"
 
-            self.g.add_node(attrs={"nid": call_node_id, "type": "FUNCTION_CALL", "func": func_name})
+            self.g.add_node(attrs={"id": call_node_id, "type": "FUNCTION_CALL", "func": func_name})
             self.g.add_edge(src=parent_id, trgt=call_node_id, rel='output_of')
 
             # 2. Verarbeite alle Argumente der Funktion rekursiv
@@ -99,7 +99,7 @@ class EqExtractor:
             # Stellen Sie sicher, dass die Variable als Parameter-Knoten existiert
             if not self.g.has_node(param_name):
                 self.g.add_node(
-                    attrs={"nid": param_name, "type": "PARAM"})
+                    attrs={"id": param_name, "type": "PARAM"})
 
             # Füge eine Kante von der Funktion zur benötigten Variable hinzu
             self.g.add_edge(src=module_id, trgt=param_name, rel='requires_param_in_body')
@@ -119,7 +119,7 @@ class EqExtractor:
                 # Node ID is the type name itself
                 self.g.add_node(
                     dict(
-                        nid=data_type,
+                        id=data_type,
                         parent=['DATATYPE'],
                         type=data_type,
                     )

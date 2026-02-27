@@ -12,7 +12,7 @@ from gnn_master.node_refactored import Node
 from qf_utils.all_subs import ALL_SUBS
 from qf_utils.field_utils import FieldUtils
 from qf_utils.qf_utils import QFUtils
-from utils.graph.local_graph_utils import GUtils
+from graph.local_graph_utils import GUtils
 from utils.utils import Utils
 
 
@@ -181,7 +181,7 @@ s    ):
         # UPDATOR NODE (GPU)
         self.g.add_node(
             {
-                "nid":"UPDATOR",
+                "id":"UPDATOR",
                 "type": "NODE",
                 "ref": Node.options(
                     lifetime="detached",

@@ -17,7 +17,7 @@ from qf_utils.all_subs import ALL_SUBS
 
 from qf_utils.field_utils import FieldUtils
 from qf_utils.qf_utils import QFUtils
-from utils.graph.local_graph_utils import GUtils
+from graph.local_graph_utils import GUtils
 
 
 @ray.remote
@@ -121,7 +121,7 @@ class Injector(
         self.module_pattern_collector = []
 
         for i, module in enumerate(modules):
-            mid = module["nid"]
+            mid = module["id"]
             keys: list[str] = module["keys"]
             faxis_def: list[int or None] = module["axis_def"]
 
@@ -240,7 +240,7 @@ class Injector(
 
         for attrs in attr_struct: # loop each field attrs
             try:
-                nid = attrs["nid"]
+                nid = attrs["id"]
                 tid = attrs["tid"]
                 if nid in self.ncfg: # do we have a ncfg for this node?
                     total_iters = self.ncfg[nid].get("total_iters", 0)

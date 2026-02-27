@@ -1,8 +1,8 @@
 import base64
+import os
 import pprint
 
 from itertools import product
-from typing import Callable
 
 import numpy as np
 from bob_builder.artifact_registry.artifact_admin import ArtifactAdmin
@@ -11,21 +11,21 @@ import asyncio
 import json
 import websockets
 from code_manipulation.graph_creator import StructInspector
-from core.module_manager.create_runnable import create_runnable
-from utils.graph.local_graph_utils import GUtils
+from graph.local_graph_utils import GUtils
 from qf_utils.qf_utils import QFUtils
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 
 from core.qbrain_manager import get_qbrain_table_manager, QBrainTableManager
 
 from core.module_manager.mcreator import ModuleCreator
-from utils.math.operator_handler import EqExtractor, eq_extractor_main
+from utils.math.operator_handler import EqExtractor
 from qf_utils.all_subs import ALL_SUBS
 from utils._np.expand_array import expand_structure
 from utils.get_shape import extract_complex, get_shape
 from utils.xtract_trailing_numbers import extract_trailing_numbers
-from vertex_trainer.manager import VertexTrainerManager
+#from vertex_trainer.manager import VertexTrainerManager
 from workflows.deploy_sim import DeploymentHandler
+from utils.run_subprocess import pop_cmd
 
 
 from core.fields_manager.fields_lib import FieldsManager
@@ -98,7 +98,7 @@ class Guard(
         self.world_cfg=None
         print("DEBUG: ArtifactAdmin initialized")
         self.artifact_admin = ArtifactAdmin()
-        self.trainer = VertexTrainerManager()
+         
         self.time = 0
 
         self.qfu:QFUtils = qfu
@@ -134,7 +134,7 @@ class Guard(
     # ---- NODE / EDGE HELPERS ----
     def _node(self, nid: str, ntype: str, **kwargs):
         """Add a node. ntype: ENV, MODULE, FIELD, INJECTION, METHOD, PARAM."""
-        self.g.add_node({"nid": nid, "type": ntype.upper(), **kwargs})
+        self.g.add_node({"id": nid, "type": ntype.upper(), **kwargs})
 
     def _edge(self, src: str, trt: str, rel: str, src_layer: str, trgt_layer: str):
         """Add an edge with standard attrs."""
@@ -154,7 +154,7 @@ class Guard(
                     item["interactant_fields"] = json.loads(item["interactant_fields"])
                 except json.JSONDecodeError:
                     pass
-            extra = {k: v for k, v in item.items() if k not in ("id", "nid", "type")}
+            extra = {k: v for k, v in item.items() if k not in ("id", "id", "type")}
             extra["field_index"] = i
             self._node(fid, "FIELD", **extra)
 
@@ -292,7 +292,7 @@ class Guard(
         res = res_list[0] if res_list else {}
         ghost_fields = self.g.get_neighbor_list_rel(node="GHOST_MODULE", trgt_rel="has_field")
         self.g.add_node(dict(
-            nid=env_id, type="FIELD", sub_type="ENV", keys=keys, values=values, axis_def=axis_def,
+            id=env_id, type="FIELD", sub_type="ENV", keys=keys, values=values, axis_def=axis_def,
             field_index=len(ghost_fields), **res
         ))
         self._edge("GHOST_MODULE", env_id, "has_field", "MODULE", "FIELD")
@@ -327,18 +327,59 @@ class Guard(
             for mfid in interactant_fields:
                 self._edge(fid, mfid, "has_finteractant", "FIELD", "FIELD")
 
-    def main(self, env_id, env_data):
+    def main(self, env_id, env_data, cfg_path=None, grid_streamer=None, grid_animation_recorder=None):
         print("main...")
         #pprint.pp(env_data)
         self.data_handler(env_id, env_data)
         components = self.converter(env_id)
         print("components", components)
         #self.handle_deployment(env_id, components)
+
+        if grid_streamer is not None and components:
+            self._push_grid_frame(components, grid_streamer, step=0)
+        if grid_animation_recorder is not None and components:
+            self._save_animation_frame(components, grid_animation_recorder, step=0)
+
+        if os.getenv("LOCAL_DB", "True") == "True":
+            project_root = os.path.dirname(os.path.dirname(__file__))
+            cfg_file = cfg_path or os.getenv("GRID_CFG_PATH", "test_out.json")
+            if not os.path.isabs(cfg_file):
+                cfg_file = os.path.join(project_root, cfg_file)
+            with open(cfg_file, "w") as f:
+                f.write(json.dumps(components, indent=4))
+            print(f"[LOCAL_DB] cfg written to {cfg_file}")
+
+            import sys
+            grid_cmd = os.getenv("GRID_CMD", "{python} -m grid --cfg {cfg_path}")
+            cmd = (
+                grid_cmd.replace("{cfg_path}", cfg_file)
+                .replace("{cfg}", cfg_file)
+                .replace("{python}", sys.executable)
+            )
+            print(f"[LOCAL_DB] running grid workflow: {cmd}")
+            try:
+                pop_cmd(cmd, cwd=project_root)
+            except Exception as e:
+                print(f"[LOCAL_DB] grid workflow error: {e}")
+                raise
+
+            # Save model path to envs table
+            model_path = os.getenv("GRID_MODEL_OUT", os.path.join(project_root, "model_out.json"))
+            if os.path.isfile(model_path):
+                self._save_model_path_to_envs(env_id, model_path)
+            else:
+                print(f"[guard] model file not found, skipping envs update: {model_path}")
+
+        if grid_animation_recorder is not None:
+            grid_animation_recorder.finish()
         print("main... done")
 
     def handle_deployment(self, env_id, components):
         print(f"\n[START] handle_deployment für Env: {env_id}")
         try:
+            if not self._is_components_valid_for_grid(components):
+                print("  [WARN] Aborting deployment: components have empty/invalid structures for grid-root")
+                return
             # 1. Config Erstellung
             world_cfg = self.create_vm_cfgs(env_id)
             print(f"  -> world_cfg erstellt:", type(world_cfg))
@@ -380,7 +421,8 @@ class Guard(
             print("  -> Status in DB auf 'IN_PROGRESS' gesetzt")
 
             print(f"  -> Modus: TESTING (Speichere lokal)")
-            path = r"C:\Users\bestb\PycharmProjects\BestBrain\test_out.json"
+            import os
+            path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test_out.json")
             with open(path, "w") as f:
                 f.write(json.dumps(components, indent=4))
             print(f"  -> Datei erfolgreich geschrieben unter: {path}")
@@ -412,6 +454,80 @@ class Guard(
 
 
 
+    def _validate_env_data(self, env_id: str, env_data: dict) -> None:
+        """Ensure no cfg entries in env_data are empty. Raises ValueError if invalid."""
+        if not env_data:
+            raise ValueError(f"[guard] env_data for {env_id} is empty")
+        modules = env_data.get("modules")
+        if modules is None:
+            raise ValueError(f"[guard] env_data.modules is missing for {env_id}")
+        if isinstance(modules, list) and len(modules) == 0:
+            raise ValueError(f"[guard] env_data.modules is empty for {env_id}")
+        if isinstance(modules, dict) and len(modules) == 0:
+            raise ValueError(f"[guard] env_data.modules is empty for {env_id}")
+        # injections may be empty {} when no injections; only modules must be non-empty
+
+    def _push_grid_frame(self, components: dict, grid_streamer, step: int = 0) -> None:
+        """Decode DB from components and push to grid streamer (non-blocking)."""
+        db_b64 = components.get("DB")
+        if not db_b64:
+            return
+        try:
+            raw = base64.b64decode(db_b64)
+            arr = np.frombuffer(raw, dtype=np.complex64)
+            data = np.abs(arr).astype(np.float32) if np.iscomplexobj(arr) else arr.astype(np.float32)
+            grid_streamer.put_frame(step, data)
+        except Exception as e:
+            print(f"[guard] _push_grid_frame: {e}")
+
+    def _save_animation_frame(self, components: dict, recorder, step: int = 0) -> None:
+        """Decode DB and save plot frame for animation recorder."""
+        db_b64 = components.get("DB")
+        if not db_b64:
+            return
+        try:
+            raw = base64.b64decode(db_b64)
+            arr = np.frombuffer(raw, dtype=np.complex64)
+            data = np.abs(arr).astype(np.float32) if np.iscomplexobj(arr) else arr.astype(np.float32)
+            recorder.cfg = components
+            recorder.save_frame(step, data)
+        except Exception as e:
+            print(f"[guard] _save_animation_frame: {e}")
+
+    def _save_model_path_to_envs(self, env_id: str, model_path: str) -> None:
+        """Update envs table row with model_path (and npz_path)."""
+        try:
+            if hasattr(self.env_manager.qb, "insert_col"):
+                try:
+                    self.env_manager.qb.insert_col(
+                        self.env_manager.TABLE_ID,
+                        "model_path",
+                        "STRING",
+                    )
+                except Exception:
+                    pass
+            model_path_abs = os.path.abspath(model_path)
+            npz_path = model_path_abs.replace(".json", "_data.npz")
+            updates = {"model_path": model_path_abs}
+            if os.path.isfile(npz_path):
+                try:
+                    self.env_manager.qb.insert_col(
+                        self.env_manager.TABLE_ID,
+                        "model_data_path",
+                        "STRING",
+                    )
+                except Exception:
+                    pass
+                updates["model_data_path"] = npz_path
+            self.env_manager.qb.set_item(
+                self.env_manager.TABLE_ID,
+                updates,
+                keys={"id": env_id, "user_id": self.user_id},
+            )
+            print(f"[guard] saved model_path to envs: {model_path_abs}")
+        except Exception as e:
+            print(f"[guard] _save_model_path_to_envs error: {e}")
+
     def data_handler(self, env_id, env_data):
         """
         1. Parse payload to get IDs.
@@ -420,6 +536,7 @@ class Guard(
         4. Compile pattern.
         """
         print("sim_start_process...")
+        self._validate_env_data(env_id, env_data)
 
         # XTRCT NODE IDS
         module_ids, field_ids, inj_ids = self.create_nodes(
@@ -434,9 +551,26 @@ class Guard(
         print("Edges created.")
 
         self.check_create_ghost_mod(env_id)
-        self.handle_env(env_id)
-        print("Env handled.")
 
+
+        # hadler
+        self.handle_env(env_id)
+        self.handle_methods(module_ids=list(module_ids))
+        self.handle_field_interactants(
+            list(field_ids),
+            env_id
+        )
+
+
+        # ETEND FIELDS PARAMS WITH RETURN KEYS
+        self.extend_fields_keys()
+
+        self.get_inj_data(inj_ids)
+
+        print("data_hanadler... done")
+
+
+    def get_inj_data(self, inj_ids):
         # Enrich INJECTION nodes with BQ data
         if inj_ids:
             print("Fetching injections from BQ...")
@@ -445,28 +579,17 @@ class Guard(
                 list(inj_ids),
                 table=self.injection_manager.table
             )
-
+        
             fetched_injections = {item["id"]: item for item in res}
 
             for inid, inj_data in fetched_injections.items():
                 for nid, attrs in self.g.G.nodes(data=True):
                     if attrs.get("type") == "INJECTION" and inid in nid and inj_data:
-                        extra = {k: v for k, v in inj_data.items() if k not in ("nid", "type")}
+                        extra = {k: v for k, v in inj_data.items() if k not in ("id", "type")}
                         self._node(nid, "INJECTION", **extra)
             print(f"Fetched injections: {len(fetched_injections)}")
 
-        self.handle_methods(module_ids=list(module_ids))
 
-        print("Handling field interactants...")
-        self.handle_field_interactants(
-            list(field_ids),
-            env_id
-        )
-
-        # ETEND FIELDS PARAMS WITH RETURN KEYS
-        self.extend_fields_keys()
-
-        print("data_hanadler... done")
 
     def add_field_index(self, fid):
         """
@@ -524,14 +647,82 @@ class Guard(
             **method_struct,
             **injection_patterns,
             **db_to_method_struct,
-            "METHOD_TO_DB": method_to_db,
-            "E_KEY_MAP_PER_FIELD": flatten_e_map,
+            "METHOD_TO_DB": method_to_db if method_to_db is not None else [],
+            "E_KEY_MAP_PER_FIELD": flatten_e_map if flatten_e_map is not None else [],
             # include serialized OPERATORS
             #"OPERATOR": serialize_ops()
         }
 
+        components = self._sanitize_components(components)
+        local_db = os.getenv("LOCAL_DB", "True") == "True"
+        self._validate_components_no_empty(components, strict=not local_db)
         print("Main... done")
         return components
+
+    def _sanitize_components(self, components: dict) -> dict:
+        """Ensure no None or invalid empty structures that would break grid-root."""
+        out = dict(components)
+        list_keys = [
+            "DB", "AXIS", "DB_SHAPE", "AMOUNT_PARAMS_PER_FIELD", "DB_PARAM_CONTROLLER",
+            "DB_KEYS", "FIELD_KEYS", "MODULES", "FIELDS",
+            "DB_TO_METHOD_EDGES", "METHOD_TO_DB", "DB_CTL_VARIATION_LEN_PER_EQUATION",
+            "DB_CTL_VARIATION_LEN_PER_FIELD", "LEN_FEATURES_PER_EQ",
+            "METHOD_PARAM_LEN_CTLR", "METHODS_PER_MOD_LEN_CTLR", "NEIGHBOR_CTLR",
+            "INJECTOR_TIME", "INJECTOR_INDICES", "INJECTOR_VALUES",
+            "E_KEY_MAP_PER_FIELD",
+        ]
+        for k in list_keys:
+            if k in out and out[k] is None:
+                out[k] = []
+        if "METHOD_TO_DB" in out and not isinstance(out["METHOD_TO_DB"], list):
+            out["METHOD_TO_DB"] = []
+        if "DB_TO_METHOD_EDGES" in out and not isinstance(out["DB_TO_METHOD_EDGES"], list):
+            out["DB_TO_METHOD_EDGES"] = []
+        return out
+
+    _OPTIONAL_EMPTY_KEYS = frozenset({
+        "INJECTOR_TIME", "INJECTOR_INDICES", "INJECTOR_VALUES",
+        "E_KEY_MAP_PER_FIELD",
+    })
+
+    def _validate_components_no_empty(self, components: dict, strict: bool = True) -> None:
+        """Ensure no cfg entry in components is empty. Raises ValueError with details when strict.
+        Keys in _OPTIONAL_EMPTY_KEYS may be empty (e.g. when no injections).
+        When strict=False (e.g. LOCAL_DB), logs warning instead of raising."""
+        if not components:
+            if strict:
+                raise ValueError("[guard] components dict is empty")
+            print("[guard] WARN: components dict is empty")
+            return
+        empty_keys = []
+        for k, v in components.items():
+            if k in self._OPTIONAL_EMPTY_KEYS:
+                continue
+            if v is None:
+                empty_keys.append(f"{k}=None")
+            elif isinstance(v, (list, dict)) and len(v) == 0:
+                empty_keys.append(f"{k}=[]/{{}}")
+            elif isinstance(v, str) and v.strip() == "":
+                empty_keys.append(f"{k}=''")
+        if empty_keys:
+            msg = f"[guard] cfg entries must not be empty. Empty: {', '.join(empty_keys)}"
+            if strict:
+                raise ValueError(msg)
+            print(f"[guard] WARN: {msg}")
+
+    def _is_components_valid_for_grid(self, components: dict) -> bool:
+        """Check if components have minimal non-empty structure for grid-root."""
+        if not components:
+            return False
+        if components.get("DB") is None:
+            return False
+        if "AXIS" not in components or "FIELDS" not in components:
+            return False
+        modules = components.get("MODULES", [])
+        fields = components.get("FIELDS", [])
+        if not modules or not fields:
+            return False
+        return True
 
 
     def deploy_vms(self, vm_payload):
@@ -596,8 +787,8 @@ class Guard(
         flatten_e_map = []
 
         try:
-            amount_nodes = env_attrs["amount_of_nodes"]
-            dims = env_attrs["dims"]
+            amount_nodes = env_attrs.get("amount_of_nodes", 1)
+            dims = env_attrs.get("dims", 3)
             schema_positions = self.get_positions(amount_nodes, dims)
 
             modules = self.g.get_nodes(
@@ -926,14 +1117,14 @@ class Guard(
         import json
         method_idx = 0
         for mid in module_ids:
-            mod_node = self.g.get_node(nid=mid)
+            mod_node = self.g.get_node(id=mid)
             mmethods = mod_node["methods"]
 
             if isinstance(mmethods, str):
                 mmethods = json.loads(mmethods)
 
             methods = self.qb.row_from_id(
-                nid=mmethods,
+                id=mmethods,
                 table=self.method_manager.METHODS_TABLE,
             )
 
@@ -979,7 +1170,7 @@ class Guard(
                 for param, value in zip(keys, values):
                     # type already exists
                     self.g.update_node({
-                        "nid": param,
+                        "id": param,
                         "type": "PARAM",
                         "value": value,
                     })
@@ -1226,7 +1417,8 @@ class Guard(
             return flatten_rtk_map
         except Exception as e:
             print("Err set_edge_method_to_db", e)
-            pass
+            # Return valid empty structure to avoid None breaking grid
+            return []
 
 
 
@@ -1404,7 +1596,7 @@ class Guard(
                                         # Add field to param collection
                                         worked_params[pid_orig].append(fid)
 
-                                        fmod = self.g.get_node(nid=fiattrs.get("module_id"))
+                                        fmod = self.g.get_node(id=fiattrs.get("module_id"))
 
                                         nfield_index = fiattrs["field_index"]
 
@@ -1441,7 +1633,7 @@ class Guard(
                                         #print("interactant pindex", pindex)
                                         #print(f"{pid} found in gfid ({gfield_index}) (pindex {pindex})", gfield_index)
 
-                                        gmod = self.g.get_node(nid="GHOST_MODULE")
+                                        gmod = self.g.get_node(id="GHOST_MODULE")
 
                                         # ADD PARAM TO
                                         param_collector.append(
@@ -1455,8 +1647,8 @@ class Guard(
 
                                 if collected is False:
                                     #print(f"PARAM {pid} COULD NOT BE FOUND in {fid} or its interactants... ERR")
-                                    gmod = self.g.get_node(nid="GHOST_MODULE")
-                                    env_field = self.g.get_node(nid=env_id)
+                                    gmod = self.g.get_node(id="GHOST_MODULE")
+                                    env_field = self.g.get_node(id=env_id)
                                     pindex = env_field["keys"].index("None")
                                     param_collector.append(
                                         self.get_db_index(
@@ -1602,7 +1794,7 @@ class Guard(
                                     if clean_pid in ikeys:
                                         pindex = ikeys.index(clean_pid)
                                         nfield_index = fiattrs["field_index"]
-                                        pmod = self.g.get_node(nid=fiattrs["module_id"])
+                                        pmod = self.g.get_node(id=fiattrs["module_id"])
                                         param_collector.append(
                                             self.get_db_index(
                                                 pmod["module_index"],
@@ -1616,7 +1808,7 @@ class Guard(
                                     for gfid, gfattrs in ghost_fields:
                                         gikeys = gfattrs.get("keys", [])
                                         gfield_index = gfattrs["field_index"]
-                                        pmod = self.g.get_node(nid="GHOST_MODULE")
+                                        pmod = self.g.get_node(id="GHOST_MODULE")
 
                                         if isinstance(gikeys, str): gikeys = json.loads(gikeys)
                                         if clean_pid in gikeys:
@@ -1633,11 +1825,10 @@ class Guard(
                                 field_eq_param_struct.append(param_collector if collected else -1)
 
             #print("set_iterator_from_humans: GPU Skeleton successfully compiled.")
-            return iterator
-
         except Exception as e:
             print(f"Error in set_iterator_from_humans: {e}")
             raise e
+        return iterator
 
 
     def extend_fields_keys(self):
@@ -1793,7 +1984,7 @@ class Guard(
                         axis_def.append(0)
 
                     self.g.update_node({
-                        "nid": fid,
+                        "id": fid,
                         "keys": keys,
                         "values": values,
                         "axis_def": axis_def,
@@ -1966,25 +2157,59 @@ if __name__ == "__main__":
         }
     }
     env_id = "env_814afeee6e234237b94b653af836b664"
+    user_id = "72b74d5214564004a3a86f441a4a112f"
     env_data = payload["data"]["config"][env_id]
+
+    _qb = get_qbrain_table_manager()
+    _qb.initialize_all_tables()
+    params_manager = ParamsManager(_qb)
+    env_manager = EnvManager(_qb)
+
+    # Ensure env exists so model_path and animation_path can be saved
+    existing = env_manager.retrieve_env_from_id(env_id)
+    if not existing.get("envs"):
+        env_manager.set_env(
+            {"id": env_id, "sim_time": 100, "cluster_dim": 3, "dims": 3},
+            user_id=user_id,
+        )
+        print(f"[guard __main__] created env {env_id}")
+
+    grid_animation_recorder = None
+    if os.getenv("GRID_STREAM_ENABLED", "false").lower() in ("true", "1"):
+        try:
+            from grid.animation_recorder import GridAnimationRecorder
+            env_cfg = {**{"dims": 3, "amount_of_nodes": 1}}
+            grid_animation_recorder = GridAnimationRecorder(
+                env_id=env_id,
+                user_id=user_id,
+                env_cfg=env_cfg,
+                cfg={},
+                env_manager=env_manager,
+            )
+        except Exception as e:
+            print(f"[guard __main__] animation recorder init: {e}")
 
     g = GUtils()
     qfu = QFUtils(g)
-
-    _qb=QBrainTableManager(BQCore(dataset_id="QBRAIN"))
-
     guard = Guard(
         qfu,
         g,
-        user_id="72b74d5214564004a3a86f441a4a112f",
-        injection_manager = InjectionManager(_qb),
-        module_db_manager = ModuleWsManager(_qb),
-        field_manager = FieldsManager(_qb),
-        method_manager = MethodManager(_qb),
-        params_manager = ParamsManager(_qb),
-        env_manager = EnvManager(_qb),
+        user_id=user_id,
+        injection_manager=InjectionManager(_qb),
+        module_db_manager=ModuleWsManager(_qb),
+        field_manager=FieldsManager(_qb),
+        method_manager=MethodManager(_qb, params_manager=params_manager),
+        params_manager=params_manager,
+        env_manager=env_manager,
     )
-    guard.main(env_id=env_id, env_data=env_data)
+    guard.main(env_id=env_id, env_data=env_data, grid_animation_recorder=grid_animation_recorder)
+
+    # Debug: print saved paths from envs
+    updated = env_manager.retrieve_env_from_id(env_id)
+    if updated.get("envs"):
+        row = updated["envs"][0]
+        print(f"[guard __main__] model_path: {row.get('model_path', 'N/A')}")
+        print(f"[guard __main__] animation_path: {row.get('animation_path', 'N/A')}")
 
 
 

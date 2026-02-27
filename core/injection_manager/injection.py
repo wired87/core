@@ -114,7 +114,7 @@ class InjectionManager:
         try:
             print(f"{_INJ_DEBUG} del_inj: injection_id={injection_id}, user_id={user_id}")
             out = self.qb.del_entry(
-                nid=injection_id,
+                id=injection_id,
                 table=self.table,
                 user_id=user_id
             )
@@ -159,7 +159,7 @@ class InjectionManager:
         try:
             print(f"{_INJ_DEBUG} get_inj_list: inj_ids count={len(inj_ids) if inj_ids else 0}")
             rows = self.qb.row_from_id(
-                nid=inj_ids,
+                id=inj_ids,
                 select="*",
                 table=self.table
             )
@@ -184,7 +184,7 @@ class InjectionManager:
         try:
             print(f"{_INJ_DEBUG} get_injection: injection_id={injection_id}")
             rows = self.qb.row_from_id(
-                nid=injection_id,
+                id=injection_id,
                 select="*",
                 table=self.table
             )
@@ -309,7 +309,7 @@ class InjectionManager:
         """Remove link injection to session (soft delete)."""
         self.qb.rm_link_session_link(
             session_id=session_id,
-            nid=injection_id,
+            id=injection_id,
             user_id=user_id,
             session_link_table="session_to_injections",
             session_to_link_name_id="injection_id",
@@ -332,7 +332,7 @@ class InjectionManager:
             inj_ids = [l["injection_id"] for l in links]
 
             injections = self.qb.row_from_id(
-                nid=inj_ids,
+                id=inj_ids,
                 select="*",
                 table=self.table, # injections table
                 user_id=user_id
@@ -414,7 +414,13 @@ def handle_set_inj(data=None, auth=None) -> dict:
         if not success:
             print("!success", success)
             return WebSocketResponse.error("SET_INJ", "Failed to save injection", auth=auth_out)
-        return {"type": "GET_INJ_USER", "data": {"injections": im.get_inj_user(user_id)}}
+        inj_id = (data or {}).get("id") or (data or {}).get("data", {}).get("id") or (data or {}).get("injection_id")
+        # Align with frontend: SET_INJ expects type, status.state, and data.id
+        return {
+            "type": "SET_INJ",
+            "status": {"state": "success"},
+            "data": {"id": inj_id, "injections": im.get_inj_user(user_id)},
+        }
     except Exception as e:
         print("Err setting injection:", e)
         return WebSocketResponse.error("SET_INJ", str(e), auth=auth_out)
@@ -436,7 +442,12 @@ def handle_del_inj(data=None, auth=None) -> dict:
         success = im.del_inj(injection_id, user_id)
         if not success:
             return WebSocketResponse.error("DEL_INJ", "Failed to delete injection", auth=auth_out)
-        return {"type": "GET_INJ_USER", "data": {"injections": im.get_inj_user(user_id)}}
+        # Align with frontend: DEL_INJ expects type, status.state, and data.id
+        return {
+            "type": "DEL_INJ",
+            "status": {"state": "success"},
+            "data": {"id": injection_id, "injections": im.get_inj_user(user_id)},
+        }
     except Exception as e:
         return WebSocketResponse.error("DEL_INJ", str(e), auth=auth_out)
 

@@ -3,7 +3,7 @@ import logging
 import random
 from datetime import datetime
 from typing import Dict, Any, List
-from google.cloud import bigquery
+
 from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 from core.qbrain_manager import get_qbrain_table_manager
 from core.handler_utils import param_missing_error, require_param, require_param_truthy, get_val
@@ -11,47 +11,22 @@ from core.handler_utils import param_missing_error, require_param, require_param
 # Debug prefix for manager methods (grep-friendly)
 _ENV_DEBUG = "[EnvManager]"
 
-# Define Schema
-ENV_SCHEMA = [
-    bigquery.SchemaField("id", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("sim_time", "INTEGER", mode="REQUIRED"),
-    bigquery.SchemaField("cluster_dim", "INTEGER", mode="REQUIRED"),
-    bigquery.SchemaField("dims", "INTEGER", mode="REQUIRED"),
-    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"), # Link to users table
-    bigquery.SchemaField("data", "STRING", mode="NULLABLE"),
-    bigquery.SchemaField("created_at", "TIMESTAMP"),
-    bigquery.SchemaField("updated_at", "TIMESTAMP"),
-]
+ENV_SCHEMA = {"id": "STRING", "sim_time": "INTEGER", "cluster_dim": "INTEGER", "dims": "INTEGER", "user_id": "STRING", "data": "STRING", "created_at": "TIMESTAMP", "updated_at": "TIMESTAMP"}
 
 class EnvManager:
     DATASET_ID = "QBRAIN"
 
 
-    def __init__(self, qb):
-        self.qb = qb
+    def __init__(self, qb=None):
+        self.qb = qb or get_qbrain_table_manager()
         self.TABLE_ID = "envs"
-        self.pid = qb.pid
-        self.bqclient = qb.bqclient
-        self.run_query = qb.run_query
-        self.insert_col = qb.insert_col
+        self.pid = self.qb.pid
         self.session_link_tref = "session_to_envs"
 
     def _ensure_env_table(self):
         """Check if envs table exists, create if not."""
-        try:
-            print(f"{_ENV_DEBUG} _ensure_env_table: checking table")
-            table_ref = f"{self.pid}.{self.DATASET_ID}.{self.TABLE_ID}"
-            self.bqclient.get_table(table_ref)
-            logging.info(f"Table {table_ref} exists.")
-            self.insert_col(self.TABLE_ID, "data", "STRING")
-            print(f"{_ENV_DEBUG} _ensure_env_table: table exists, data column ensured")
-        except Exception as e:
-            print(f"{_ENV_DEBUG} _ensure_env_table: creating table: {e}")
-            logging.info(f"Creating table {table_ref}:{e}")
-            table = bigquery.Table(table_ref, schema=ENV_SCHEMA)
-            self.bqclient.create_table(table)
-            logging.info(f"Table {table_ref} created.")
-            print(f"{_ENV_DEBUG} _ensure_env_table: table created")
+        self.qb.get_table_schema(table_id=self.TABLE_ID, schema=ENV_SCHEMA, create_if_not_exists=True)
+        self.qb.insert_col(self.TABLE_ID, "data", "STRING")
 
     def retrieve_send_user_specific_env_table_rows(self, user_id: str, select: str = "*") -> Dict[str, Any]:
         """
@@ -110,9 +85,9 @@ class EnvManager:
         try:
             print(f"{_ENV_DEBUG} retrieve_env_from_id: env_id={env_id}")
             envs = self.qb.row_from_id(
-                nid=env_id,
+                env_id,
+                self.TABLE_ID,
                 select=select,
-                table=self.TABLE_ID
             )
             if envs:
                 print(f"{_ENV_DEBUG} retrieve_env_from_id: got {len(envs)} env(s)")
@@ -131,7 +106,7 @@ class EnvManager:
         try:
             print(f"{_ENV_DEBUG} delete_env: env_id={env_id}, user_id={user_id}")
             self.qb.del_entry(
-                nid=env_id,
+                id=env_id,
                 table=self.TABLE_ID,
                 user_id=user_id,
             )
@@ -190,7 +165,7 @@ class EnvManager:
             print(f"{_ENV_DEBUG} rm_link_session_env: session_id={session_id}, env_id={env_id}")
             self.qb.rm_link_session_link(
                 session_id=session_id,
-                nid=env_id,
+                id=env_id,
                 user_id=user_id,
                 session_link_table=self.session_link_tref,
                 session_to_link_name_id="env_id",
@@ -226,20 +201,8 @@ class EnvManager:
         """Remove link module to env (soft delete)."""
         try:
             print(f"{_ENV_DEBUG} rm_link_env_module: session_id={session_id}, env_id={env_id}, module_id={module_id}")
-            query = f"""
-                UPDATE `{self.pid}.{self.DATASET_ID}.envs_to_modules`
-                SET status = 'deleted'
-                WHERE session_id = @session_id AND env_id = @env_id AND module_id = @module_id AND user_id = @user_id
-            """
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("session_id", "STRING", session_id),
-                    bigquery.ScalarQueryParameter("env_id", "STRING", env_id),
-                    bigquery.ScalarQueryParameter("module_id", "STRING", module_id),
-                    bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
-                ]
-            )
-            self.run_query(query, job_config=job_config)
+            query = f"UPDATE {self.qb._table_ref('envs_to_modules')} SET status = 'deleted' WHERE session_id = @session_id AND env_id = @env_id AND module_id = @module_id AND user_id = @user_id"
+            self.qb.db.execute(query, params={"session_id": session_id, "env_id": env_id, "module_id": module_id, "user_id": user_id})
             print(f"{_ENV_DEBUG} rm_link_env_module: done")
         except Exception as e:
             print(f"{_ENV_DEBUG} rm_link_env_module: error: {e}")
@@ -254,38 +217,17 @@ class EnvManager:
         """
         try:
             print(f"{_ENV_DEBUG} get_env_module_structure: session_id={session_id}, env_id={env_id}")
-            ds = f"{self.pid}.{self.DATASET_ID}"
             # 1. Get Modules
-            q_mods = f"""
-            SELECT module_id FROM `{ds}.envs_to_modules`
-            WHERE session_id=@sid AND env_id=@eid AND (status != 'deleted' OR status IS NULL)
-            """
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("sid", "STRING", session_id),
-                    bigquery.ScalarQueryParameter("eid", "STRING", env_id)
-                ]
-            )
-            mod_rows = self.run_query(q_mods, conv_to_dict=True, job_config=job_config)
+            q_mods = f"SELECT module_id FROM {self.qb._table_ref('envs_to_modules')} WHERE session_id=@sid AND env_id=@eid AND (status != 'deleted' OR status IS NULL)"
+            mod_rows = self.qb.db.run_query(q_mods, conv_to_dict=True, params={"sid": session_id, "eid": env_id})
             module_ids = [r['module_id'] for r in mod_rows]
 
             modules_struct = {}
 
             if module_ids:
                 # 2. Get Fields for these modules
-                q_fields = f"""
-                    SELECT module_id, field_id FROM `{ds}.modules_to_fields`
-                    WHERE session_id=@sid AND env_id=@eid AND module_id IN UNNEST(@mids) 
-                    AND (status != 'deleted' OR status IS NULL)
-                """
-                job_config_f = bigquery.QueryJobConfig(
-                    query_parameters=[
-                        bigquery.ScalarQueryParameter("sid", "STRING", session_id),
-                        bigquery.ScalarQueryParameter("eid", "STRING", env_id),
-                        bigquery.ArrayQueryParameter("mids", "STRING", module_ids)
-                    ]
-                )
-                field_rows = self.run_query(q_fields, conv_to_dict=True, job_config=job_config_f)
+                q_fields = f"SELECT module_id, field_id FROM {self.qb._table_ref('modules_to_fields')} WHERE session_id=? AND env_id=? AND module_id IN (SELECT unnest(?)) AND (status != 'deleted' OR status IS NULL)"
+                field_rows = self.qb.db.run_query(q_fields, conv_to_dict=True, params=[session_id, env_id, module_ids])
 
                 # Group fields by module
                 for mid in module_ids:
@@ -343,20 +285,8 @@ class EnvManager:
         """
         try:
             print(f"{_ENV_DEBUG} retrieve_logs_env: env_id={env_id}, user_id={user_id}")
-            query = f"""
-                SELECT timestamp, message 
-                FROM `{self.pid}.{self.DATASET_ID}.logs`
-                WHERE env_id = @env_id AND user_id = @user_id
-                ORDER BY timestamp DESC
-                LIMIT 100
-            """
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("env_id", "STRING", env_id),
-                    bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
-                ]
-            )
-            rows = self.run_query(query, conv_to_dict=True, job_config=job_config)
+            query = f"SELECT timestamp, message FROM {self.qb._table_ref('logs')} WHERE env_id = @env_id AND user_id = @user_id ORDER BY timestamp DESC LIMIT 100"
+            rows = self.qb.db.run_query(query, conv_to_dict=True, params={"env_id": env_id, "user_id": user_id})
             formatted_logs = []
             for row in rows:
                 ts = row.get("timestamp")
@@ -385,19 +315,8 @@ class EnvManager:
         """
         try:
             print(f"{_ENV_DEBUG} get_env_data: env_id={env_id}, user_id={user_id}")
-            query = f"""
-                SELECT *
-                FROM `{self.pid}.{self.DATASET_ID}.sim_data`
-                WHERE env_id = @env_id
-                ORDER BY created_at DESC
-                LIMIT 50
-            """
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("env_id", "STRING", env_id)
-                ]
-            )
-            rows = self.run_query(query, conv_to_dict=True, job_config=job_config)
+            query = f"SELECT * FROM {self.qb._table_ref('sim_data')} WHERE env_id = @env_id ORDER BY created_at DESC LIMIT 50"
+            rows = self.qb.db.run_query(query, conv_to_dict=True, params={"env_id": env_id})
             print(f"{_ENV_DEBUG} get_env_data: got {rows} row(s)")
             return rows
         except Exception as e:
@@ -461,7 +380,12 @@ def handle_del_env(data=None, auth=None):
     from core.managers_context import get_env_manager
     mgr = get_env_manager()
     mgr.delete_env(env_id, user_id)
-    return {"type": "GET_USERS_ENVS", "data": mgr.retrieve_send_user_specific_env_table_rows(user_id)}
+    # Align with frontend: DEL_ENV expects env_id and optionally data.envs for list refresh
+    return {
+        "type": "DEL_ENV",
+        "env_id": env_id,
+        "data": mgr.retrieve_send_user_specific_env_table_rows(user_id),
+    }
 
 
 def handle_set_env(data=None, auth=None):
@@ -479,7 +403,20 @@ def handle_set_env(data=None, auth=None):
     if original_id:
         mgr.delete_env(original_id, user_id)
     mgr.set_env(env_data, user_id)
-    return {"type": "GET_USERS_ENVS", "data": mgr.retrieve_send_user_specific_env_table_rows(user_id)}
+    env_id = env_data.get("id")
+    full_envs = mgr.retrieve_send_user_specific_env_table_rows(user_id)
+    # Align with frontend: SET_ENV_SUCCESS expects env_id, config, and optionally data.envs
+    config = None
+    if env_id:
+        fetched = mgr.retrieve_env_from_id(env_id)
+        envs_list = fetched.get("envs") or []
+        config = envs_list[0] if envs_list else {**env_data, "status": "configured"}
+    return {
+        "type": "SET_ENV_SUCCESS",
+        "env_id": env_id,
+        "config": config or {**env_data, "status": "configured"},
+        "data": full_envs,
+    }
 
 
 def handle_get_sessions_envs(data=None, auth=None):
@@ -567,7 +504,12 @@ def handle_rm_link_env_module(data=None, auth=None):
         return err
     from core.managers_context import get_env_manager, get_session_manager
     get_env_manager().rm_link_env_module(session_id, env_id, module_id, user_id)
-    return {"type": "LINK_ENV_MODULE", "data": get_session_manager().get_full_session_structure(user_id, session_id)}
+    # Align with frontend: RM_LINK_ENV_MODULE expects type, auth (session_id, env_id, module_id), and data
+    return {
+        "type": "RM_LINK_ENV_MODULE",
+        "auth": {"session_id": session_id, "env_id": env_id, "module_id": module_id},
+        "data": get_session_manager().get_full_session_structure(user_id, session_id),
+    }
 
 
 def handle_download_model(data=None, auth=None):

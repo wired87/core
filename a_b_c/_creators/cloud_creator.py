@@ -250,7 +250,7 @@ class CloudMaster(
 
                 ray.get_actor(name="UTILS_WORKER").set_node.remote(
                     dict(
-                        nid=name,
+                        id=name,
                         ref=ref,
                         type="ACTOR",
                     )

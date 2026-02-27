@@ -7,7 +7,7 @@ from core.module_manager.module_loader import ModuleLoader
 from qf_utils.field_utils import FieldUtils
 from qf_utils.qf_utils import QFUtils
 
-from utils.graph.local_graph_utils import GUtils
+from graph.local_graph_utils import GUtils
 
 
 class Modulator(
@@ -47,7 +47,7 @@ class Modulator(
                 # 1. Add Module Node
                 # Ensure nid and type are set for GUtils.add_node
                 module_attrs = module.copy()
-                module_attrs["nid"] = module_id
+                module_attrs["id"] = module_id
                 module_attrs["type"] = "MODULE"
                 
                 self.g.add_node(attrs=module_attrs)
@@ -69,7 +69,7 @@ class Modulator(
                 for param_id, data_type in params.items():
                     # Add Param Node
                     param_attrs = {
-                        "nid": param_id,
+                        "id": param_id,
                         "type": "PARAM",
                         "data_type": data_type
                     }
@@ -109,7 +109,7 @@ class Modulator(
             if not self.g.G.has_node(self.id):
                 self.g.add_node(
                     attrs=dict(
-                        nid=self.id,
+                        id=self.id,
                         type="MODULE",
                     )
                 )
@@ -118,7 +118,7 @@ class Modulator(
             ModuleLoader.__init__(
                 self,
                 G=self.g.G,
-                nid=self.id,
+                id=self.id,
                 #fields=self.fields,
             )
 
@@ -158,7 +158,7 @@ class Modulator(
             print(f"update field node {field}")
             self.g.update_node(
                 dict(
-                    nid=field,
+                    id=field,
                     keys=keys,
                     values=values,
                     axis_def=axis_def,
@@ -199,7 +199,7 @@ class Modulator(
                         # param from neighbor field ->
                         # get all NEIGHBOR FIELDS
                         nfs = self.g.get_neighbor_list(
-                            node=f["nid"],
+                            node=f["id"],
                             target_type="FIELD",
                         )
 

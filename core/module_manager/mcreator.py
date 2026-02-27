@@ -12,7 +12,7 @@ except ImportError:
         pass
 from core.app_utils import ARSENAL_PATH
 from core.module_manager.modulator import Modulator
-from utils.graph.local_graph_utils import GUtils
+from graph.local_graph_utils import GUtils
 
 import dotenv
 dotenv.load_dotenv()
@@ -33,7 +33,7 @@ class ModuleCreator(
     ):
         """
         attrs: extracted module content in frmat:
-        nid=module_name,
+        id=module_name,
         type="MODULE",
         parent=["FILE"],
         content=mcontent # code str
@@ -112,7 +112,7 @@ class ModuleCreator(
             # save ref
             self.g.add_node(
                 dict(
-                    nid=mid,
+                    id=mid,
                     type="MODULE",
                     code=code
                 )

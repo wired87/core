@@ -2,10 +2,8 @@ import pprint
 import random
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from google.cloud import bigquery
 import json
 
-from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 from core.qbrain_manager import get_qbrain_table_manager
 from core.handler_utils import require_param, get_val
 
@@ -20,8 +18,7 @@ _SESSION_DEBUG = "[SessionManager]"
 
 class SessionManager:
     """
-    Manages user sessions in BigQuery.
-    Receives BQCore instance via constructor for BigQuery functionality.
+    Manages user sessions via QBrainTableManager.
     """
 
     DATASET_ID = "QBRAIN"
@@ -38,34 +35,16 @@ class SessionManager:
         "corpus_id": "STRING",
     }
 
-    # Link tables schemas
-    SESSIONS_TO_ENVS_SCHEMA = [
-        bigquery.SchemaField("session_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("env_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
-    ]
+    # Link tables schemas (dict for get_table_schema)
+    SESSIONS_TO_ENVS_SCHEMA = {"session_id": "STRING", "env_id": "STRING", "user_id": "STRING"}
+    SESSIONS_TO_INJECTIONS_SCHEMA = {"session_id": "STRING", "injection_id": "STRING", "user_id": "STRING"}
 
-    SESSIONS_TO_INJECTIONS_SCHEMA = [
-        bigquery.SchemaField("session_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("injection_id", "STRING", mode="REQUIRED"),
-        bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
-    ]
-
-    def __init__(self, qb):
-        """Initialize SessionManager with QBrainTableManager instance."""
-        try:
-            self.qb = qb
-            self.pid = qb.pid
-            self.ds_ref = qb.ds_ref or f"{qb.pid}.{self.DATASET_ID}"
-            self.bqclient = qb.bqclient
-            self.run_query = qb.run_query
-            self.get_table_schema = qb.get_table_schema
-            print(f"{_SESSION_DEBUG} initialized with dataset: {self.DATASET_ID}")
-        except Exception as e:
-            print(f"{_SESSION_DEBUG} __init__ error: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
+    def __init__(self, qb=None):
+        """Initialize with QBrainTableManager instance. If None, uses default."""
+        self.qb = qb if qb is not None else get_qbrain_table_manager()
+        self.pid = self.qb.pid
+        self.ds_ref = self.qb.ds_ref or f"{self.qb.pid}.{self.DATASET_ID}"
+        print(f"{_SESSION_DEBUG} initialized with dataset: {self.DATASET_ID}")
 
     def _ensure_sessions_table(self) -> bool:
         """
@@ -76,7 +55,7 @@ class SessionManager:
         """
         try:
             print(f"{_SESSION_DEBUG} _ensure_sessions_table: checking/creating")
-            self.get_table_schema(
+            self.qb.get_table_schema(
                 table_id="sessions",
                 schema=self.SESSIONS_TABLE_SCHEMA,
                 create_if_not_exists=True
@@ -93,16 +72,14 @@ class SessionManager:
         """Ensure session link tables exist."""
         try:
             print(f"{_SESSION_DEBUG} _ensure_link_tables: ensuring session_to_envs, session_to_injections")
-            env_link_schema = {field.name: field.field_type for field in self.SESSIONS_TO_ENVS_SCHEMA}
-            self.get_table_schema(
+            self.qb.get_table_schema(
                 table_id="session_to_envs",
-                schema=env_link_schema,
+                schema=self.SESSIONS_TO_ENVS_SCHEMA,
                 create_if_not_exists=True
             )
-            inj_link_schema = {field.name: field.field_type for field in self.SESSIONS_TO_INJECTIONS_SCHEMA}
-            self.get_table_schema(
+            self.qb.get_table_schema(
                 table_id="session_to_injections",
-                schema=inj_link_schema,
+                schema=self.SESSIONS_TO_INJECTIONS_SCHEMA,
                 create_if_not_exists=True
             )
             print(f"{_SESSION_DEBUG} _ensure_link_tables: done")
@@ -137,18 +114,9 @@ class SessionManager:
         print("create_session...")
         try:
             print(f"{_SESSION_DEBUG} create_session: user_id={user_id}")
-            user_check_query = f"""
-                SELECT id FROM `{self.ds_ref}.users`
-                WHERE id = @user_id AND (status != 'deleted' OR status IS NULL)
-                LIMIT 1
-            """
-
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[bigquery.ScalarQueryParameter("user_id", "STRING", user_id)]
-            )
-
-            result = self.bqclient.query(user_check_query, job_config=job_config).result()
-            if result.total_rows == 0:
+            query = f"SELECT id FROM {self.qb._table_ref('users')} WHERE id = @user_id AND (status != 'deleted' OR status IS NULL) LIMIT 1"
+            result = self.qb.db.run_query(query, conv_to_dict=True, params={"user_id": user_id})
+            if not result or len(result) == 0:
                 print(f"{_SESSION_DEBUG} create_session: user does not exist")
                 return None
             session_id = self._generate_session_id()
@@ -212,16 +180,9 @@ class SessionManager:
             True if session exists
         """
         try:
-            query = f"""
-                SELECT id FROM `{self.ds_ref}.sessions`
-                WHERE id = @session_id AND (status != 'deleted' OR status IS NULL)
-                LIMIT 1
-            """
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[bigquery.ScalarQueryParameter("session_id", "INT64", session_id)]
-            )
-            result = self.bqclient.query(query, job_config=job_config).result()
-            return result.total_rows > 0
+            query = f"SELECT id FROM {self.qb._table_ref('sessions')} WHERE id = @session_id AND (status != 'deleted' OR status IS NULL) LIMIT 1"
+            result = self.qb.db.run_query(query, conv_to_dict=True, params={"session_id": session_id})
+            return result and len(result) > 0
         except Exception as e:
             print(f"{_SESSION_DEBUG} _session_exists: error: {e}")
             import traceback
@@ -240,16 +201,9 @@ class SessionManager:
         """
         try:
             print(f"{_SESSION_DEBUG} get_session: session_id={session_id}")
-            query = f"""
-                SELECT * FROM `{self.ds_ref}.sessions`
-                WHERE id = @session_id AND (status != 'deleted' OR status IS NULL)
-                LIMIT 1
-            """
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[bigquery.ScalarQueryParameter("session_id", "INT64", session_id)]
-            )
-            result = self.bqclient.query(query, job_config=job_config).result()
-            for row in result:
+            query = f"SELECT * FROM {self.qb._table_ref('sessions')} WHERE id = @session_id AND (status != 'deleted' OR status IS NULL) LIMIT 1"
+            result = self.qb.db.run_query(query, conv_to_dict=True, params={"session_id": session_id})
+            for row in (result or []):
                 print(f"{_SESSION_DEBUG} get_session: found")
                 return dict(row)
             print(f"{_SESSION_DEBUG} get_session: not found")
@@ -293,16 +247,9 @@ class SessionManager:
         try:
             print(f"{_SESSION_DEBUG} get_user_sessions: user_id={user_id}, active_only={active_only}")
             active_filter = "AND is_active = TRUE" if active_only else ""
-            query = f"""
-                SELECT * FROM `{self.ds_ref}.sessions`
-                WHERE user_id = @user_id {active_filter} AND (status != 'deleted' OR status IS NULL)
-                ORDER BY created_at DESC
-            """
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[bigquery.ScalarQueryParameter("user_id", "STRING", user_id)]
-            )
-            result = self.bqclient.query(query, job_config=job_config).result()
-            sessions = [dict(row) for row in result]
+            query = f"SELECT * FROM {self.qb._table_ref('sessions')} WHERE user_id = @user_id {active_filter} AND (status != 'deleted' OR status IS NULL) ORDER BY created_at DESC"
+            result = self.qb.db.run_query(query, conv_to_dict=True, params={"user_id": user_id})
+            sessions = result or []
             print(f"{_SESSION_DEBUG} get_user_sessions: got {len(sessions)} session(s)")
             return sessions
         except Exception as e:
@@ -378,20 +325,12 @@ class SessionManager:
             SELECT env_id, user_id, status
             FROM (
                 SELECT *, ROW_NUMBER() OVER (PARTITION BY env_id ORDER BY created_at DESC) as row_num
-                FROM `{self.ds_ref}.session_to_envs`
+                FROM {self.qb._table_ref('session_to_envs')}
                 WHERE user_id = @user_id AND session_id = @session_id
             )
             WHERE row_num = 1 AND status != 'deleted'
             """
-
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("session_id", "STRING", str(session_id)),
-                    bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
-                ]
-            )
-            
-            result = self.run_query(query, job_config=job_config)
+            result = self.qb.db.run_query(query, params={"user_id": user_id, "session_id": str(session_id)})
             
             env_ids = [entry.get("env_id") for entry in result if entry.get("status") != "deleted"]
 
@@ -436,7 +375,7 @@ class SessionManager:
             print(f"{_SESSION_DEBUG} rm_link_env_session: user_id={user_id}, session_id={session_id}, env_id={env_id}")
             self.qb.rm_link_session_link(
                 session_id=session_id,
-                nid=env_id,
+                id=env_id,
                 user_id=user_id,
                 session_link_table="session_to_envs",
                 session_to_link_name_id="env_id"
@@ -456,16 +395,8 @@ class SessionManager:
         """
         try:
             print(f"{_SESSION_DEBUG} get_active_session: user_id={user_id}")
-            query = f"""
-                SELECT id FROM `{self.ds_ref}.sessions`
-                WHERE user_id = @user_id AND is_active = TRUE AND status != 'deleted'
-                ORDER BY created_at DESC
-                LIMIT 1
-            """
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[bigquery.ScalarQueryParameter("user_id", "STRING", user_id)]
-            )
-            result = self.run_query(query, conv_to_dict=True, job_config=job_config)
+            query = f"SELECT id FROM {self.qb._table_ref('sessions')} WHERE user_id = @user_id AND is_active = TRUE AND status != 'deleted' ORDER BY created_at DESC LIMIT 1"
+            result = self.qb.db.run_query(query, conv_to_dict=True, params={"user_id": user_id})
             if result:
                 print(f"{_SESSION_DEBUG} get_active_session: found session_id={result[0]['id']}")
                 return result[0]["id"]
@@ -502,19 +433,8 @@ class SessionManager:
         """
         try:
             print(f"{_SESSION_DEBUG} get_full_session_structure: user_id={user_id}, session_id={session_id}")
-            ds = f"{self.pid}.{self.DATASET_ID}"
-
-            q_envs = f"""
-            SELECT env_id FROM `{ds}.session_to_envs`
-            WHERE session_id=@sid AND user_id=@uid AND (status != 'deleted' OR status IS NULL)
-            """
-            job_config_e = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("sid", "STRING", session_id),
-                    bigquery.ScalarQueryParameter("uid", "STRING", user_id)
-                ]
-            )
-            env_rows = self.run_query(q_envs, conv_to_dict=True, job_config=job_config_e)
+            q_envs = f"SELECT env_id FROM {self.qb._table_ref('session_to_envs')} WHERE session_id=@sid AND user_id=@uid AND (status != 'deleted' OR status IS NULL)"
+            env_rows = self.qb.db.run_query(q_envs, conv_to_dict=True, params={"sid": session_id, "uid": user_id})
             active_env_ids = [r['env_id'] for r in env_rows]
 
             if not active_env_ids:
@@ -527,17 +447,8 @@ class SessionManager:
                 }
 
             # 2. Get Modules for these envs
-            q_mods = f"""
-                SELECT env_id, module_id FROM `{ds}.envs_to_modules`
-                WHERE session_id=@sid AND env_id IN UNNEST(@eids) AND (status != 'deleted' OR status IS NULL)
-            """
-            job_config_m = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("sid", "STRING", session_id),
-                    bigquery.ArrayQueryParameter("eids", "STRING", active_env_ids)
-                ]
-            )
-            mod_rows = self.run_query(q_mods, conv_to_dict=True, job_config=job_config_m)
+            q_mods = f"SELECT env_id, module_id FROM {self.qb._table_ref('envs_to_modules')} WHERE session_id=? AND env_id IN (SELECT unnest(?)) AND (status != 'deleted' OR status IS NULL)"
+            mod_rows = self.qb.db.run_query(q_mods, conv_to_dict=True, params=[session_id, active_env_ids])
 
             # Map env_id -> list of module_ids
             env_modules_map = {eid: [] for eid in active_env_ids}
@@ -559,19 +470,8 @@ class SessionManager:
 
             if all_module_ids:
                 # 3. Get Fields for these modules
-                q_fields = f"""
-                    SELECT env_id, module_id, field_id FROM `{ds}.modules_to_fields`
-                    WHERE session_id=@sid AND env_id IN UNNEST(@eids) AND module_id IN UNNEST(@mids) 
-                    AND (status != 'deleted' OR status IS NULL)
-                """
-                job_config_f = bigquery.QueryJobConfig(
-                    query_parameters=[
-                        bigquery.ScalarQueryParameter("sid", "STRING", session_id),
-                        bigquery.ArrayQueryParameter("eids", "STRING", active_env_ids),
-                        bigquery.ArrayQueryParameter("mids", "STRING", all_module_ids)
-                    ]
-                )
-                field_rows = self.run_query(q_fields, conv_to_dict=True, job_config=job_config_f)
+                q_fields = f"SELECT env_id, module_id, field_id FROM {self.qb._table_ref('modules_to_fields')} WHERE session_id=? AND env_id IN (SELECT unnest(?)) AND module_id IN (SELECT unnest(?)) AND (status != 'deleted' OR status IS NULL)"
+                field_rows = self.qb.db.run_query(q_fields, conv_to_dict=True, params=[session_id, active_env_ids, all_module_ids])
 
                 for row in field_rows:
                     eid = row['env_id']
@@ -638,8 +538,7 @@ class SessionManager:
 
 
 # Default instance for standalone use (no orchestrator context)
-_default_bqcore = BQCore(dataset_id="QBRAIN")
-_default_session_manager = SessionManager(get_qbrain_table_manager(_default_bqcore))
+_default_session_manager = SessionManager()
 session_manager = _default_session_manager  # backward compat
 
 # -- RELAY HANDLERS --
@@ -699,7 +598,12 @@ def handle_link_env_session(data=None, auth=None):
     from core.managers_context import get_session_manager
     sm = get_session_manager()
     sm.link_env_session(user_id, session_id, env_id)
-    return {"type": "LIST_SESSIONS_ENVS", "data": sm.get_full_session_structure(user_id, session_id)}
+    # Align with frontend: LINK_ENV_SESSION expects type and data.sessions
+    return {
+        "type": "LINK_ENV_SESSION",
+        "auth": {"session_id": session_id, "env_id": env_id},
+        "data": sm.get_full_session_structure(user_id, session_id),
+    }
 
 
 def handle_rm_link_env_session(data=None, auth=None):
@@ -717,7 +621,12 @@ def handle_rm_link_env_session(data=None, auth=None):
     from core.managers_context import get_session_manager
     sm = get_session_manager()
     sm.rm_link_env_session(user_id, session_id, env_id)
-    return {"type": "LIST_SESSIONS_ENVS", "data": sm.get_full_session_structure(user_id, session_id)}
+    # Align with frontend: RM_LINK_ENV_SESSION expects type, auth (session_id, env_id), and data
+    return {
+        "type": "RM_LINK_ENV_SESSION",
+        "auth": {"session_id": session_id, "env_id": env_id},
+        "data": sm.get_full_session_structure(user_id, session_id),
+    }
 
 
 def handle_list_user_sessions(data=None, auth=None):

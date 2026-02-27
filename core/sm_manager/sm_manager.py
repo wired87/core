@@ -95,7 +95,7 @@ class SMManager:
             env_module_links = []
             module_field_links = []
 
-            now = datetime.now().isoformat()
+            now = datetime.now()
 
             for module_name, fields in sm_modules.items():
                 mid = module_name
@@ -195,7 +195,7 @@ class SMManager:
             self.param_manager.set_param(params, user_id)
         
         if methods:
-            self.method_manager.set_method(methods, user_id)
+            self.method_manager.set_method(methods, user_id, qf.g)
 
 
     def _extract_nodes(
@@ -234,7 +234,7 @@ class SMManager:
 
                 # Upsert Module
                 module_data = {
-                    "id": attrs.get("nid", nid),
+                    "id": attrs.get("id", nid),
                     "user_id": user_id,
                     "status": "active",
                     "fields": field_ids,
@@ -244,7 +244,7 @@ class SMManager:
                         k: v
                         for k, v in attrs.items() if k not in [
                             "type",
-                            "nid",
+                            "id",
                             "params",
                             "code",
                         ]
@@ -296,6 +296,7 @@ class SMManager:
                     "const": attrs.get("const"),
                     "axis_def": attrs.get("axis_def"),
                     "value": attrs.get("value"),
+                    "shape": attrs.get("shape"),
                 }
                 param_rows.append(param_data)
 

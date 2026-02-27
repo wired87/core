@@ -15,7 +15,7 @@ SET_ENV_CASE: RelayCaseStruct = {
         "data": {"env": {"id": str, "sim_time": int, "cluster_dim": int, "dims": int, "data": str}},  # ReqDataSetEnv
         "auth": {"user_id": str, "original_id": str}
     },
-    "out_struct": {"type": "GET_USERS_ENVS", "data": {"envs": list}},  # OutGetUsersEnvs
+    "out_struct": {"type": "SET_ENV_SUCCESS", "env_id": str, "config": dict, "data": {"envs": list}},  # Aligned with frontend
 }
 
 # Case structs with typed data sections
@@ -32,7 +32,7 @@ GET_USERS_ENVS_CASE: RelayCaseStruct = {
 DEL_ENV_CASE: RelayCaseStruct = {
     "case": "DEL_ENV", "desc": "", "func": handle_del_env,
     "req_struct": {"auth": {"env_id": str, "user_id": str}},
-    "out_struct": {"type": "GET_USERS_ENVS", "data": {"envs": list}},  # OutGetUsersEnvs
+    "out_struct": {"type": "DEL_ENV", "env_id": str, "data": {"envs": list}},  # Aligned with frontend
 }
 DOWNLOAD_MODEL_CASE: RelayCaseStruct = {
     "case": "DOWNLOAD_MODEL", "desc": "Download Model", "func": handle_download_model,

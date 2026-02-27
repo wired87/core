@@ -188,7 +188,7 @@ class SpannerWorker(BaseActor):
                             "trgt": trgt,
                             **attrs,
                         }],
-                        table=attrs.get("nid").upper())
+                        table=attrs.get("id").upper())
                     for src, trgt, attrs in G.edges(data=True)
                     if attrs.get("type") in ALL_SUBS
                 ]

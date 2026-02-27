@@ -63,7 +63,7 @@ from core.session_manager.session import SessionManager
 from core.researcher2.researcher2.core import ResearchAgent
 from predefined_case import RELAY_CASES_CONFIG
 from qf_utils.qf_utils import QFUtils
-from utils.graph.local_graph_utils import GUtils
+from graph.local_graph_utils import GUtils
 
 from core.managers_context import set_orchestrator, reset_orchestrator
 
@@ -90,6 +90,7 @@ class OrchestratorManager:
         self,
         cases,
         user_id: str = "public",
+        relay=None,
     ):
         # Create BQCore and QBrainTableManager; provide qb to all managers
         self.bqcore = BQCore(dataset_id=self.DATASET_ID)
@@ -136,6 +137,7 @@ class OrchestratorManager:
             params_manager=self.params_manager,
         )
 
+        self.relay = relay
         self.cases = cases
         self.last_files = []
         self.history = []
@@ -161,9 +163,11 @@ class OrchestratorManager:
         data_type = payload.get("type", None)
         if data_type:
             if data_type == "START_SIM":
-                response_stuff=self._handle_start_sim_process(
+                response_stuff = await asyncio.to_thread(
+                    self._handle_start_sim_process,
                     payload,
                     user_id,
+                    session_id=session_id,
                 )
                 return response_stuff
 
@@ -226,7 +230,12 @@ class OrchestratorManager:
             self._deep_merge_into(goal_struct["data"], payload["data"])
 
         if data_type == "START_SIM":
-            response_items = self._handle_start_sim_process(payload, user_id)
+            response_items = await asyncio.to_thread(
+                self._handle_start_sim_process,
+                payload,
+                user_id,
+                session_id=session_id,
+            )
             return response_items
         if data_type == "CHAT":
             chat_result = await self._dispatch_relay_handler(data_type, payload)
@@ -649,7 +658,8 @@ class OrchestratorManager:
     def _handle_start_sim_process(
             self,
             payload: dict,
-            user_id:str
+            user_id: str,
+            session_id: Optional[str] = None,
     ):
         """
         Handles the START_SIM case.
@@ -661,8 +671,30 @@ class OrchestratorManager:
             config = payload.get("data", {}).get("config", {})
             for k, v in config.items():
                 try:
+                    grid_streamer = getattr(self.relay, "_grid_streamer", None) if self.relay else None
+                    grid_animation_recorder = None
+                    if os.getenv("GRID_STREAM_ENABLED", "false").lower() in ("true", "1"):
+                        try:
+                            from grid.animation_recorder import GridAnimationRecorder
+                            env_res = self.env_manager.retrieve_env_from_id(k)
+                            env_cfg = (env_res.get("envs") or [{}])[0] if env_res else {}
+                            env_cfg = {**{"dims": 3, "amount_of_nodes": 1}, **env_cfg}
+                            grid_animation_recorder = GridAnimationRecorder(
+                                env_id=k,
+                                user_id=user_id,
+                                env_cfg=env_cfg,
+                                cfg={},
+                                env_manager=self.env_manager,
+                            )
+                        except Exception as rec_err:
+                            print(f"_handle_start_sim_process: animation recorder init: {rec_err}")
                     print(f"_handle_start_sim_process: running guard.main for env_id={k}")
-                    components = self.guard.main(env_id=k, env_data=v)
+                    components = self.guard.main(
+                        env_id=k,
+                        env_data=v,
+                        grid_streamer=grid_streamer,
+                        grid_animation_recorder=grid_animation_recorder,
+                    )
                     print(f"_handle_start_sim_process: guard.main done for env_id={k}")
                 except Exception as guard_err:
                     print(f"_handle_start_sim_process: guard.main error for env_id={k}: {guard_err}")
@@ -691,12 +723,15 @@ class OrchestratorManager:
 
 
             # create new session
-            if hasattr(self, "session_id") and self.session_id:
+            sid = session_id or (getattr(self.relay, "session_id", None) if self.relay else None)
+            if sid is not None:
                 try:
-                    print(f"_handle_start_sim_process: deactivating session {self.session_id}")
-                    self.session_manager.deactivate_session(self.session_id)
-                    self.session_id = self.session_manager.get_or_create_active_session(user_id)
-                    print(f"_handle_start_sim_process: new session_id={self.session_id}")
+                    print(f"_handle_start_sim_process: deactivating session {sid}")
+                    self.session_manager.deactivate_session(sid)
+                    new_sid = self.session_manager.get_or_create_active_session(user_id)
+                    print(f"_handle_start_sim_process: new session_id={new_sid}")
+                    if self.relay is not None:
+                        self.relay.session_id = new_sid
                 except Exception as sess_err:
                     print(f"_handle_start_sim_process: session deactivate/create error: {sess_err}")
                     import traceback

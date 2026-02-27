@@ -7,7 +7,7 @@ import torch.optim as optim
 
 from cluster_nodes.cluster_utils.receiver import ReceiverWorker
 from qf_core_base import USER_ID
-from utils.graph.local_graph_utils import GUtils
+from graph.local_graph_utils import GUtils
 
 
 @ray.remote

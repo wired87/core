@@ -4,9 +4,11 @@ from django.urls import path, include
 from django.conf.urls.static import static
 
 from bm import settings
+from bm.views import health
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('health/', health),
     #path('betse/', include("_betse.urls")),
 
     path('world/', include("urls")),

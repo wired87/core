@@ -74,7 +74,7 @@ def extract_handlers_from_module(module_name: str, source: str) -> List[Dict[str
                 end = node.end_lineno if hasattr(node, 'end_lineno') else start + 1
                 code = "\n".join(lines[start:end]) if lines else ""
                 entries.append({
-                    "nid": node.name,
+                    "id": node.name,
                     "description": docstring.strip(),
                     "code": code,
                     "imports": module_imports,
@@ -99,12 +99,12 @@ def collect_all_handlers() -> List[Dict[str, Any]]:
 def register_handlers_to_gutils(g_utils) -> None:
     """
     Use StructInspector-style logic: add each handler as node to g_utils.G.
-    nid=func_name, description=docstring, code=full_def, imports=module_imports.
+    id=func_name, description=docstring, code=full_def, imports=module_imports.
     """
     entries = collect_all_handlers()
     for entry in entries:
         attrs = {
-            "nid": entry["nid"],
+            "id": entry["id"],
             "type": "HANDLER",
             "description": entry["description"],
             "code": entry["code"],

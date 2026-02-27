@@ -33,28 +33,28 @@ def initialize_qbrain_tables():
     Initialize QBRAIN dataset and tables on server startup.
     Runs once per server instance using TABLE_EXISTS environment variable.
     """
+    table_exists_val = os.environ.get('TABLE_EXISTS', 'False').strip().lower()
+    if table_exists_val not in ('true', 'false', '1', '0', ''):
+        print(f"⚠ TABLE_EXISTS has invalid value '{os.environ.get('TABLE_EXISTS')}'; expected True/False")
     # Check if tables have already been initialized
-    if os.environ.get('TABLE_EXISTS', 'False').lower() == 'true':
+    if table_exists_val in ('true', '1'):
         print("✓ QBRAIN tables already initialized (TABLE_EXISTS=True)")
         return
     
     try:
-        if os.getenv("TABLE_EXISTS") != "True":
-            # Use centralized table manager
-            from core.qbrain_manager import get_qbrain_table_manager
+        # Use centralized table manager
+        from core.qbrain_manager import get_qbrain_table_manager
 
-            print("\n🔧 Initializing QBRAIN Table Manager...")
-            table_mgr = get_qbrain_table_manager()
+        print("\n🔧 Initializing QBRAIN Table Manager...")
+        table_mgr = get_qbrain_table_manager()
 
-            # Initialize all tables
-            results = table_mgr.initialize_all_tables()
+        # Initialize all tables
+        results = table_mgr.initialize_all_tables()
 
-            # Set environment variable to prevent re-initialization
-            os.environ['TABLE_EXISTS'] = 'True'
+        # Set environment variable to prevent re-initialization
+        os.environ['TABLE_EXISTS'] = 'True'
 
-            print("✓ Environment variable set: TABLE_EXISTS=True\n")
-        else:
-            print("SKIP TABLE CHECK...")
+        print("✓ Environment variable set: TABLE_EXISTS=True\n")
     except Exception as e:
         print(f"\n❌ Error initializing QBRAIN tables: {e}")
         import traceback

@@ -51,9 +51,6 @@ class FieldsManager:
     def __init__(self, qb):
         self.qb = qb
         self.pid = qb.pid
-        self.bqclient = qb.bqclient
-        self.insert_col = qb.insert_col
-        self.run_query = qb.run_query
         self.table = f"{self.FIELDS_TABLE}"
         self.qfu = QFUtils()
         self._extract_prompt = None  # built lazily to avoid circular import with case
@@ -115,46 +112,17 @@ class FieldsManager:
             return None
 
     def _ensure_fields_table(self):
-        try:
-            print(f"{_FIELDS_DEBUG} _ensure_fields_table: checking")
-            table_ref = f"{self.pid}.{self.DATASET_ID}.{self.FIELDS_TABLE}"
-            self.bqclient.get_table(table_ref)
-            print(f"{_FIELDS_DEBUG} _ensure_fields_table: exists")
-        except Exception as e:
-            print(f"{_FIELDS_DEBUG} _ensure_fields_table: creating: {e}")
-            table = bigquery.Table(table_ref, schema=FIELD_SCHEMA)
-            self.bqclient.create_table(table)
-            print(f"{_FIELDS_DEBUG} _ensure_fields_table: created")
+        schema = {f.name: f.field_type for f in FIELD_SCHEMA}
+        self.qb.get_table_schema(table_id=self.FIELDS_TABLE, schema=schema, create_if_not_exists=True)
 
     def _ensure_fields_to_fields_table(self):
-        table_ref = f"{self.pid}.{self.DATASET_ID}.{self.FIELDS_TO_FIELDS_TABLE}"
-        try:
-            self.bqclient.get_table(table_ref)
-        except Exception as e:
-            print(f"Error ensuring fields_to_fields table: {e}")
-            table = bigquery.Table(table_ref, schema=FIELD_TO_FIELD_SCHEMA)
-            self.bqclient.create_table(table)
-
+        schema = {f.name: f.field_type for f in FIELD_TO_FIELD_SCHEMA}
+        self.qb.get_table_schema(table_id=self.FIELDS_TO_FIELDS_TABLE, schema=schema, create_if_not_exists=True)
 
     def get_field_interactants(self, field_id: str, select: str = "*") -> Dict[str, list[str or None]]:
-        """
-        Get environments for a session.
-        """
         try:
-            # todo optiize
-            # 1. Receive sessions_to_envs-table rows
-            query = f"""
-                SELECT {select} FROM `{self.pid}.{self.DATASET_ID}.{self.FIELDS_TO_FIELDS_TABLE}`
-                WHERE field_id = @field_id AND (status != 'deleted' OR status IS NULL)
-            """
-
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("field_id", "STRING", str(field_id)),
-                ]
-            )
-
-            result = self.run_query(query, conv_to_dict=True, job_config=job_config)
+            query = f"SELECT {select} FROM {self.qb._table_ref(self.FIELDS_TO_FIELDS_TABLE)} WHERE field_id = @field_id AND (status != 'deleted' OR status IS NULL)"
+            result = self.qb.db.run_query(query, conv_to_dict=True, params={"field_id": str(field_id)})
             interactant_ids = [item["interactant_field_id"] for item in result]
             return {"interactant_ids": interactant_ids}
         except Exception as e:
@@ -165,13 +133,8 @@ class FieldsManager:
 
 
     def _ensure_module_to_field_table(self):
-        table_ref = f"{self.pid}.{self.DATASET_ID}.{self.MODULE_TO_FIELD_TABLE}"
-        try:
-            self.bqclient.get_table(table_ref)
-        except Exception as e:
-            print(f"Error ensuring module_to_field table: {e}")
-            table = bigquery.Table(table_ref, schema=MODULE_TO_FIELD_SCHEMA)
-            self.bqclient.create_table(table)
+        schema = {f.name: f.field_type for f in MODULE_TO_FIELD_SCHEMA}
+        self.qb.get_table_schema(table_id=self.MODULE_TO_FIELD_TABLE, schema=schema, create_if_not_exists=True)
 
 
     def get_fields_by_user(self, user_id: str, select: str = "*") -> List[Dict[str, Any]]:
@@ -203,7 +166,7 @@ class FieldsManager:
             )
             field_ids = [row["field_id"] for row in module_linked_rows]
             fields = self.qb.row_from_id(
-                nid=field_ids,
+                id=field_ids,
                 select="*",
                 table=self.table
             )
@@ -225,7 +188,7 @@ class FieldsManager:
         try:
             print(f"{_FIELDS_DEBUG} delete_field: field_id={field_id}, user_id={user_id}")
             self.qb.del_entry(
-                nid=field_id,
+                id=field_id,
                 table=self.table,
                 user_id=user_id
             )
@@ -240,7 +203,7 @@ class FieldsManager:
     def get_fields_by_id(self, field_ids: List[str], select: str = "*") -> List[Dict[str, Any]]:
         """Get fields by list of IDs."""
         result = self.qb.row_from_id(
-            nid=field_ids,
+            id=field_ids,
             select=select,
             table=self.table
         )
@@ -333,17 +296,8 @@ class FieldsManager:
             return []
 
         # 2. Get fields for these modules
-        query = f"""
-            SELECT DISTINCT field_id FROM `{self.pid}.{self.DATASET_ID}.{self.MODULE_TO_FIELD_TABLE}`
-            WHERE module_id IN UNNEST(@module_ids) AND user_id = @user_id AND (status != 'deleted' OR status IS NULL)
-        """
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ArrayQueryParameter("module_ids", "STRING", module_ids),
-                bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
-            ]
-        )
-        result = self.run_query(query, conv_to_dict=True, job_config=job_config)
+        query = f"SELECT DISTINCT field_id FROM {self.qb._table_ref(self.MODULE_TO_FIELD_TABLE)} WHERE module_id IN (SELECT unnest(?)) AND user_id = ? AND (status != 'deleted' OR status IS NULL)"
+        result = self.qb.db.run_query(query, conv_to_dict=True, params=[module_ids, user_id])
         return [r["field_id"] for r in result]
 
 
@@ -417,6 +371,8 @@ def handle_rm_link_module_field(data=None, auth=None):
     user_id = get_val(data, auth, "user_id")
     module_id = get_val(data, auth, "module_id")
     field_id = get_val(data, auth, "field_id")
+    session_id = get_val(data, auth, "session_id")
+    env_id = get_val(data, auth, "env_id")
     if err := require_param(user_id, "user_id"):
         return err
     if err := require_param(module_id, "module_id"):
@@ -425,7 +381,18 @@ def handle_rm_link_module_field(data=None, auth=None):
         return err
     from core.managers_context import get_field_manager
     get_field_manager().rm_link_module_field(module_id, field_id, user_id)
-    return handle_send_modules_fields(data={"module_id": module_id}, auth={"user_id": user_id})
+    fields_resp = handle_send_modules_fields(data={"module_id": module_id}, auth={"user_id": user_id})
+    # Align with frontend: RM_LINK_MODULE_FIELD expects type, auth, and data
+    auth_out = {"module_id": module_id, "field_id": field_id}
+    if session_id:
+        auth_out["session_id"] = session_id
+    if env_id:
+        auth_out["env_id"] = env_id
+    return {
+        "type": "RM_LINK_MODULE_FIELD",
+        "auth": auth_out,
+        "data": fields_resp.get("data", {}),
+    }
 
 
 def handle_get_sessions_fields(data=None, auth=None):
@@ -508,11 +475,13 @@ def handle_link_module_field(data=None, auth=None):
 
     from core.managers_context import get_field_manager
     get_field_manager().link_module_field(link_data)
-    
-    # Return delta structure if session info is present
+
+    fields_resp = handle_send_modules_fields(data={"module_id": module_id}, auth={"user_id": user_id})
+    # Align with frontend: LINK_MODULE_FIELD expects type and data (sessions + fields)
     if session_id and env_id:
         return {
-            "type": "ENABLE_SM",
+            "type": "LINK_MODULE_FIELD",
+            "auth": {"session_id": session_id, "env_id": env_id, "module_id": module_id, "field_id": field_id},
             "data": {
                 "sessions": {
                     session_id: {
@@ -526,9 +495,9 @@ def handle_link_module_field(data=None, auth=None):
                             }
                         }
                     }
-                }
-            }
+                },
+                **fields_resp.get("data", {}),
+            },
         }
-
-    return handle_send_modules_fields(data={"module_id": module_id}, auth={"user_id": user_id})
+    return {**fields_resp, "type": "LINK_MODULE_FIELD"}
 

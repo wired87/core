@@ -5,10 +5,13 @@
   </component>
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/MiracleAI" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/_bigquery_toolbox" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/core/researcher2" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/embedder" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/gem_core" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/grid" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/qdash" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/qf_utils" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/utils" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/utils/file" vcs="Git" />

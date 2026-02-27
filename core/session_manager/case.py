@@ -13,7 +13,7 @@ LINK_ENV_SESSION_CASE: RelayCaseStruct = {
 RM_LINK_ENV_SESSION_CASE: RelayCaseStruct = {
     "case": "RM_LINK_ENV_SESSION", "desc": "Remove Link Env Session", "func": handle_rm_link_env_session,
     "req_struct": {"auth": {"user_id": str, "session_id": str, "env_id": str}},
-    "out_struct": {"type": "GET_SESSIONS_ENVS", "data": {"envs": list}},  # OutGetSessionsEnvs
+    "out_struct": {"type": "RM_LINK_ENV_SESSION", "auth": {"session_id": str, "env_id": str}, "data": dict},  # Aligned with frontend
 }
 GET_SESSIONS_ENVS_CASE: RelayCaseStruct = {
     "case": "GET_SESSIONS_ENVS", "desc": "Get Session Envs", "func": handle_get_sessions_envs,

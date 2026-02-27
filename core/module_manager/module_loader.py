@@ -1,14 +1,13 @@
 import ast
 import inspect
 import os
-import pprint
 
 from core.app_utils import TESTING, ARSENAL_PATH
 
 from code_manipulation.graph_creator import StructInspector
 from qf_utils.qf_utils import QFUtils
-from utils.graph.local_graph_utils import GUtils
-from utils.graph.visual import create_g_visual
+from graph.local_graph_utils import GUtils
+from graph.visual import create_g_visual
 
 class ModuleLoader(
     StructInspector
@@ -23,9 +22,9 @@ class ModuleLoader(
     def __init__(
             self,
             G,
-            nid,
+            id,
     ):
-        self.id=nid
+        self.id=id
 
         self.g = GUtils(G=G)
         self.qfu=QFUtils(g=self.g)
@@ -70,7 +69,7 @@ class ModuleLoader(
 
             self.g.update_node(
                 attrs=dict(
-                    nid=module_name,
+                    id=module_name,
                     type="MODULE",
                     parent=["FILE"],
                     code=code_base # code str

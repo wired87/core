@@ -10,7 +10,7 @@ class HiggsCreator(HiggsUtils):
         HiggsUtils.__init__(self)
         self.g=g
 
-    def higgs_attrs(self, px_id, nid=None) -> list[dict]:
+    def higgs_attrs(self, px_id, id=None) -> list[dict]:
         """
         Creates a Higgs field node (PHI) and connects it to a source node.
         """
@@ -19,7 +19,7 @@ class HiggsCreator(HiggsUtils):
                 nid = f"PHI__{px_id}"
 
             node_attrs = dict(
-                nid=nid,
+                id=nid,
                 tid=0,
                 type="HIGGS",
                 px=px_id,

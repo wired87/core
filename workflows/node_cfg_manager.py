@@ -22,7 +22,7 @@ class NodeCfgManager:
         print("Handling node process")
         env_id = data.get("env_id")
         node_cfg = data.get("node_cfg")
-        nid = data.get("nid")
+        nid = data.get("id")
 
         global_struct: dict = self.check_env_authenticated(env_id)
 

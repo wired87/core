@@ -34,7 +34,7 @@ LINK_ENV_MODULE_CASE: RelayCaseStruct = {
 RM_LINK_ENV_MODULE_CASE: RelayCaseStruct = {
     "case": "RM_LINK_ENV_MODULE", "desc": "Remove Link Env Module", "func": handle_rm_link_env_module,
     "req_struct": {"auth": {"user_id": str, "session_id": str, "env_id": str, "module_id": str}},
-    "out_struct": {"type": "LINK_ENV_MODULE", "data": {"sessions": dict}},  # OutLinkEnvModule
+    "out_struct": {"type": "RM_LINK_ENV_MODULE", "auth": {"session_id": str, "env_id": str, "module_id": str}, "data": dict},  # Aligned with frontend
 }
 SET_MODULE_CASE: RelayCaseStruct = {
     "case": "SET_MODULE", "desc": "Set Module", "func": handle_set_module,

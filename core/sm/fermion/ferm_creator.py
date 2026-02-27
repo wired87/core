@@ -19,7 +19,7 @@ class FermCreator(FermUtils):
             px_id,
             pos,
             light=False,
-            nid=None,
+            id=None,
     ) -> list:
         attrs_struct = []
         try:
@@ -39,7 +39,7 @@ class FermCreator(FermUtils):
                             item_index,
                         )
                     )
-                    nid=None
+                    id=None
             else:
                 fermid = f"{ntype}__{px_id}"
                 attrs_struct.append(
@@ -64,7 +64,7 @@ class FermCreator(FermUtils):
     ):
         """
 
-        nid=nid,
+        id=nid,
         tid=0,
         gterm=0,
         yterm=0,
@@ -74,7 +74,7 @@ class FermCreator(FermUtils):
         """
         # todo parallalize array creation for all F and px
         attr_struct = dict(
-            nid=nid,
+            id=nid,
             tid=0,
             type=ntype,
             parent=self.parent,

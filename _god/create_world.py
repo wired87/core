@@ -76,7 +76,7 @@ class God(FieldUtils):
         # Load G instance in G
         self.g.add_node(
             attrs=dict(
-                nid="self",
+                id="self",
                 type="CLASS_INSTANCE",
                 instance=self,
             )
@@ -86,12 +86,12 @@ class God(FieldUtils):
             print("create PARAM:", nid)
             self.g.add_node(
                 attrs=dict(
-                    nid=nid,
+                    id=nid,
                     type="PARAM",
                     **{
                         k:v
                         for k, v in meta_attrs.items()
-                        if k not in ["nid", "type"]}
+                        if k not in ["id", "type"]}
                 )
             )"""
 
@@ -194,7 +194,7 @@ class God(FieldUtils):
             try:
                 self.g.add_node(
                     dict(
-                        nid=ntype.upper(),
+                        id=ntype.upper(),
                         type="FIELD",
                         finished_run=False
                     )
@@ -204,7 +204,7 @@ class God(FieldUtils):
                 for i in range(self.world_cfg["amount_nodes"]):
                     px_id = f"px_{i}"
                     args = self.g.get_node(
-                        nid=px_id
+                        id=px_id
                     )
 
                     pos:list[float, int] = args["pos"]
@@ -223,7 +223,7 @@ class God(FieldUtils):
                             attrs=item
                         )
 
-                        #print("Added node", item["nid"])
+                        #print("Added node", item["id"])
             except Exception as e:
                 print("Err load_attrs_in_G", e)
 

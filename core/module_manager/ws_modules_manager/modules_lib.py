@@ -52,53 +52,22 @@ class ModuleWsManager:
 
     def __init__(self, qb):
         self.qb = qb
-        self.pid = qb.pid
-        self.bqclient = qb.bqclient
-        self.insert_col = qb.insert_col
         self.table_ref = f"{self.MODULES_TABLE}"
         self.session_link_ref = f"{self.SESSIONS_MODULES_TABLE}"
         self.module_creator = RawModuleExtractor()
 
     def _ensure_module_table(self):
-        """Check if modules table exists, create if not."""
-        table_ref = f"{self.pid}.{self.DATASET_ID}.{self.MODULES_TABLE}"
-        try:
-            self.bqclient.get_table(table_ref)
-            logging.info(f"Table {table_ref} exists.")
-            # Ensure params column exists
-            self.insert_col(self.MODULES_TABLE, "params", "STRING")
-        except Exception as e:
-            print(f"Error ensuring module table: {e}")
-            logging.info(f"Creating table {table_ref}.")
-            table = bigquery.Table(table_ref, schema=MODULE_SCHEMA)
-            self.bqclient.create_table(table)
-            logging.info(f"Table {table_ref} created.")
+        schema = {f.name: f.field_type for f in MODULE_SCHEMA}
+        self.qb.get_table_schema(table_id=self.MODULES_TABLE, schema=schema, create_if_not_exists=True)
+        self.qb.insert_col(self.MODULES_TABLE, "params", "STRING")
 
     def _ensure_sessions_modules_table(self):
-        """Check if sessions_to_modules table exists, create if not."""
-        table_ref = f"{self.pid}.{self.DATASET_ID}.{self.SESSIONS_MODULES_TABLE}"
-        try:
-            self.bqclient.get_table(table_ref)
-            logging.info(f"Table {table_ref} exists.")
-        except Exception as e:
-            print(f"Error ensuring sessions_modules table: {e}")
-            logging.info(f"Creating table {table_ref}.")
-            table = bigquery.Table(table_ref, schema=SESSIONS_MODULES_SCHEMA)
-            self.bqclient.create_table(table)
-            logging.info(f"Table {table_ref} created.")
+        schema = {f.name: f.field_type for f in SESSIONS_MODULES_SCHEMA}
+        self.qb.get_table_schema(table_id=self.SESSIONS_MODULES_TABLE, schema=schema, create_if_not_exists=True)
 
     def _ensure_modules_methods_table(self):
-        """Check if modules_to_methods table exists, create if not."""
-        table_ref = f"{self.pid}.{self.DATASET_ID}.{self.MODULES_METHODS_TABLE}"
-        try:
-            self.bqclient.get_table(table_ref)
-            logging.info(f"Table {table_ref} exists.")
-        except Exception as e:
-            print(f"Error ensuring modules_methods table: {e}")
-            logging.info(f"Creating table {table_ref}.")
-            table = bigquery.Table(table_ref, schema=MODULES_METHODS_SCHEMA)
-            self.bqclient.create_table(table)
-            logging.info(f"Table {table_ref} created.")
+        schema = {f.name: f.field_type for f in MODULES_METHODS_SCHEMA}
+        self.qb.get_table_schema(table_id=self.MODULES_METHODS_TABLE, schema=schema, create_if_not_exists=True)
 
     def set_module(self, rows: List[Dict] or Dict, user_id: str):
         if isinstance(rows, dict):
@@ -135,18 +104,8 @@ class ModuleWsManager:
     def link_module_methods(self, module_id: str, method_ids: List[str], user_id: str):
         """Link methods to a module."""
         # First, soft delete existing links for this module to avoid duplicates/stale links
-        query = f"""
-            UPDATE `{self.pid}.{self.DATASET_ID}.{self.MODULES_METHODS_TABLE}`
-            SET status = 'deleted'
-            WHERE module_id = @module_id AND user_id = @user_id
-        """
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("module_id", "STRING", module_id),
-                bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
-            ]
-        )
-        self.run_query(query, job_config=job_config)
+        query = f"UPDATE {self.qb._table_ref(self.MODULES_METHODS_TABLE)} SET status = 'deleted' WHERE module_id = @module_id AND user_id = @user_id"
+        self.qb.db.execute(query, params={"module_id": module_id, "user_id": user_id})
 
         # Upsert new links
         rows = []
@@ -167,46 +126,24 @@ class ModuleWsManager:
         """Delete module and its links."""
         # Delete from modules (Soft Delete)
         self.qb.del_entry(
-            nid=module_id,
+            id=module_id,
             table=self.MODULES_TABLE,
             user_id=user_id
         )
 
         # Delete from sessions_to_modules (Soft Delete)
-        query2 = f"""
-            UPDATE `{self.pid}.{self.DATASET_ID}.{self.SESSIONS_MODULES_TABLE}`
-            SET status = 'deleted'
-            WHERE module_id = @module_id AND user_id = @user_id
-        """
+        query2 = f"UPDATE {self.qb._table_ref(self.SESSIONS_MODULES_TABLE)} SET status = 'deleted' WHERE module_id = @module_id AND user_id = @user_id"
+        self.qb.db.execute(query2, params={"module_id": module_id, "user_id": user_id})
 
-        job_config2 = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("module_id", "STRING", module_id),
-                bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
-            ]
-        )
-        self.run_query(query2, job_config=job_config2, conv_to_dict=True)
-
-        query3 = f"""
-            UPDATE `{self.pid}.{self.DATASET_ID}.{self.MODULES_METHODS_TABLE}`
-            SET status = 'deleted'
-            WHERE module_id = @module_id AND user_id = @user_id
-        """
-
-        job_config3 = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("module_id", "STRING", module_id),
-                bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
-            ]
-        )
-        self.run_query(query3, job_config=job_config3, conv_to_dict=True)
+        query3 = f"UPDATE {self.qb._table_ref(self.MODULES_METHODS_TABLE)} SET status = 'deleted' WHERE module_id = @module_id AND user_id = @user_id"
+        self.qb.db.execute(query3, params={"module_id": module_id, "user_id": user_id})
 
 
     def rm_link_session_module(self, session_id: str, module_id: str, user_id: str):
         """Remove link session module (soft delete)."""
         self.qb.rm_link_session_link(
             session_id=session_id,
-            nid=module_id,
+            id=module_id,
             user_id=user_id,
             session_link_table=self.session_link_ref,
             session_to_link_name_id="module_id"
@@ -268,7 +205,7 @@ class ModuleWsManager:
         # get_module_by_id returns {"modules": [...]}, we want just the list here or consistent return
         
         result = self.qb.row_from_id(
-            nid=module_ids,
+            id=module_ids,
             select="*",
             table=self.table_ref
         )
@@ -292,7 +229,7 @@ class ModuleWsManager:
             module_id = [module_id]
 
         rows = self.qb.row_from_id(
-            nid=module_id,
+            id=module_id,
             select=select,
             table=self.MODULES_TABLE
         )

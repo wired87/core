@@ -15,7 +15,7 @@ class ModelManager:
     def get_model(self, env_ids: list or str, user_id: str) -> str:
         try:
             model = self.qb.row_from_id(
-                nid=env_ids,
+                id=env_ids,
                 table=self.table,
                 select="*",
                 user_id=user_id

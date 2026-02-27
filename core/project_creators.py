@@ -19,7 +19,7 @@ def start_relay(world_cfg):
 
     ray.get_actor(name="UTILS_WORKER").set_node.remote(
         dict(
-            nid=name,
+            id=name,
             ref=ref._ray_actor_id.binary().hex(),
             type="ACTOR"
         )

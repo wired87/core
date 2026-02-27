@@ -4,7 +4,7 @@ import json
 from core.orchestrator_manager.orchestrator import OrchestratorManager
 from predefined_case import RELAY_CASES_CONFIG
 from qf_utils.qf_utils import QFUtils
-from utils.graph.local_graph_utils import GUtils
+from graph.local_graph_utils import GUtils
 from core.guard import Guard
 
 

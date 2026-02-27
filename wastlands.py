@@ -2,7 +2,7 @@
 
 
     async def ai_log_sum_process(self, data):
-        nid = data.get("nid")
+        nid = data.get("id")
 
         self.logs_explainer = LogAIExplain(
             self.db_manager,
@@ -326,7 +326,7 @@
             self,
             data
     ):
-        nid = data.get("nid")
+        nid = data.get("id")
 
         log_paths = self.get_log_paths(nid)
         out_entries = self.db_manager.get_latest_entries(

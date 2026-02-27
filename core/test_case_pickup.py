@@ -13,7 +13,7 @@ if _proj_root not in sys.path:
     sys.path.insert(0, _proj_root)
 
 # Minimal setup - avoid full Relay init for faster test
-from utils.graph.local_graph_utils import GUtils
+from graph.local_graph_utils import GUtils
 from code_manipulation.graph_creator import StructInspector
 
 

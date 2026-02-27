@@ -286,7 +286,7 @@ class GaugeUtils(FieldUtils):
                 #pprint.pp(self_nattrs)
                 if vtype != self_ntype:
                     for nid, nattrs in neighbors[vtype.upper()].items():
-                        print("nid", nid)
+                        print("id", nid)
                         print("nattrs", nattrs)
                         neighbor_struct = {"id": nid, **self.restore_selfdict(nattrs)}
 

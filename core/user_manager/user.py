@@ -1,16 +1,16 @@
 """
-User Management Package with BigQuery Integration
+User Management Package
 
 Handles dataset and table management for the QBRAIN ecosystem including:
 - Users, payment records, injections, environments, metadata, and modules
+
+Uses QBrainTableManager (qb) for all DB operations. Pass qb instance or use default.
 """
 
-from datetime import datetime
 from typing import Optional, Dict, Any
-from google.cloud import bigquery
 
-from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 from core.qbrain_manager import get_qbrain_table_manager
+from _db import queries as db_queries
 from utils.id_gen import generate_id
 
 _USER_DEBUG = "[UserManager]"
@@ -18,10 +18,8 @@ _USER_DEBUG = "[UserManager]"
 
 class UserManager:
     """
-    Manages user data and records in BigQuery.
-    Receives BQCore instance via constructor.
-
-    Note: Table creation is handled by QBrainTableManager at server startup.
+    Manages user data and records via QBrainTableManager.
+    All DB access goes through the given qb instance (run_query, set_item).
     """
 
     DATASET_ID = "QBRAIN"
@@ -34,22 +32,13 @@ class UserManager:
         "modules": "modules"
     }
 
-    # Class-level cache to verify tables only once per server process
     _tables_verified = False
 
-    def __init__(self, qb):
-        """Initialize UserManager with QBrainTableManager instance."""
-        try:
-            self.qb = qb
-            self.pid = qb.pid
-            self.bqclient = qb.bqclient
-            self.run_query = qb.run_query
-            print(f"{_USER_DEBUG} initialized with dataset: {self.DATASET_ID}")
-        except Exception as e:
-            print(f"{_USER_DEBUG} __init__ error: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
+    def __init__(self, qb=None):
+        """Initialize with QBrainTableManager instance. If None, uses default from get_qbrain_table_manager()."""
+        self.qb = qb if qb is not None else get_qbrain_table_manager()
+        self.pid = self.qb.pid
+        print(f"{_USER_DEBUG} initialized with dataset: {self.DATASET_ID}")
 
     def initialize_qbrain_workflow(self, uid: str, email: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -90,16 +79,11 @@ class UserManager:
             uid = generate_id()
             print(f"{_USER_DEBUG} get_or_create_user: no key received, generated uid={uid}")
 
-        query = f"""
-            SELECT * FROM `{self.pid}.{self.DATASET_ID}.users`
-            WHERE id = @uid AND (status != 'deleted' OR status IS NULL)
-            LIMIT 1
-        """
         try:
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[bigquery.ScalarQueryParameter("uid", "STRING", uid)]
+            query, job_config = db_queries.bq_get_user(
+                self.pid, self.DATASET_ID, uid
             )
-            result = self.run_query(query, conv_to_dict=True, job_config=job_config)
+            result = self.qb.db.run_query(query, conv_to_dict=True, job_config=job_config)
             if result and len(result) > 0:
                 row = result[0]
                 user_id = row.get("id") or row.get("uid") or uid
@@ -129,15 +113,10 @@ class UserManager:
         """
         try:
             print(f"{_USER_DEBUG} get_user: uid={uid}")
-            query = f"""
-                SELECT * FROM `{self.pid}.{self.DATASET_ID}.users`
-                WHERE id = @uid AND (status != 'deleted' OR status IS NULL)
-                LIMIT 1
-            """
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[bigquery.ScalarQueryParameter("uid", "STRING", uid)]
+            query, job_config = db_queries.bq_get_user(
+                self.pid, self.DATASET_ID, uid
             )
-            result = self.run_query(query, conv_to_dict=True, job_config=job_config)
+            result = self.qb.db.run_query(query, conv_to_dict=True, job_config=job_config)
             print(f"{_USER_DEBUG} get_user: found={bool(result)}")
             return result[0] if result else None
         except Exception as e:
@@ -158,15 +137,10 @@ class UserManager:
         """
         try:
             print(f"{_USER_DEBUG} get_payment_record: uid={uid}")
-            query = f"""
-                SELECT * FROM `{self.pid}.{self.DATASET_ID}.payment`
-                WHERE id = @uid AND (status != 'deleted' OR status IS NULL)
-                LIMIT 1
-            """
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[bigquery.ScalarQueryParameter("uid", "STRING", uid)]
+            query, job_config = db_queries.bq_get_payment_record(
+                self.pid, self.DATASET_ID, uid
             )
-            result = self.run_query(query, conv_to_dict=True, job_config=job_config)
+            result = self.qb.db.run_query(query, conv_to_dict=True, job_config=job_config)
             print(f"{_USER_DEBUG} get_payment_record: found={bool(result)}")
             return result[0] if result else None
         except Exception as e:
@@ -179,15 +153,10 @@ class UserManager:
         try:
             print(f"{_USER_DEBUG} get_standard_stack: user_id={user_id}")
             self._ensure_user_record(user_id)
-            query = f"""
-                SELECT * from `{self.pid}.{self.DATASET_ID}.users`
-                WHERE id = @user_id AND (status != 'deleted' OR status IS NULL)
-                LIMIT 1
-            """
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[bigquery.ScalarQueryParameter("user_id", "STRING", user_id)]
+            query, job_config = db_queries.bq_get_standard_stack(
+                self.pid, self.DATASET_ID, user_id
             )
-            result = self.run_query(query, job_config=job_config, conv_to_dict=True)
+            result = self.qb.db.run_query(query, job_config=job_config, conv_to_dict=True)
             if not result:
                 print(f"{_USER_DEBUG} get_standard_stack: no result")
                 return False
@@ -226,15 +195,10 @@ class UserManager:
         """
         try:
             print(f"{_USER_DEBUG} _ensure_user_record: uid={uid}")
-            query = f"""
-                SELECT id FROM `{self.pid}.{self.DATASET_ID}.users`
-                WHERE id = @uid AND (status != 'deleted' OR status IS NULL)
-                LIMIT 1
-            """
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[bigquery.ScalarQueryParameter("uid", "STRING", uid)]
+            query, job_config = db_queries.bq_ensure_user_exists(
+                self.pid, self.DATASET_ID, uid
             )
-            result = self.run_query(query, conv_to_dict=True, job_config=job_config)
+            result = self.qb.db.run_query(query, conv_to_dict=True, job_config=job_config)
             if result:
                 print(f"{_USER_DEBUG} _ensure_user_record: user already exists")
                 return True
@@ -261,16 +225,11 @@ class UserManager:
         """
         try:
             print(f"{_USER_DEBUG} _ensure_payment_record: uid={uid}")
-            query = f"""
-                SELECT id FROM `{self.pid}.{self.DATASET_ID}.payment`
-                WHERE id = @uid AND (status != 'deleted' OR status IS NULL)
-                LIMIT 1
-            """
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[bigquery.ScalarQueryParameter("uid", "STRING", uid)]
+            query, job_config = db_queries.bq_ensure_payment_exists(
+                self.pid, self.DATASET_ID, uid
             )
-            result = self.bqclient.query(query, job_config=job_config).result()
-            if result.total_rows > 0:
+            result = self.qb.db.run_query(query, conv_to_dict=True, job_config=job_config)
+            if result and len(result) > 0:
                 print(f"{_USER_DEBUG} _ensure_payment_record: already exists")
                 return True
             from utils.id_gen import generate_id
@@ -343,5 +302,4 @@ class UserManager:
 
 
 # Default instance for standalone use (no orchestrator context)
-_default_bqcore = BQCore(dataset_id="QBRAIN")
-_default_user_manager = UserManager(get_qbrain_table_manager(_default_bqcore))
+_default_user_manager = UserManager()

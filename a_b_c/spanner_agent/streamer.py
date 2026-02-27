@@ -63,7 +63,7 @@ class Streamer(BaseActor):
         self.change_stream = self.streamer.create_change_stream(
             """tables=tables,
             start_time=sp_timestamp(),
-            nid=self.id,
+            id=self.id,
             env_id=ENV_ID"""
         )
 

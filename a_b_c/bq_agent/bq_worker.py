@@ -23,7 +23,7 @@ if __name__ == "__main__":
     abq.bq_insert(
         table_id="TEST_TABLE2011",
         rows=[{
-            "nid": "test_nid",
+            "id": "test_nid",
             "key": [12454]
         }]
     )

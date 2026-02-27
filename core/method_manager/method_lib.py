@@ -1,8 +1,7 @@
-import base64
 import json
 import logging
 import random
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, List, Optional, Callable, Tuple, Union
 
 import numpy as np
 from google.cloud import bigquery
@@ -10,10 +9,14 @@ from a_b_c.bq_agent._bq_core.bq_handler import BQCore
 from core.method_manager.gen_type import generate_methods_out_schema
 from core.method_manager.xtrct_prompt import xtrct_method_prompt
 from core.module_manager.create_runnable import create_runnable
+from core.param_manager.params_lib import ParamsManager
 from core.qbrain_manager import get_qbrain_table_manager, QBrainTableManager
 from core.handler_utils import require_param, require_param_truthy, get_val
 from qf_utils.qf_utils import QFUtils
-# 
+
+
+
+#
 # Define Schemas
 METHOD_SCHEMA = [
     bigquery.SchemaField("id", "STRING", mode="REQUIRED"),
@@ -51,34 +54,45 @@ class MethodManager:
         self.qb = qb
         self.params_manager=params_manager
         self.pid = qb.pid
-        self.bqclient = qb.bqclient
-        self.insert_col = qb.insert_col
         self.table_ref = f"{self.METHODS_TABLE}"
         self.session_link_ref = f"{self.SESSIONS_METHODS_TABLE}"
         self.qfu = QFUtils()
         self._extract_prompt = None  # built lazily to avoid circular import with case
 
     def _ensure_method_table(self):
-        """Check if methods table exists, create if not."""
-        table_ref = f"{self.pid}.{self.DATASET_ID}.{self.METHODS_TABLE}"
-        try:
-            self.bqclient.get_table(table_ref)
-            logging.info(f"Table {table_ref} exists.")
-            # Ensure new columns exist
-            self.insert_col(self.METHODS_TABLE, "equation", "STRING")
-            self.insert_col(self.METHODS_TABLE, "jax_code", "STRING")
-        except Exception as e:
-            print(f"Error ensuring method table: {e}")
-            logging.info(f"Creating table {table_ref}.")
-            table = bigquery.Table(table_ref, schema=METHOD_SCHEMA)
-            self.bqclient.create_table(table)
-            logging.info(f"Table {table_ref} created.")
+        schema = {f.name: f.field_type for f in METHOD_SCHEMA}
+        self.qb.get_table_schema(table_id=self.METHODS_TABLE, schema=schema, create_if_not_exists=True)
+        self.qb.insert_col(self.METHODS_TABLE, "equation", "STRING")
+        self.qb.insert_col(self.METHODS_TABLE, "jax_code", "STRING")
 
 
-    def execute_method_testwise(self, methods:list[dict]):
-        return_key_param_entries = self.qb.row_from_id([m["return_key"] for m in methods.values()], table="params")
-        param_entries = self.qb.row_from_id(list(set([m["params"] for m in methods.values()])), table="params")
-        param_entries = {p["id"]: p for p in param_entries}
+    def execute_method_testwise(self, methods:list[dict], user_id, g):
+        """
+        Collect shapes from test execution with param vals from param shape
+        """
+        print("execute_method_testwise...")
+
+        test_dims = 3
+        return_key_ids = [m["return_key"] for m in methods]
+        print("execute_method_testwise return_key_ids", return_key_ids)
+        return_key_param_entries = self.qb.row_from_id(return_key_ids, table="params")
+
+        if return_key_param_entries:
+            return_key_param_entries = {p["id"]: p for p in return_key_param_entries}
+
+        param_entries = self.qb.get_users_entries(user_id, table="params")
+        if param_entries:
+            param_entries = {p["id"]: p for p in param_entries}
+
+        for k in return_key_ids:
+            v = {}
+            if g.G.has_node(k):
+                v = g.G.nodes[k]
+            if return_key_param_entries and k in return_key_param_entries:
+                return_key_param_entries[k].update(v)
+            else:
+                return_key_param_entries[k] = v
+
         adapted_return_params = []
 
         for i, _def_content in enumerate(methods):
@@ -86,60 +100,117 @@ class MethodManager:
             equation = _def_content.get("equation")
             return_key = _def_content.get("return_key")
             code = _def_content.get("code")
-            _def_id = _def_content["id"]
+            try:
 
-            # try get param shape from db
-            param_shape=None
-            param_entry = return_key_param_entries[i]
-            if param_entry:
-                param_shape = param_entry["shape"]
+                _def_id = _def_content["id"]
 
-            if not param_shape or not param_shape:
-                # need calc testwise to infer
-                # collect param values (shape? type?)
-                val_params = []
-                for p_key in params:
-                    is_array = p_key["shape"] and isinstance(p_key, (list, tuple)) and len(p_key)
-                    if is_array:
-                        val_params.append(np.ones(param_entries[p_key]["shape"]))
-                    else:
-                        val_params.append(1)
+                # try get param shape from db
+                param_shape=None
+                param_entry = return_key_param_entries[return_key]
+                if param_entry:
+                    param_shape = param_entry["shape"]
 
-                runnable: Callable = create_runnable(code)
-                result = runnable(*params)
-                if result:
-                    result_shape = np.array(result).shape
+                if not param_shape:
+                    # CALC THE RESULT SHAPE
+                    val_params = []
+                    for p_key in params:
+                        p_shape = param_entries[p_key]["shape"]
+                        param_type = param_entries[p_key]["param_type"]
+                        param_value = param_entries[p_key]["value"]
 
-                    # upsert resul
-                    if param_entry:
-                        payload = param_entry
-
-                    else:
-                        payload = dict(
-                            id=return_key,
-                            param_type=type(result),
-                            axis_def=0,
-                            description=f"return key of {_def_id}"
+                        # adapt_to_n_dims returns nested data or scalar; used to infer if param is array-like
+                        resolved = self.adapt_to_n_dims(
+                            p_key=p_key,
+                            param_type=param_type,
+                            flat_value=param_value,
+                            shape=p_shape,
                         )
-                    payload["shape"]=result_shape
-                    adapted_return_params.append(payload)
 
+                        is_array = resolved and isinstance(resolved, (list, tuple)) and len(resolved)
+                        # Build placeholder: use complex64 so physics methods (e.g. calc_psi_bar) that
+                        # call .conj() on args do not fail (Python int has no .conj())
+                        if is_array:
+                            arr_shape = np.array(resolved).shape
+                            val_params.append(np.ones(arr_shape, dtype=np.complex64))
+                        else:
+                            val_params.append(np.asarray(1, dtype=np.complex64))
+                    print("val_params", params, val_params)
+
+                    runnable: Callable = create_runnable(code)
+                    result = runnable(*val_params)
+
+                    if result:
+                        result_shape = np.array(result).shape
+
+                        # upsert resul
+                        if param_entry:
+                            payload = param_entry
+
+                        else:
+                            payload = dict(
+                                id=return_key,
+                                param_type=type(result),
+                                axis_def=0,
+                                description=f"return key of {_def_id}"
+                            )
+                        payload["shape"]=result_shape
+                        adapted_return_params.append(payload)
+
+                    else:
+                        print("no result shape found...")
                 else:
-                    print("no result shape found...")
-            else:
-                raise Exception(f"runnable failed for code {code}, params {params},")
+                    raise Exception(f"runnable failed for code {code}, params {params},")
 
-            self.params_manager.set_param(
-                param_data=adapted_return_params
-            )
-            print("eq extractted", equation)
-
-
-
-
-
+                self.params_manager.set_param(
+                    param_data=adapted_return_params,
+                    user_id=user_id,
+                )
+                print("eq extractted", equation)
+            except Exception as e:
+                # Skip on shape mismatch / validation failure - continue workflow (minimal fix)
+                print(f"Err method manager execute_method_testwise", e, params)
+        print("execute_method_testwise... done")
 
 
+    def adapt_to_n_dims(self, p_key, param_type: type, flat_value: list, shape: Tuple[int, ...]) -> Union[List, Tuple]:
+        """
+        Recursively nests a 1D list into N-dimensions based on the provided shape.
+
+        :param param_type: The desired container type (list or tuple)
+        :param flat_value: The 1D data source
+        :param shape: A tuple defining the dimensions (e.g., (3, 2, 2))
+        :return: Nested structure of param_type
+        """
+        try:
+            if not shape:
+                print("no shape for", p_key, param_type, flat_value, shape)
+                return flat_value[0] if flat_value else None
+
+            # Calculate how many elements belong in each sub-slice of the current dimension
+            # Example: if shape is (3, 4) and flat_value has 12 items,
+            # the first dimension (3) contains 3 groups of 4 items each.
+            stride = 1
+            for dim in shape[1:]:
+                stride *= dim
+
+            nested = []
+            for i in range(0, len(flat_value), stride):
+                chunk = flat_value[i: i + stride]
+
+                # If there are more dimensions to process, recurse
+                if len(shape) > 1:
+                    nested.append(self.adapt_to_n_dims(param_type, chunk, shape[1:]))
+                else:
+                    # Base case: reached the last dimension
+                    nested.extend(chunk)
+                    break
+
+            ptype = param_type(nested)
+            print("param_shape", ptype)
+            return ptype
+        except Exception as e:
+            print(f"Err method manager adapt_to_n_dims", e)
+        return None
 
 
 
@@ -189,25 +260,12 @@ class MethodManager:
             traceback.print_exc()
             return None
 
-    def set_method(self, rows: List[Dict] or Dict, user_id: str):
+    def set_method(self, rows: List[Dict] or Dict, user_id: str, g=None):
         if isinstance(rows, dict):
             rows = [rows]
 
-        for row in rows:
-            row["user_id"] = user_id
-
-            param_data = self.qb.row_from_id(
-                row["params"],
-                table="params",
-            )
-
-            # SET AXIS FOR METHOD
-            row["axis_def"] = [
-                p.get("axis_def", None)
-                for p in param_data
-            ]
-
-
+        if g is not None:
+            self.execute_method_testwise(rows, user_id, g)
 
 
 
@@ -230,31 +288,20 @@ class MethodManager:
         """Delete method and its links."""
         # Delete from methods (Soft Delete)
         self.qb.del_entry(
-            nid=method_id,
+            id=method_id,
             table=self.METHODS_TABLE,
             user_id=user_id
         )
 
         # Delete from sessions_to_methods (Soft Delete)
-        query2 = f"""
-            UPDATE `{self.pid}.{self.DATASET_ID}.{self.SESSIONS_METHODS_TABLE}`
-            SET status = 'deleted'
-            WHERE method_id = @method_id AND user_id = @user_id
-        """
-
-        job_config2 = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("method_id", "STRING", method_id),
-                bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
-            ]
-        )
-        self.run_query(query2, job_config=job_config2, conv_to_dict=True)
+        query2 = f"UPDATE {self.qb._table_ref(self.SESSIONS_METHODS_TABLE)} SET status = 'deleted' WHERE method_id = @method_id AND user_id = @user_id"
+        self.qb.db.execute(query2, params={"method_id": method_id, "user_id": user_id})
 
     def rm_link_session_method(self, session_id: str, method_id: str, user_id: str):
         """Remove link session method (soft delete)."""
         self.qb.rm_link_session_link(
             session_id=session_id,
-            nid=method_id,
+            id=method_id,
             user_id=user_id,
             session_link_table=self.session_link_ref,
             session_to_link_name_id="method_id"
@@ -294,7 +341,7 @@ class MethodManager:
         method_ids = [row['method_id'] for row in links]
         
         result = self.qb.row_from_id(
-            nid=method_ids,
+            id=method_ids,
             select="*",
             table=self.table_ref
         )
@@ -308,7 +355,7 @@ class MethodManager:
             method_id = [method_id]
 
         rows = self.qb.row_from_id(
-            nid=method_id,
+            id=method_id,
             select=select,
             table=self.METHODS_TABLE
         )
@@ -323,7 +370,10 @@ class MethodManager:
 
 # Instantiate
 _default_bqcore = BQCore(dataset_id="QBRAIN")
-_default_method_manager = MethodManager(get_qbrain_table_manager(_default_bqcore))
+_qb:QBrainTableManager = get_qbrain_table_manager(_default_bqcore)
+params_manager = ParamsManager(_qb)
+
+_default_method_manager = MethodManager(_qb, params_manager)
 method_manager = _default_method_manager  # backward compat
 
 # -- RELAY HANDLERS --
@@ -457,7 +507,7 @@ def handle_set_method(data=None, auth=None):
     mm = get_method_manager()
     # test_exec_method
 
-    mm.execute_method_testwise([method_data])
+
 
     # set
     mm.set_method(method_data, user_id)

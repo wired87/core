@@ -74,7 +74,7 @@ class BQGroundZero:
         return f"""
         MERGE INTO `{self.pid}.{self.ds_id}.{table_id.upper()}` T
         USING `{self.pid}.{self.ds_id}.{table_id.upper()}` S
-        ON T.nid = S.nid
+        ON T.id = S.id
         WHEN MATCHED THEN
           UPDATE SET
             T.column1 = S.column1,
@@ -83,7 +83,7 @@ class BQGroundZero:
             T.last_updated = CURRENT_TIMESTAMP() -- Example: update a timestamp
         WHEN NOT MATCHED THEN
           INSERT (nid, column1, column2, ...)
-          VALUES (S.nid, S.column1, S.column2, ...);
+          VALUES (S.id, S.column1, S.column2, ...);
         
                 q_types = ""
         for k, v in schema.items():
@@ -113,7 +113,7 @@ class BQGroundZero:
         return f"""
             MERGE INTO `{self.pid}.{self.ds_id}.{table_id}` T
             USING (SELECT * FROM UNNEST([{', '.join(struct_rows)}])) AS S
-            ON T.nid = S.nid
+            ON T.id = S.id
             WHEN MATCHED THEN UPDATE SET {", ".join([f"T.{k}=S.{k}" for k in schema.keys()])}
             WHEN NOT MATCHED THEN INSERT ({", ".join(schema.keys())}) VALUES ({", ".join([f"S.{k}" for k in schema.keys()])})
         """
@@ -170,7 +170,7 @@ class BQGroundZero:
         query = f"""
             MERGE INTO `{self.pid}.{self.ds_id}.{table_id}` T
             USING {unnested_source} AS S
-            ON T.nid = S.nid
+            ON T.id = S.id
             WHEN MATCHED THEN
               UPDATE SET
                 {update_clause}
@@ -324,7 +324,7 @@ class BQCore(BQGroundZero):
         Args:
             table_id (str): The ID of the table.
             schema (dict[str, str]): A dictionary mapping column names to their BigQuery types.
-                                     Example: {"nid": "STRING", "value": "FLOAT64"}
+                                     Example: {"id": "STRING", "value": "FLOAT64"}
             create_if_not_exists (bool): If True, creates the table if it is missing.
         """
         print(f"Defining schema for table '{table_id}'.")
@@ -481,17 +481,18 @@ class BQCore(BQGroundZero):
                 existing_columns = []
 
             print(f"Schema for {table}:{existing_columns}")
-            #print("rows", rows)
             all_queries = []
+            already_added = []
             for r in rows:
                 for k, v in r.items():
-                    if schema is not None and k not in existing_columns:
+                    if schema is not None and k not in existing_columns and k not in already_added:
                         print(f"add {k} to {existing_columns}")
                         all_queries.append(self.add_col_query(
                             col_name=k,
                             table=table,
                             col_value=v
                         ))
+                        already_added.append(k)
 
             # print("all_queries:", all_queries)
             if len(all_queries):
@@ -571,7 +572,7 @@ class BQCore(BQGroundZero):
         existing_rows=[]
         new_rows=[]
         for row in rows:
-            if row["nid"] in all_ids:
+            if row["id"] in all_ids:
                 existing_rows.append(row)
             else:
                 new_rows.append(row)
@@ -760,7 +761,7 @@ class BigQueryGraphHandler(BQCore):
         """
         node_data = []
         for node, attrs in graph.nodes(data=True):
-            row = dict(nid=node, **attrs)
+            row = dict(id=node, **attrs)
             new_row = {}
             for k, v in row.items():
                 new_row[re.sub(r"\.", "_", k)] = v  # Normalize column names
@@ -1094,7 +1095,7 @@ if __name__ == '__main__':
             table_id='your_embeddings_table',
             custom=False,
             limit=5,
-            select=["nid"],
+            select=["id"],
             model_name='your_embedding_model' # Replace with your BQML model name/path
         )
         print("BQML Search Results:", results_bqml)
@@ -1188,7 +1189,7 @@ upsert query def
         query = 
             MERGE INTO `{self.pid}.{self.ds_id}.{table_id}` T
             USING {unnested_source} AS S
-            ON T.nid = S.nid
+            ON T.id = S.id
             WHEN MATCHED THEN
               UPDATE SET
                 {update_clause}

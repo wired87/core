@@ -63,7 +63,7 @@ class BQMLMaster(BQCore):
                 "field_value",
                 "",
             ],  # TIME_SERIES_DATA_COL
-            time_series_id_col: str="nid",  # TIME_SERIES_ID_COL
+            time_series_id_col: str="id",  # TIME_SERIES_ID_COL
 
             # --- Optionale Zeitreihen / ARIMA Parameter ---
             model_type: str = 'ARIMA_PLUS_XREG',
