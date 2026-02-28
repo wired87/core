@@ -253,12 +253,13 @@ class GUtils(Utils):
                 if not self.G.has_node(trt):
                     self.add_node(trgt_node_attr)
 
-                # Add history entry
-                self.h_entry(
-                    id=attrs["eid"],
-                    attrs={k: v for k, v in attrs.items() if k != "id"},
-                    graph_item="edge"
-                )
+                # Add history entry only when datastore/history is enabled.
+                if self.enable_data_store is True:
+                    self.h_entry(
+                        id=attrs["eid"],
+                        attrs={k: v for k, v in attrs.items() if k != "id"},
+                        graph_item="edge"
+                    )
 
             else:
                 raise ValueError(f"Wrong edge fromat")

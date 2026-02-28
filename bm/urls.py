@@ -13,6 +13,7 @@ urlpatterns = [
 
     path('world/', include("urls")),
     path('auth/', include("auth.urls")),
+    path('graph/', include("graph.dj.urls")),
 
 ] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 

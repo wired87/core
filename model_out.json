@@ -1,0 +1,46 @@
+{
+  "config": {
+    "DB": "AAAAAAAAAAA=",
+    "AXIS": [
+      null
+    ],
+    "DB_SHAPE": [
+      []
+    ],
+    "AMOUNT_PARAMS_PER_FIELD": [
+      1
+    ],
+    "DB_PARAM_CONTROLLER": [
+      1
+    ],
+    "DB_KEYS": [
+      "None"
+    ],
+    "FIELD_KEYS": [],
+    "MODULES": [
+      0
+    ],
+    "FIELDS": [
+      1
+    ],
+    "METHOD_PARAM_LEN_CTLR": [],
+    "METHODS": [],
+    "METHODS_PER_MOD_LEN_CTLR": [],
+    "NEIGHBOR_CTLR": [],
+    "EQ_CLASSIFICATION": [],
+    "INJECTOR_TIME": [],
+    "INJECTOR_INDICES": [],
+    "INJECTOR_VALUES": [],
+    "DB_TO_METHOD_EDGES": [],
+    "DB_CTL_VARIATION_LEN_PER_EQUATION": [],
+    "DB_CTL_VARIATION_LEN_PER_FIELD": [],
+    "LEN_FEATURES_PER_EQ": [],
+    "METHOD_TO_DB": [],
+    "E_KEY_MAP_PER_FIELD": []
+  },
+  "db_decoded_len": 1,
+  "structure": {
+    "n_modules": 1,
+    "n_fields": 1
+  }
+}

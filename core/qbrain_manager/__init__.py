@@ -107,6 +107,10 @@ class QBrainTableManager:
             "schema": {
                 "id": "STRING",
                 "user_id": "STRING",
+                "sim_time": "INTEGER",
+                "cluster_dim": "INTEGER",
+                "dims": "INTEGER",
+                "data": "STRING",
                 "logs": "JSON",
                 "description": "STRING",
                 "created_at": "TIMESTAMP",
@@ -198,6 +202,7 @@ class QBrainTableManager:
                 "amplitude": "STRING",
                 "waveform": "STRING",
                 "description": "STRING",
+                "status": "STRING",
                 "created_at": "TIMESTAMP",
                 "updated_at": "TIMESTAMP",
             }
@@ -763,17 +768,15 @@ class QBrainTableManager:
                         create_if_not_exists=True
                     )
 
-                    if not self._local:
-                        missing_cols = [(cn, ct) for cn, ct in schema.items() if cn not in current_schema]
-                        if missing_cols:
-                            print(f"      ⚠ Found missing columns in '{table_name}': {missing_cols}")
-                            for col_name, col_type in missing_cols:
-                                try:
-                                    query = f"ALTER TABLE `{self.pid}.{self.DATASET_ID}.{table_name}` ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
-                                    self.bqclient.query(query).result()
-                                    print(f"        ✓ Added column {col_name}")
-                                except Exception as e:
-                                    print(f"        ❌ Failed to add column {col_name}: {e}")
+                    missing_cols = [(cn, ct) for cn, ct in schema.items() if cn not in current_schema]
+                    if missing_cols:
+                        print(f"      ⚠ Found missing columns in '{table_name}': {missing_cols}")
+                        for col_name, col_type in missing_cols:
+                            try:
+                                self.insert_col(table_name, col_name, col_type)
+                                print(f"        ✓ Added column {col_name}")
+                            except Exception as e:
+                                print(f"        ❌ Failed to add column {col_name}: {e}")
 
                 else:
                     print(f"      Creating table '{table_name}'...")
