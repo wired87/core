@@ -49,7 +49,7 @@ class GridAnimationRecorder:
 
     def _get_visualizer(self):
         if self._visualizer is None:
-            from jax_test.grid.visualizer import ModularVisualizer
+            from grid.visualizer import ModularVisualizer
 
             self._visualizer = ModularVisualizer(self.env_cfg, self.cfg)
         return self._visualizer

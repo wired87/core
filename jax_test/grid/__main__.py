@@ -61,7 +61,7 @@ def main() -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
-    from jax_test.grid.guard import Guard
+    from grid.guard import Guard
 
     guard = Guard(cfg=cfg)
     guard.run()

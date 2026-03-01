@@ -1,31 +1,30 @@
+# Credentials and secrets
 .env
-config.yaml
-db.sqlite3
-betse_app
-static
-static_root
-_manim
-kubernetes
-PyPendulum
-
-# Credential and secret files
 .env.*
 !.env.example
+**/credentials.json
+**/credentials*.json
 *.pem
-*.key
-*.p12
-*.pfx
-*.jks
-*.keystore
-id_rsa
-id_rsa.pub
-id_ed25519
-id_ed25519.pub
-credentials.json
-credential.json
-service-account*.json
-service_account*.json
-client_secret*.json
-oauth*.json
-token.json
-secrets*.json
+*secret*
+*key*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.eggs/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Build / local
+node_modules/
+/build
+*.duckdb
+db.sqlite3
+static_root/
