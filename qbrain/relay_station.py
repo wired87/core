@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 import networkx as nx
 
 from qbrain.code_manipulation.graph_creator import StructInspector
-from qbrain.core.orchestrator_manager.orchestrator import OrchestratorManager
+from qbrain.core.orchestrator_manager.orchestrator import Thalamus
 
 
 import asyncio
@@ -20,6 +20,7 @@ from asgiref.sync import sync_to_async
 
 from urllib.parse import parse_qs
 
+from qbrain.graph import Brain
 from qbrain.predefined_case import RELAY_CASES_CONFIG
 
 from qbrain.utils.deserialize import deserialize
@@ -27,6 +28,7 @@ from qbrain.utils.deserialize import deserialize
 from qbrain.chat_manger.main import AIChatClassifier
 
 from qbrain.utils.dj_websocket.handler import ConnectionManager
+from qbrain.utils.ws_registry import live_data_registry
 
 
 from qbrain.graph.local_graph_utils import GUtils
@@ -154,10 +156,14 @@ class Relay(
         self.relay_cases: list[RelayCase] = RELAY_CASES_CONFIG
 
         self._grid_streamer = None
+        self._first_message_received = False
+        self._is_gpu_connection = False
+        self._gpu_user_id = None
+        self._gpu_env_id = None
 
         # Core components (g, qfu, guard, orchestrator) created in connect() when user_id is known
         self.g = GUtils(nx_only=False, G=nx.Graph(), g_from_path=None)
-        self.orchestrator = None
+        self.brain = None
 
 
     @property
@@ -280,18 +286,22 @@ class Relay(
             self.user_id = resolved_user_id
             print(f"{_RELAY_DEBUG} connect: user_id saved locally: {self.user_id}")
 
-            def _create_orchestrator(cases, user_id, relay=None):
-                return OrchestratorManager(cases, user_id=user_id, relay=relay)
+            def _create_orchestrator(cases, user_id):
+                return Brain(
+                    user_id=user_id,
+                    relay_cases=cases,
+                )
 
-            self.orchestrator = await sync_to_async(_create_orchestrator)(
+            self.brain = await sync_to_async(_create_orchestrator)(
                 self.relay_cases,
                 self.user_id,
                 relay=self,
             )
 
+
             self._grid_streamer = None
             if os.getenv("GRID_STREAM_ENABLED", "false").lower() in ("true", "1"):
-                from jax_test.grid.streamer import GridStreamer
+                from jax_test.grid import GridStreamer
                 async def _send_grid_frame(b: bytes):
                     await self.send(bytes_data=b)
                 self._grid_streamer = GridStreamer(_send_grid_frame)
@@ -463,10 +473,43 @@ class Relay(
             bytes_data=None
     ):
         try:
-            #print(f"{_RELAY_DEBUG} receive: raw text_data length={len(text_data) if text_data else 0)")
             payload = deserialize(text_data)
+            if not isinstance(payload, dict):
+                payload = {"type": "UNKNOWN", "data": {}}
             data_type = payload.get("type")
-            #print(f"{_RELAY_DEBUG} receive: type={data_type}")
+
+            # First message: optional GPU registration (type "gpu" with user_id, env_id)
+            if not getattr(self, "_first_message_received", True):
+                self._first_message_received = True
+                if data_type == "gpu":
+                    auth = payload.get("auth") or {}
+                    data = payload.get("data") or {}
+                    uid = auth.get("user_id") or data.get("user_id")
+                    eid = auth.get("env_id") or data.get("env_id")
+                    if uid is not None and eid is not None:
+                        await live_data_registry.register_gpu(uid, eid, self)
+                        self._is_gpu_connection = True
+                        self._gpu_user_id = str(uid)
+                        self._gpu_env_id = str(eid)
+                        print(f"{_RELAY_DEBUG} receive: GPU registered for user_id={uid} env_id={eid}")
+                        return
+                    # else fall through to normal handling
+
+            # GPU connection: handle LIVE_DATA by relaying to frontend clients
+            if getattr(self, "_is_gpu_connection", False) and data_type == "LIVE_DATA":
+                uid = getattr(self, "_gpu_user_id", None)
+                eid = getattr(self, "_gpu_env_id", None)
+                clients = await live_data_registry.get_clients_for_channel(uid, eid)
+                out = {"type": "LIVE_DATA", "auth": payload.get("auth") or {}, "data": payload.get("data") or {}}
+                if "auth" not in out or not out["auth"]:
+                    out["auth"] = {"user_id": uid, "env_id": eid}
+                text = json.dumps(out, default=str)
+                for client in clients:
+                    try:
+                        await client.send(text_data=text)
+                    except Exception as send_err:
+                        print(f"{_RELAY_DEBUG} receive: LIVE_DATA relay send error: {send_err}")
+                return
 
             if self.session_id:
                 if "auth" not in payload:
@@ -474,11 +517,17 @@ class Relay(
                 if "session_id" not in payload["auth"]:
                     payload["auth"]["session_id"] = self.session_id
 
+            # Register frontend for LIVE_DATA when auth has env_id
+            auth = payload.get("auth") or {}
+            env_id = auth.get("env_id")
+            if env_id is not None and self.user_id is not None:
+                await live_data_registry.register_frontend(self.user_id, str(env_id), self)
+
             # Orchestrator is now the primary classifier/dispatcher for all relay cases,
             # including CHAT and START_SIM (via injected helpers).
             orchestrator_response = None
             try:
-                orchestrator_response = await self.orchestrator.handle_relay_payload(
+                orchestrator_response = await self.brain.handle_relay_payload(
                     payload=payload,
                     user_id=self.user_id,
                     session_id=str(self.session_id) if self.session_id else None,
@@ -495,7 +544,6 @@ class Relay(
                     return
 
             if isinstance(orchestrator_response, list):
-                orchestrator_response
                 await asyncio.gather(
                     *[
                         self.send_message(item)
@@ -536,6 +584,12 @@ class Relay(
             if getattr(self, "_grid_streamer", None) is not None:
                 self._grid_streamer.stop()
                 self._grid_streamer = None
+            if getattr(self, "_is_gpu_connection", False):
+                await live_data_registry.unregister_gpu(self)
+                print(f"{_RELAY_DEBUG} disconnect: GPU unregistered")
+            else:
+                await live_data_registry.unregister_frontend(self)
+            await live_data_registry.cleanup_empty()
             print(f"{_RELAY_DEBUG} disconnect: close_code={close_code}, env_node={getattr(self, 'env_node', None) is not None}")
             if self.env_node is not None:
                 print(f"{_RELAY_DEBUG} disconnect: env_node present; WebSocket disconnected with code: {close_code}")

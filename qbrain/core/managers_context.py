@@ -6,14 +6,14 @@ from contextvars import ContextVar
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from qbrain.core.orchestrator_manager.orchestrator import OrchestratorManager
+    from qbrain.core.orchestrator_manager.orchestrator import Thalamus
 
-_orchestrator_context: ContextVar[Optional["OrchestratorManager"]] = ContextVar(
+_orchestrator_context: ContextVar[Optional["Thalamus"]] = ContextVar(
     "orchestrator_context", default=None
 )
 
 
-def set_orchestrator(orch: "OrchestratorManager"):
+def set_orchestrator(orch: "Thalamus"):
     """Set the current orchestrator for this context."""
     return _orchestrator_context.set(orch)
 
@@ -23,7 +23,7 @@ def reset_orchestrator(token):
     _orchestrator_context.reset(token)
 
 
-def get_orchestrator() -> Optional["OrchestratorManager"]:
+def get_orchestrator() -> Optional["Thalamus"]:
     """Return the current orchestrator, or None if not in dispatch context."""
     return _orchestrator_context.get()
 

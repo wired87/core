@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-from qbrain.core.orchestrator_manager.orchestrator import OrchestratorManager
+from qbrain.core.orchestrator_manager.orchestrator import Thalamus
 from qbrain.predefined_case import RELAY_CASES_CONFIG
 from qbrain.qf_utils.qf_utils import QFUtils
 from qbrain.graph.local_graph_utils import GUtils
@@ -9,11 +9,11 @@ from qbrain.core.guard import Guard
 
 
 async def main() -> None:
-    """Simple smoke test for OrchestratorManager.handle_relay_payload."""
+    """Simple smoke test for Thalamus.handle_relay_payload."""
     g = GUtils()
     qfu = QFUtils()
     guard = Guard(qfu, g, "public")
-    orchestrator = OrchestratorManager(
+    orchestrator = Thalamus(
         RELAY_CASES_CONFIG,
         user_id="public",
         g=g,

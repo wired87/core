@@ -170,7 +170,7 @@ BestBrain/
 │   │       ├── visual.py        # GraphLookup (POST graph JSON → streaming HTML)
 │   │       └── brain_test.py    # HTTP Brain test chat (GET HTML, POST JSON chat/suite)
 │   ├── core/
-│   │   ├── orchestrator_manager/orchestrator.py  # OrchestratorManager: handle_relay_payload, START_SIM, typed dispatch
+│   │   ├── orchestrator_manager/orchestrator.py  # Thalamus: handle_relay_payload, START_SIM, typed dispatch
 │   │   ├── guard.py             # Guard: main(env_id, env_data), build graph, pop_cmd(grid), persist model/anim
 │   │   ├── qbrain_manager/      # QBrainTableManager: MANAGERS_INFO, run_query, set_item, _generate_embedding
 │   │   ├── session_manager/     # SessionManager, session_manager (get_or_create_active_session)
@@ -205,7 +205,7 @@ BestBrain/
 | ASGI / Daphne | Relay | WebSocket at `/run/`; connect → receive → send |
 | Relay | UserManager | get_or_create_user |
 | Relay | SessionManager | get_or_create_active_session (via session_manager) |
-| Relay | OrchestratorManager | Constructor(cases, user_id, relay=self) |
+| Relay | Thalamus | Constructor(cases, user_id, relay=self) |
 | Relay | Orchestrator | handle_relay_payload(payload) for every message |
 | Orchestrator | AIChatClassifier | main(user_id, msg) when type missing or CHAT |
 | Orchestrator | FileManager | process_and_upload_file_config when files in payload |

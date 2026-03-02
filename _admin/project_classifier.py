@@ -23,6 +23,13 @@ def classify(path: Path, project_root: Path | None = None) -> str:
     """
     if not path.is_dir():
         return UNKNOWN
+    path = path.resolve()
+    proj_root = Path(project_root).resolve() if project_root else None
+
+    # --- Repo root monolith: qbrain/bm/settings.py (no manage.py at root) ---
+    if proj_root is not None and path == proj_root:
+        if (path / "qbrain" / "bm" / "settings.py").exists():
+            return BACKEND_DRF
 
     # --- Frontend / Mobile: package.json ---
     pkg = path / "package.json"
@@ -48,6 +55,9 @@ def classify(path: Path, project_root: Path | None = None) -> str:
         for sub in ("bm", "config", "core"):
             if (path / sub / "settings.py").exists():
                 return BACKEND_DRF
+        # Monolith: project root with manage.py and qbrain/bm (e.g. BestBrain root)
+        if proj_root is not None and path == proj_root and (path / "qbrain" / "bm" / "settings.py").exists():
+            return BACKEND_DRF
         return BACKEND_DRF
 
     # Subdirs that commonly contain Django app (e.g. qbrain/bm)

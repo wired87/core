@@ -1,6 +1,6 @@
 import numpy as np
 
-from data import FERM_PARAMS
+from qbrain.data import FERM_PARAMS
 from qbrain.core.sm.fermion.ferm_utils import FermUtils
 
 

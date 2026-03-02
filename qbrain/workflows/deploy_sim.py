@@ -3,8 +3,19 @@ import os
 from typing import Union, List, Any
 
 from qbrain.auth.set_gcp_auth_creds_path import set_gcp_auth_path
-from compute_engine import VMMaster
-from create_env import EnvCreatorProcess
+
+# Prefer the original top-level imports when available (e.g. installed as packages),
+# but fall back to the in-repo qbrain implementations when running locally.
+try:
+    from compute_engine import VMMaster  # type: ignore
+except Exception:  # pragma: no cover - compatibility fallback for local runs
+    from qbrain.compute_engine import VMMaster
+
+try:
+    from create_env import EnvCreatorProcess  # type: ignore
+except Exception:  # pragma: no cover - compatibility fallback for local runs
+    from qbrain.create_env import EnvCreatorProcess
+
 from qbrain.utils.run_subprocess import exec_cmd
 
 

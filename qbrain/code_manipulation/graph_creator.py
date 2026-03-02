@@ -2,8 +2,6 @@ import ast
 import importlib
 from typing import Union, Optional, Callable, Dict, Any, Tuple
 
-from qbrain.qf_utils.qf_utils import QFUtils
-from qbrain.graph.local_graph_utils import GUtils
 
 def _get_docstring(node: Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef]) -> str:
     """Extracts docstring from function or class node."""
@@ -62,6 +60,8 @@ class StructInspector(ast.NodeVisitor):
     """
 
     def __init__(self, G):
+        from qbrain.graph.local_graph_utils import GUtils
+        from qbrain.qf_utils.qf_utils import QFUtils
         self.current_class: Optional[str] = None
         self.g = GUtils(G=G)
         self.qfu = QFUtils(G=G)

@@ -5,9 +5,6 @@ from typing import Any, List, Dict
 from qbrain.code_manipulation.eq_extractor import EqExtractor
 from qbrain.core.module_manager.module_loader import ModuleLoader
 from qbrain.qf_utils.field_utils import FieldUtils
-from qbrain.qf_utils.qf_utils import QFUtils
-
-from qbrain.graph.local_graph_utils import GUtils
 
 
 class Modulator(
@@ -17,11 +14,12 @@ class Modulator(
     def __init__(
             self,
             G,
-            mid:str,
-            qfu:QFUtils,
+            mid: str,
+            qfu,
     ):
+        from qbrain.graph.local_graph_utils import GUtils
         self.id = mid
-        self.g:GUtils = GUtils(G=G)
+        self.g = GUtils(G=G)
         self.qfu = qfu
         self.fu = FieldUtils()
         

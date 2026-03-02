@@ -10,6 +10,7 @@ import filetype
 
 from qbrain.core.module_manager.mcreator import ModuleCreator
 from qbrain.core.file_manager.extraction_prompts import EXTRACT_EQUATIONS_PROMPT, CONV_EQ_CODE_TO_JAX_PROMPT
+from qbrain.core.file_manager.google_lens_equations import detect_equations_from_image_url
 from qbrain.qf_utils.qf_utils import QFUtils
 
 dotenv.load_dotenv()
@@ -137,6 +138,14 @@ class RawModuleExtractor:
         except Exception as e:
             logging.error(f"extract_equation_content_from_pdf error: {e}")
             return {"latex": [], "math_elements": [], "equations": []}
+
+    def get_equation_content_from_image_url(self, image_url: str) -> dict:
+        """
+        Use Google Lens (gs-ai API) to detect equations from an image URL.
+        Returns same shape as extract_equation_content_from_pdf: {latex, math_elements, equations}.
+        Requires GS_AI_API_KEY (and optional GS_AI_BASE_URL) in environment.
+        """
+        return detect_equations_from_image_url(image_url)
 
     def extract_params_and_data_types(self, parts):
         if not self.model or not parts:

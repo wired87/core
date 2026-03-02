@@ -3,7 +3,11 @@ DB Manager: unified interface for DuckDB (local) and BigQuery (remote).
 """
 import os
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
+
+# Default DuckDB path: qbrain/local.duckdb (canonical location after moving root files into qbrain)
+_DEFAULT_DUCK_PATH = str(Path(__file__).resolve().parent.parent / "local.duckdb")
 
 
 from qbrain._db.workflows import (

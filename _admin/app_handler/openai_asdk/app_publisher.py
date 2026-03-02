@@ -54,6 +54,10 @@ class AppMetadata:
     logo_url: Optional[str] = None
     privacy_policy_url: Optional[str] = None
     support_contact: Optional[str] = None
+    terms_of_service_url: Optional[str] = None
+    company_url: Optional[str] = None
+    subtitle: Optional[str] = None
+    category: Optional[str] = None
 
 
 class AppPublisher:
@@ -216,8 +220,11 @@ class AppPublisher:
         """
         Returns docker build command for the MCP app image.
         """
-        root = project_root or Path(__file__).resolve().parent.parent.parent
-        return f"docker build -t {self.docker_image_name} -f app_handler/openai_asdk/Dockerfile.mcp {root}"
+        if project_root is None:
+            # __file__ -> openai_asdk -> app_handler -> _admin -> project root
+            project_root = Path(__file__).resolve().parent.parent.parent.parent
+        dockerfile_rel = "_admin/app_handler/openai_asdk/Dockerfile.mcp"
+        return f"docker build -t {self.docker_image_name} -f {dockerfile_rel} {project_root}"
 
     def run_local_cmd(self) -> str:
         """

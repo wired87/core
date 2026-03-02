@@ -1,6 +1,6 @@
 import numpy as np
 
-from data import GAUGE_FIELDS
+from qbrain.data import GAUGE_FIELDS
 from qbrain.core.sm.gauge.gauge_utils import GaugeUtils
 
 class GaugeCreator(GaugeUtils):

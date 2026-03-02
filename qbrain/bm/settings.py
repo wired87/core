@@ -13,12 +13,16 @@ dotenv.load_dotenv()
 
 OS_NAME = os.name
 print("HI!", OS_NAME)
-if OS_NAME == "nt":
-    GOOGLE_APPLICATION_CREDENTIALS = r"C:\\Users\\wired\\OneDrive\\Desktop\\Projects\\BestBrain\\_google\\g_auth\\aixr-401704-59fb7f12485c.json"
-else:
-    GOOGLE_APPLICATION_CREDENTIALS = "/home/derbenedikt_sterra/BestBrain/_google/g_auth/aixr-401704-59fb7f12485c.json"
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent  # qbrain/bm -> project root
+
+# Prefer env; fallback to project-relative paths so any dev machine works
+_creds_candidates = [
+    os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"),
+    str(BASE_DIR / "qbrain" / "auth" / "credentials.json"),
+    str(BASE_DIR / "_google" / "g_auth" / "aixr-401704-59fb7f12485c.json") if OS_NAME == "nt" else str(BASE_DIR / "_google" / "g_auth" / "aixr-401704-59fb7f12485c.json"),
+]
+GOOGLE_APPLICATION_CREDENTIALS = next((p for p in _creds_candidates if p and Path(p).exists()), _creds_candidates[1] or "")
 
 SECRET_KEY = 'django-insecure-gq0rr+q=s$=lci8=r%whnubclama3db!wnl1gpmh!_z2x5u_i3'
 
@@ -27,13 +31,14 @@ if os.name == "nt":
     DEBUG = True
     TEST_USER_ID = "rajtigesomnlhfyqzbvx"
     REQUEST_URL = "http://127.0.0.1:8000/"
-    GCP_TOKEN =r"C:\Users\wired\OneDrive\Desktop\Projects\bm\ggoogle\g_auth\token.json"
+    GCP_TOKEN = os.environ.get("GCP_TOKEN") or str(BASE_DIR / "qbrain" / "utils" / "ggoogle" / "g_auth" / "token.json")
     #matplotlib.use("Agg")
     TEST_ENV_ID="env_rajtigesomnlhfyqzbvx_zddioeaduhvnyphluwvu"# one dim for demo_G
     ALLOWED_HOSTS = ["*"]
     WS_URL = "ws://127.0.0.1:8000/"
 
-    FIREBASE_CREDENTIALS = r"C:\\Users\\wired\OneDrive\\Desktop\\Projects\\Brainmaster\\_google\\g_auth\\firebase_creds.json"
+    _fb_nt = os.environ.get("FIREBASE_CREDENTIALS") or str(BASE_DIR / "_google" / "g_auth" / "firebase_creds.json")
+    FIREBASE_CREDENTIALS = _fb_nt if Path(_fb_nt).exists() else ""
 
 else:
     #matplotlib.use("Agg")
@@ -44,7 +49,13 @@ else:
     GCP_TOKEN="utils/ggoogle/g_auth/token.json"
     ALLOWED_HOSTS = ['bestbrain.tech', 'www.bestbrain.tech', "34.69.187.50", "6000-firebase-studio-1749574544448._qfn_cluster_node-jbb3mjctu5cbgsi6hwq6u4btwe.cloudworkstations.dev"]
     WS_URL = "wss://bestbrain.tech/"
-    FIREBASE_CREDENTIALS = r"_google/g_auth/firebase_creds.json"
+    _fb = os.environ.get("FIREBASE_CREDENTIALS") or str(BASE_DIR / "_google" / "g_auth" / "firebase_creds.json")
+    FIREBASE_CREDENTIALS = _fb if Path(_fb).exists() else ""
+
+# When running via _admin.main --run-local-testing, TESTING=1 is set; force debug mode
+if os.environ.get("TESTING") == "1":
+    DEBUG = True
+    ALLOWED_HOSTS = ["*"]
 
 CORS_ALLOW_ALL_ORIGINS = True
 

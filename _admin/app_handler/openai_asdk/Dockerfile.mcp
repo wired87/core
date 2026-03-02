@@ -12,8 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy project requirements
-COPY r.txt .
+# Copy project requirements (qbrain has r.txt; MCP server only requires fastapi/uvicorn)
+COPY qbrain/r.txt ./r.txt
 RUN pip install --no-cache-dir --user \
     fastapi \
     uvicorn \
@@ -37,5 +37,5 @@ ENV PYTHONPATH=/usr/src/app \
 
 EXPOSE 8787
 
-# Run MCP server
-CMD ["python", "-m", "app_handler.openai_asdk.mcp_server", "--port", "8787", "--host", "0.0.0.0"]
+# Run MCP server (module path from repo root: _admin.app_handler.openai_asdk)
+CMD ["python", "-m", "_admin.app_handler.openai_asdk.mcp_server", "--port", "8787", "--host", "0.0.0.0"]

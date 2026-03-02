@@ -7,7 +7,7 @@ from asgiref.sync import async_to_sync
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views import View
 
-from qbrain.graph.brain import Brain
+from qbrain.graph.brn.brain import Brain
 
 
 def _mock_case_callable(case_name: str):

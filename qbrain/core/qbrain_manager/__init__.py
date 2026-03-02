@@ -232,7 +232,7 @@ class QBrainTableManager:
              "schema": None
         },
         {
-            "manager_name": "OrchestratorManager",
+            "manager_name": "Thalamus",
             "description": "Manages orchestration of simulations using Hopfield Network dynamics for high-level coordination and optimization.",
              "default_table": None,
              "schema": None

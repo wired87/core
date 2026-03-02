@@ -1,6 +1,6 @@
 import json
 import pprint
-from qbrain.core.orchestrator_manager.orchestrator import OrchestratorManager
+from qbrain.core.orchestrator_manager.orchestrator import Thalamus
 from qbrain.core.session_manager.session import SessionManager
 from qbrain.core.env_manager.env_lib import EnvManager
 from qbrain.core.module_manager.ws_modules_manager.modules_lib import ModuleWsManager
@@ -9,7 +9,7 @@ from qbrain.core.injection_manager.injection import InjectionManager
 
 class OrchestratorTest:
     def __init__(self):
-        self.orchestrator = OrchestratorManager()
+        self.orchestrator = Thalamus()
         self.session_manager = SessionManager()
         self.env_manager = EnvManager()
         self.module_manager = ModuleWsManager()

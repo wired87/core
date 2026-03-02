@@ -6,7 +6,7 @@ Replace or augment the current AIChatClassifier with a VectorStore-based semanti
 
 ## Current Flow
 
-1. **Relay.connect()**: Creates OrchestratorManager with `relay_cases` (from RELAY_CASES_CONFIG). Creates AIChatClassifier with same case struct.
+1. **Relay.connect()**: Creates Thalamus with `relay_cases` (from RELAY_CASES_CONFIG). Creates AIChatClassifier with same case struct.
 2. **Relay.receive()**: Forwards payload to `orchestrator.handle_relay_payload()`.
 3. **Orchestrator.handle_relay_payload()**: If `type` is missing or CHAT, calls `_ensure_data_type_from_classifier()` which uses `chat_classifier.main(user_id, msg)` to get a case name. Then `_resolve_case(data_type)` returns the case dict with `func`. The handler dispatches via `_dispatch_relay_handler()`.
 
@@ -65,7 +65,7 @@ Replace or augment the current AIChatClassifier with a VectorStore-based semanti
 ### 4. Shared VectorStore Access
 
 - The VectorStore is created in Relay and must be reachable from the orchestrator during classification.
-- **Option A**: Pass `vector_store` into OrchestratorManager: `OrchestratorManager(cases, user_id, relay=self, vector_store=self._vector_store)`.
+- **Option A**: Pass `vector_store` into Thalamus: `Thalamus(cases, user_id, relay=self, vector_store=self._vector_store)`.
 - **Option B**: Orchestrator gets it from relay: `vector_store = getattr(self.relay, "_vector_store", None)` when classifying.
 - Prefer Option A for explicit dependency injection.
 
@@ -84,7 +84,7 @@ Replace or augment the current AIChatClassifier with a VectorStore-based semanti
 
 | File | Change |
 |------|--------|
-| `relay_station.py` | In `connect()`: create VectorStore, embed relay_cases, upsert; store `_vector_store`. In `disconnect()`: close vector_store. Pass `vector_store` to OrchestratorManager. |
+| `relay_station.py` | In `connect()`: create VectorStore, embed relay_cases, upsert; store `_vector_store`. In `disconnect()`: close vector_store. Pass `vector_store` to Thalamus. |
 | `core/orchestrator_manager/orchestrator.py` | Accept `vector_store` in `__init__`. In `_ensure_data_type_from_classifier()`: when using vector classification, embed msg, call `vector_store.similarity_search`, set `payload["type"]` from top result. Fallback to existing classifier if no vector_store or no match. |
 | `core/qbrain_manager/__init__.py` or new `utils/embedding.py` | Expose `embed_text(text: str) -> List[float]` for shared use (or use existing `_generate_embedding`). |
 
@@ -115,9 +115,9 @@ Replace or augment the current AIChatClassifier with a VectorStore-based semanti
 
 Implement the following in the BestBrain codebase:
 
-1. **Relay.connect()**: After creating the orchestrator, initialize a VectorStore (`_db.vector_store.VectorStore`) with `store_name="relay_cases"` and `db_path` from `RELAY_VECTOR_DB_PATH` or default `relay_vector_store.duckdb`. Call `create_store()`. For each item in `self.relay_cases`, extract `case` and `desc`, build `text = f"{case} {desc}".strip()`, embed `text` using an embedding function (e.g. from QBrainTableManager or a shared `embed_text` utility), and call `vector_store.upsert_vectors(ids=[case], vectors=[embedding], metadata=[{case, desc, req_struct, out_struct}])`. Do not store `func` in metadata. Store `self._vector_store = vector_store`. Pass `vector_store` to OrchestratorManager. In `disconnect()`, call `self._vector_store.close()`.
+1. **Relay.connect()**: After creating the orchestrator, initialize a VectorStore (`_db.vector_store.VectorStore`) with `store_name="relay_cases"` and `db_path` from `RELAY_VECTOR_DB_PATH` or default `relay_vector_store.duckdb`. Call `create_store()`. For each item in `self.relay_cases`, extract `case` and `desc`, build `text = f"{case} {desc}".strip()`, embed `text` using an embedding function (e.g. from QBrainTableManager or a shared `embed_text` utility), and call `vector_store.upsert_vectors(ids=[case], vectors=[embedding], metadata=[{case, desc, req_struct, out_struct}])`. Do not store `func` in metadata. Store `self._vector_store = vector_store`. Pass `vector_store` to Thalamus. In `disconnect()`, call `self._vector_store.close()`.
 
-2. **OrchestratorManager**: Accept optional `vector_store` in `__init__`. In `_ensure_data_type_from_classifier()`, when `data_type` is None or CHAT and `msg` is non-empty and `vector_store` is set: embed `msg`, call `vector_store.similarity_search(query_vector, top_k=1)`, and if the top result has `score >= min_similarity`, set `data_type = results[0]["metadata"]["case"]` and `payload["type"] = data_type`. Otherwise fall back to existing `chat_classifier.main()`.
+2. **Thalamus**: Accept optional `vector_store` in `__init__`. In `_ensure_data_type_from_classifier()`, when `data_type` is None or CHAT and `msg` is non-empty and `vector_store` is set: embed `msg`, call `vector_store.similarity_search(query_vector, top_k=1)`, and if the top result has `score >= min_similarity`, set `data_type = results[0]["metadata"]["case"]` and `payload["type"] = data_type`. Otherwise fall back to existing `chat_classifier.main()`.
 
 3. **Embedding**: Use the same embedding model for case descriptions and user messages. Expose `embed_text(text: str) -> List[float]` (e.g. via QBrainTableManager or a new `utils/embedding.py`) and use it in both Relay and Orchestrator.
 

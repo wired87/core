@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 import sys
 import time
@@ -37,13 +38,18 @@ from typing import Any, Dict, List, Optional, Tuple
 
 # --- App metadata: required for ChatGPT Apps Directory listing ---
 # Must include: name, version, description, privacy_policy_url, support_contact
+# Ref: https://developers.openai.com/apps-sdk/deploy/submission
 APP_METADATA = {
     "name": "BestBrain",
     "version": "0.1.0",
-    "description": "Physics simulation and scientific computing environment for lattice field theory, fermions, and gauge fields.",
+    "description": "Physics simulation and scientific computing environment for lattice field theory, fermions, and gauge fields. Run and manage simulations, list saved environments, and create new physics simulations with configurable modules.",
     "privacy_policy_url": "https://bestbrain.tech/privacy",
+    "terms_of_service_url": "https://bestbrain.tech/terms",
     "support_contact": "support@bestbrain.tech",
+    "company_url": "https://bestbrain.tech",
     "logo_url": "https://bestbrain.tech/logo.png",
+    "subtitle": "Physics simulation and scientific computing for lattice field theory",
+    "category": "Developer tools",
 }
 
 # --- Tool definitions: MCP tools the app exposes to ChatGPT ---
@@ -180,7 +186,7 @@ def step_check_prerequisites(metadata: Dict[str, Any]) -> List[str]:
     Returns:
         List of missing items (empty = ready)
     """
-    from app_handler.openai_asdk.app_publisher import AppMetadata, AppPublisher
+    from _admin.app_handler.openai_asdk.app_publisher import AppMetadata, AppPublisher
 
     app_meta = AppMetadata(
         name=metadata["name"],
@@ -208,7 +214,7 @@ def step_validate_tools(tools: List[Dict[str, Any]]) -> List[str]:
     Returns:
         List of validation errors (empty = valid)
     """
-    from app_handler.openai_asdk.app_publisher import AppMetadata, AppPublisher
+    from _admin.app_handler.openai_asdk.app_publisher import AppMetadata, AppPublisher
 
     publisher = AppPublisher(app_metadata=AppMetadata(**APP_METADATA))
     return publisher.validate_tool_annotations(tools)
@@ -239,12 +245,18 @@ def step_start_server_and_health_check(
     try:
         import urllib.request
 
+        # Project root so _admin.app_handler.openai_asdk resolves
+        admin_dir = Path(__file__).resolve().parent.parent.parent  # _admin
+        project_root = admin_dir.parent
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(project_root) + os.pathsep + env.get("PYTHONPATH", "")
+
         # Spawn MCP server in subprocess; stdout/stderr piped to avoid cluttering workflow output
         proc = subprocess.Popen(
             [
                 sys.executable,
                 "-m",
-                "app_handler.openai_asdk.mcp_server",
+                "_admin.app_handler.openai_asdk.mcp_server",
                 "--port",
                 str(port),
                 "--host",
@@ -252,7 +264,8 @@ def step_start_server_and_health_check(
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            cwd=str(Path(__file__).resolve().parent.parent.parent),
+            cwd=str(project_root),
+            env=env,
         )
 
         # Poll until server responds to GET / (up to timeout_start seconds)
@@ -322,7 +335,7 @@ def step_output_checklist() -> List[str]:
 
     Returns the checklist items for manual review.
     """
-    from app_handler.openai_asdk.app_publisher import AppMetadata, AppPublisher
+    from _admin.app_handler.openai_asdk.app_publisher import AppMetadata, AppPublisher
 
     app_meta = AppMetadata(**APP_METADATA)
     publisher = AppPublisher(app_metadata=app_meta)
@@ -423,11 +436,35 @@ def run_workflow(
     logger.info("  Indirect: %s", GOLDEN_PROMPTS["indirect"][0])
     logger.info("  Negative: %s", GOLDEN_PROMPTS["negative"][0])
 
-    # --- STEP 6b: Submission checklist ---
+    # --- STEP 6b: Local demo path (for OpenAI app creator) ---
+    try:
+        from _admin.app_handler.openai_asdk.config import get_demo_paths
+        demo = get_demo_paths()
+        if demo.get("demo_video_path"):
+            logger.info("")
+            logger.info("[STEP 6b] Local demo assets (from --record-qdash-demo)")
+            logger.info("  demo_video_path: %s", demo.get("demo_video_path"))
+            logger.info("  demo_html_dir:   %s", demo.get("demo_html_dir"))
+    except Exception:
+        pass
+
+    # --- STEP 6c: Submission checklist ---
     logger.info("")
-    logger.info("[STEP 6b] Submission checklist")
+    logger.info("[STEP 6c] Submission checklist")
     for step in step_output_checklist():
         logger.info("  %s", step)
+
+    # --- STEP 7: Write submission manifest (all required data for App Store form) ---
+    try:
+        from _admin.app_handler.openai_asdk.submission_manifest import build_submission_manifest
+        manifest_dir = Path(__file__).resolve().parent
+        manifest_path = manifest_dir / "app_submission_manifest.json"
+        build_submission_manifest(metadata=metadata, out_path=manifest_path)
+        logger.info("")
+        logger.info("[STEP 7] Submission manifest written: %s", manifest_path)
+        logger.info("  Use this file when filling the form at %s", "https://platform.openai.com/apps-manage")
+    except Exception as e:
+        logger.warning("[STEP 7] Could not write submission manifest: %s", e)
 
     logger.info("")
     logger.info("=" * 60)

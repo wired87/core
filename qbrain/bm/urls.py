@@ -11,7 +11,7 @@ urlpatterns = [
     path('world/', include("qbrain.urls")),
     path('auth/', include("qbrain.auth.urls")),
     path('graph/', include("qbrain.graph.dj.urls")),
-
+    path('api/relay/', include("qbrain.bm.api.relay")),
 ] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT) + [
     re_path(r'^.*$', spa_index),  # qdash SPA catch-all
 ]

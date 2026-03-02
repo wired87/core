@@ -7,14 +7,19 @@ wrapped in Docker, and ready for OpenAI App Store submission.
 Ref: https://developers.openai.com/apps-sdk/
 """
 
-from app_handler.openai_asdk.app_publisher import (
+from _admin.app_handler.openai_asdk.app_publisher import (
     AppMetadata,
     AppPublisher,
     CSPConfig,
     ToolAnnotation,
 )
-from app_handler.openai_asdk.config import AppConfig, MCPConfig
-from app_handler.openai_asdk.workflow import run_workflow
+from _admin.app_handler.openai_asdk.config import (
+    AppConfig,
+    MCPConfig,
+    get_demo_paths,
+    get_demo_video_path,
+)
+from _admin.app_handler.openai_asdk.workflow import run_workflow
 
 __all__ = [
     "AppConfig",
@@ -23,5 +28,7 @@ __all__ = [
     "CSPConfig",
     "MCPConfig",
     "ToolAnnotation",
+    "get_demo_paths",
+    "get_demo_video_path",
     "run_workflow",
 ]

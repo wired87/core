@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GTM Workflow Tree</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(145deg, #1a1d29 0%, #0f111a 100%);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      color: #e2e4e9;
+      padding: 2rem;
+    }
+    h1 {
+      text-align: center;
+      font-weight: 600;
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+      color: #fff;
+    }
+    .subtitle {
+      text-align: center;
+      font-size: 0.9rem;
+      opacity: 0.8;
+      margin-bottom: 2rem;
+    }
+    .diagram {
+      background: rgba(255,255,255,0.03);
+      border-radius: 12px;
+      padding: 2rem;
+      margin: 0 auto;
+      max-width: 1400px;
+      overflow: auto;
+    }
+    .diagram svg {
+      max-width: 100%;
+      height: auto;
+    }
+    .mermaid {
+      display: flex;
+      justify-content: center;
+    }
+    .mermaid .node rect,
+    .mermaid .node circle,
+    .mermaid .node polygon {
+      fill: #2d3340 !important;
+      stroke: #5b6578 !important;
+      stroke-width: 1.5px !important;
+    }
+    .mermaid .node.label rect {
+      fill: #3b82f6 !important;
+      stroke: #60a5fa !important;
+    }
+    .mermaid .edgePath .path {
+      stroke: #5b6578 !important;
+    }
+    .mermaid .cluster rect {
+      fill: rgba(59, 130, 246, 0.08) !important;
+      stroke: rgba(96, 165, 250, 0.4) !important;
+    }
+  </style>
+</head>
+<body>
+  <h1>JAX GTM — Workflow Tree</h1>
+  <p class="subtitle">All steps from entry point to export</p>
+  <div class="diagram">
+    <pre class="mermaid">
+flowchart TB
+    A["main.py: Guard() → guard.main()"]
+    A --> B["Guard.__init__"]
+    A --> C["Guard.main() → run()"]
+
+    B --> B1["load_data: get_env_cfg or test_out.json → json.loads"]
+    B --> B2["parse_value(cfg)"]
+    B --> B3["GNN(amount_nodes, time, gpu, DIMS, **cfg)"]
+    B --> B4["BQCore(dataset_id)"]
+
+    C --> D["gnn_layer.main()"]
+    D --> E["_export_engine_state(serialized_in, serialized_out)"]
+
+    D --> F["prepare()"]
+    F --> F1["db_layer.build_db(amount_nodes)"]
+    F1 --> F1a["Per dim: SCALED_DB_dim, TIME_DB_dim"]
+    F1 --> F1b["nodes, SCALED_PARAMS, tdb, time_construct"]
+    F --> F2["prep()"]
+    F2 --> F2a["Per eq: extract_eq_variations, reshape_variant_block"]
+    F2 --> F2b["get_axis_shape, short_transformed, all_axs/all_shapes"]
+    F2 --> F2c["create_in_linears_process → build_linears"]
+    F2 --> F2d["create_out_linears_process → create_out_linears"]
+    F2 --> F2e["in_store/out_store; create_node → METHODS"]
+
+    D --> G["simulate()"]
+    G --> G1["Per step: begin_step(step)"]
+    G --> G2["calc_batch()"]
+    G2 --> G2a["Per eq: extract_eq_variations, short_transformed, extract_flat_params"]
+    G2 --> G2b["create_in_features → get_precomputed_results, shape_input"]
+    G2 --> G2c["blur_result_from_in_tree → node() → create_out_features"]
+    G2 --> G2d["all_results"]
+    G --> G3["save_t_step(all_results)"]
+    G3 --> G3a["flatten_result → sum_results"]
+    G3 --> G3b["stack_tdb → sort_results_rtdb"]
+    G3 --> G3c["time_construct update"]
+
+    D --> H["serialize(in_store), serialize(out_store)"]
+    D --> I["return serialized_in, serialized_out"]
+
+    E --> E1["payload: serialized_in, serialized_out, tdb"]
+    E --> E2["_upsert_generated_data_to_bq(payload)"]
+    E --> E3["Write engine_output.json"]
+    </pre>
+  </div>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        curve: 'basis',
+        padding: 20
+      }
+    });
+  </script>
+</body>
+</html>

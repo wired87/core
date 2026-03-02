@@ -4,11 +4,15 @@ entwickel und teste ein ravity modell.
 zeig mir alle files an
 
 """
+import ast
+
+from qbrain.jax_test.grid.animation_recorder import GridAnimationRecorder
+from qbrain.utils.math.operator_handler import OperatorHandler, EqExtractor
 
 """
 Orchestrator Manager
 
-This module implements the OrchestratorManager, responsible for high-level coordination
+This module implements the Thalamus, responsible for high-level coordination
 and optimization of simulation entries using advanced neural architectures.
 
 HOPFIELD NETWORK ORCHESTRATION EXPLANATION:
@@ -45,6 +49,9 @@ import json
 import os
 from typing import List, Dict, Optional, Any, TypedDict
 
+from qbrain.gem_core.gem import Gem
+from qbrain.graph import Brain
+
 from qbrain.core.fields_manager.fields_lib import FieldsManager
 from qbrain.core.method_manager.method_lib import MethodManager
 
@@ -55,15 +62,14 @@ from qbrain.core.user_manager import UserManager
 from qbrain.core.file_manager.file_lib import FileManager
 from qbrain.chat_manger.main import AIChatClassifier
 from qbrain.core.env_manager.env_lib import EnvManager
-from qbrain.core.guard import Guard
+from qbrain.core.guard import Guard, ComponentGraphCreator
 from qbrain.core.model_manager.model_lib import ModelManager
 from qbrain.a_b_c.bq_agent._bq_core.bq_handler import BQCore
-from gem_core.gem import GoogleIntelligent
 from qbrain.core.session_manager.session import SessionManager
 from qbrain.core.researcher2.researcher2.core import ResearchAgent
+from qbrain.core.collector_manager import CaseCollectorManager
 from qbrain.predefined_case import RELAY_CASES_CONFIG
 from qbrain.qf_utils.qf_utils import QFUtils
-from qbrain.graph.local_graph_utils import GUtils
 
 from qbrain.core.managers_context import set_orchestrator, reset_orchestrator
 
@@ -78,11 +84,34 @@ class StartSimInput(TypedDict):
     time_step: float
     description: Optional[str]
 
-class OrchestratorManager:
+class Thalamus:
     """
-    Manages orchestration of simulations using Hopfield Network dynamics.
-    Now includes a conversational interface to setup simulations.
-    Defines BQCore and provides it to all manager instances.
+    Manages the orchestration of various processes and serves as the central manager
+    for simulation workflows and coordination tasks.
+
+    Serves as a primary integration point that connects multiple subsystems and allows
+    efficient handling of user commands, simulation execution, and communication handling.
+
+    :ivar DATASET_ID: Constant representing the dataset identifier associated with the orchestrator.
+    :type DATASET_ID: str
+    :ivar user_id: The unique identifier for a user interacting with the orchestrator.
+    :type user_id: str
+    :ivar cases: A collection of cases or datasets used by the orchestrator to process information.
+    :type cases: Any
+    :ivar relay: Relay WebSocket interface for communication and handling payloads.
+    :type relay: Optional[Any]
+    :ivar last_files: Tracks the list of recently processed files in the orchestrator.
+    :type last_files: List[Any]
+    :ivar history: Stores historical records or events the orchestrator processes.
+    :type history: List[Any]
+    :ivar chat_contexts: A map of chat sessions containing messages exchanged during conversations.
+        Key is session_key (str), and Value is a List of Dict with role and content.
+    :type chat_contexts: Dict[str, List[Dict[str, str]]]
+    :ivar simulation_drafts: A dictionary storing draft data for simulations.
+        Key corresponds to session keys and the value includes respective draft details.
+    :type simulation_drafts: Dict[str, Dict[str, Any]]
+    :ivar goal_request_struct: A dictionary representing structured goals required for specific cases.
+    :type goal_request_struct: Dict[str, Dict[str, Any]]
     """
     DATASET_ID = "QBRAIN"
     
@@ -92,38 +121,79 @@ class OrchestratorManager:
         user_id: str = "public",
         relay=None,
     ):
+        _dr_backend = os.environ.get("DEEP_RESEARCH_BACKEND", "chatgpt").strip().lower()
+
         # Create BQCore and QBrainTableManager; provide qb to all managers
         self.bqcore = BQCore(dataset_id=self.DATASET_ID)
         from qbrain.core.qbrain_manager import get_qbrain_table_manager
-        _qb = get_qbrain_table_manager(self.bqcore)
+        self._qb = get_qbrain_table_manager(self.bqcore)
 
-        self.vrag_engien = None
+        self.env_manager = EnvManager(self._qb)
+        self.session_manager = SessionManager(self._qb)
+        self.injection_manager = InjectionManager(self._qb)
+        self.file_manager = FileManager(self._qb)
+        self.model_manager = ModelManager(qb=self._qb, gem=self.gem)
+        self.module_db_manager = ModuleWsManager(self._qb)
+        self.field_manager = FieldsManager(self._qb)
+        self.method_manager = MethodManager(self._qb)
+        self.user_manager = UserManager(self._qb)
+        self.params_manager = ParamsManager(self._qb)
+        self.gem = Gem()
 
-        _gim = os.environ.get("GOOGLE_INTELLIGENT_gim", "gem").strip().lower()
-        self.gem = GoogleIntelligent(model=_gim)
-
-        self.env_manager = EnvManager(_qb)
-        self.session_manager = SessionManager(_qb)
-        self.injection_manager = InjectionManager(_qb)
-        self.file_manager = FileManager(_qb)
-        self.model_manager = ModelManager(qb=_qb, gem=self.gem)
-        self.module_db_manager = ModuleWsManager(_qb)
-        self.field_manager = FieldsManager(_qb)
-        self.method_manager = MethodManager(_qb)
-        self.user_manager = UserManager(_qb)
-        self.params_manager = ParamsManager(_qb)
+        # Use shared/global QBrainTableManager for downstream managers
+        self._qb = get_qbrain_table_manager()
 
         self.research_agent = ResearchAgent(
             self.file_manager,
             self.gem,
-            self.vrag_engien
+            deep_research_backend=_dr_backend,
         )
 
-        self.chat_classifier = AIChatClassifier(cases, gem=self.gem)
-        self.user_id = user_id
-
-        self.g = GUtils()
+        # init Brain empty
+        self.g = Brain(
+            _dr_backend,
+            user_id,
+        )
         self.qfu = QFUtils(g=self.g)
+
+        # Discover all manager relay case structs and mirror them into the Brain graph.
+        # This is read‑only and does not affect handler wiring; it only adds CASE nodes
+        # for introspection and tooling.
+        try:
+            self.case_collector = CaseCollectorManager(gutils=self.g)
+            self.case_collector.collect_cases_into_graph()
+        except Exception as e:
+            print(f"[Thalamus] CaseCollectorManager error during init: {e}")
+
+        # fill Brain with data
+        self.data_handler = ComponentGraphCreator(
+            qb=self._qb,
+            qfu=self.qfu,
+            g=self.g,
+            env_manager=self.env_manager,
+            module_db_manager=self.module_db_manager,
+            field_manager=self.field_manager,
+            method_manager=self.method_manager,
+            injection_manager=self.injection_manager,
+            params_manager=self.params_manager,
+            user_id=user_id,
+        )
+        self.data_handler.main()
+
+
+        # split eq into parts (p -> op -> p)
+
+
+        for k,v in self.g.G.nodes(data=True):
+            if v["type"] == "METHODS":
+                self.eq_processor = EqExtractor(self.g)
+                self.eq_processor.visit(
+                    ast.parse(
+                        v["equation"],
+                        mode='eval'
+                    )
+                )
+                self.eq_processor.batches
 
         self.guard = Guard(
             qfu=self.qfu,
@@ -137,6 +207,9 @@ class OrchestratorManager:
             params_manager=self.params_manager,
         )
 
+        self.chat_classifier = AIChatClassifier(cases, gem=self.gem)
+        self.user_id = user_id
+
         self.relay = relay
         self.cases = cases
         self.last_files = []
@@ -146,6 +219,11 @@ class OrchestratorManager:
         self.simulation_drafts: Dict[str, Dict[str, Any]] = {}
 
         self.goal_request_struct: Dict[str, Dict[str, Any]] = {}
+
+        # Background data_handler/main threading
+        import threading
+        self._data_handler_lock = threading.Lock()
+        self._data_handler_thread: Optional[threading.Thread] = None
 
     async def handle_relay_payload(
             self,
@@ -169,6 +247,8 @@ class OrchestratorManager:
                     user_id,
                     session_id=session_id,
                 )
+                # After successful START_SIM handling, refresh Brain graph in background.
+                self._schedule_data_handler_refresh()
                 return response_stuff
 
             if data_type == "CHAT":
@@ -183,6 +263,9 @@ class OrchestratorManager:
                 payload,
             )
             if result is not None:
+                # For non‑CHAT typed handlers, refresh Brain graph lazily in background.
+                if not isinstance(result, dict) or result.get("status", {}).get("state", "").lower() != "error":
+                    self._schedule_data_handler_refresh()
                 return result
 
 
@@ -236,6 +319,7 @@ class OrchestratorManager:
                 user_id,
                 session_id=session_id,
             )
+            self._schedule_data_handler_refresh()
             return response_items
         if data_type == "CHAT":
             chat_result = await self._dispatch_relay_handler(data_type, payload)
@@ -277,9 +361,37 @@ class OrchestratorManager:
                 follow_up = f"Please provide: {missing_str}?"
             return self._return_follow_up_chat(follow_up.strip(), session_key)
 
-
         print(f"handle_relay_payload: no handler matched type={data_type}, returning None")
         return None
+
+    def _schedule_data_handler_refresh(self) -> None:
+        """
+        Run self.data_handler.main in a background thread, with a simple
+        lock/flag so we never run two graph builds concurrently.
+
+        This avoids race conditions when multiple handle_relay_payload
+        calls arrive in parallel while still keeping request handling fast.
+        """
+        import threading
+
+        with self._data_handler_lock:
+            # If a previous refresh is still running, skip – latest state will be picked up there.
+            if self._data_handler_thread and self._data_handler_thread.is_alive():
+                print("[Thalamus] data_handler.main already running, skipping new refresh request")
+                return
+
+            def _worker():
+                try:
+                    self.data_handler.main()
+                except Exception as e:
+                    print(f"[Thalamus] data_handler.main error: {e}")
+                finally:
+                    with self._data_handler_lock:
+                        self._data_handler_thread = None
+
+            t = threading.Thread(target=_worker, name="qbrain-data-handler-main", daemon=True)
+            self._data_handler_thread = t
+            t.start()
 
 
 
@@ -612,44 +724,25 @@ class OrchestratorManager:
 
     def upsert_files(self, session_id, data_block, user_id, msg):
         # If files are present in the payload, immediately run the FileManager
-        # pipeline so that modules/params/fields are extracted and upserted,
-        # and Vertex RAG ingestion (via FileManager) is triggered.
+        # pipeline so that modules/params/fields are extracted and upserted (via qb).
         files = data_block.get("files") or []
         if files and user_id and session_id:
             try:
                 print(
                     f"handle_relay_payload: detected files -> invoking FileManager for session_id={session_id}")
-                # Use the per-session RAG corpus if available (created in SessionManager)
-                rag_corpus_id = None
-                try:
-                    sess = self.session_manager.get_session(int(session_id))
-                    if sess:
-                        rag_corpus_id = (sess.get("corpus_id") or "") or None
-                except Exception as e:
-                    print(f"handle_relay_payload: could not resolve session corpus_id: {e}")
-                # Fallback: treat session_id as corpus id if nothing else is set
-                if not rag_corpus_id and session_id:
-                    rag_corpus_id = str(session_id)
-
                 fm_data = {
                     "id": f"session_{session_id}",
                     "files": files,
                     "prompt": msg or "",
                     "msg": msg or "",
                 }
-
                 fm_result = self.file_manager.process_and_upload_file_config(
                     user_id=user_id,
                     data=fm_data,
                     testing=False,
                     mock_extraction=False,
-                    rag_corpus_id=rag_corpus_id,
-                    session_id=str(session_id),
-                    last_files=self.last_files,
                 )
-                # Keep RAG file ids for next extraction (e.g. ask_rag with same corpus)
-                self.last_files = fm_result.get("rag_file_ids") or []
-                print(f"handle_relay_payload: FileManager finished type={fm_result.get('type')}, last_files={len(self.last_files)}")
+                print(f"handle_relay_payload: FileManager finished type={fm_result.get('type')}")
 
             except Exception as e:
                 print(f"handle_relay_payload: FileManager error: {e}")
@@ -675,7 +768,6 @@ class OrchestratorManager:
                     grid_animation_recorder = None
                     if os.getenv("GRID_STREAM_ENABLED", "false").lower() in ("true", "1"):
                         try:
-                            from jax_test.grid.animation_recorder import GridAnimationRecorder
                             env_res = self.env_manager.retrieve_env_from_id(k)
                             env_cfg = (env_res.get("envs") or [{}])[0] if env_res else {}
                             env_cfg = {**{"dims": 3, "amount_of_nodes": 1}, **env_cfg}
@@ -765,7 +857,7 @@ if __name__ == "__main__":
         run_test_cases,
     )
 
-    orchestrator = OrchestratorManager(RELAY_CASES_CONFIG)
+    orchestrator = Thalamus(RELAY_CASES_CONFIG)
 
     # --test [index ...]  Run test case struct (all or given indices)
     if len(sys.argv) > 1 and sys.argv[1] == "--test":

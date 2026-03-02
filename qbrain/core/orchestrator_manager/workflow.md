@@ -61,10 +61,10 @@ This document outlines the end-to-end workflow for a user interacting with the B
 
 ## 7. Simulation Start (Orchestration)
 **Actor:** User -> Orchestrator
-**Manager:** `OrchestratorManager`
+**Manager:** `Thalamus`
 
 1.  **Trigger Orchestration**: User requests simulation start.
-    *   `OrchestratorManager.orchestrate(session_id, user_id)` is called.
+    *   `Thalamus.orchestrate(session_id, user_id)` is called.
 2.  **Pattern Recognition**:
     *   The implied state of the simulation (configuration of all modules + fields + params + injections) is treated as a "Memory Pattern".
 3.  **Hopfield Dynamics**:

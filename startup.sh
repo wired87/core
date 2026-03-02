@@ -1,14 +1,11 @@
 #!/bin/bash
+# Start all applications (React, DRF) discovered by admin, each in its own terminal.
+# Run from project root: ./startup.sh   or   bash startup.sh
 
-# 1. Rendere die Nginx Config basierend auf aktuellen Env-Vars (z.B. Domain)
-python3 -m nginx.render_nginx_conf
+set -e
+REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+export PYTHONPATH="${REPO_ROOT}${PYTHONPATH:+:$PYTHONPATH}"
+cd "$REPO_ROOT"
 
-# 2. Verschiebe die generierte Datei an den Nginx Ort
-# Das Skript generiert Dateien wie 'localhost.conf' in ./nginx/
-cp ./nginx/*.conf /etc/nginx/sites-enabled/default
-
-# 3. Starte Nginx im Hintergrund
-nginx -g "daemon on;"
-
-# 4. Starte die App (Korrektur des Tippfehlers: application)
-exec daphne -b 0.0.0.0 -p 8080 bm.asgi:application
+# Final command: admin starts backend (Django/DRF) and frontend (React) in separate terminals
+exec python3 -m _admin.main --local --separate-terminals

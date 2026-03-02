@@ -7,7 +7,11 @@ from typing import List
 
 from qbrain.bm.settings import TEST_USER_ID
 
-from type import NodeCFGType
+# Prefer local top-level import when available, but fall back to the in-package version
+try:
+    from type import NodeCFGType  # type: ignore
+except Exception:  # pragma: no cover - compatibility fallback for local runs
+    from qbrain.type import NodeCFGType
 from qbrain.utils.deserialize import deserialize
 from qbrain.utils.id_gen import generate_id
 from qbrain.utils.utils import Utils

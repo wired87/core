@@ -5,9 +5,7 @@ import os
 from qbrain.core.app_utils import TESTING, ARSENAL_PATH
 
 from qbrain.code_manipulation.graph_creator import StructInspector
-from qbrain.qf_utils.qf_utils import QFUtils
-from qbrain.graph.local_graph_utils import GUtils
-from qbrain.graph.visual import create_g_visual
+
 
 class ModuleLoader(
     StructInspector
@@ -24,6 +22,8 @@ class ModuleLoader(
             G,
             id,
     ):
+        from qbrain.graph.local_graph_utils import GUtils
+        from qbrain.qf_utils.qf_utils import QFUtils
         self.id=id
 
         self.g = GUtils(G=G)
@@ -103,6 +103,7 @@ class ModuleLoader(
             #self.g.print_status_G()
 
             # todo dest_path?=None -> return html -> upload firebase -> fetch and visualizelive frontend
+            from qbrain.graph.visual import create_g_visual
             create_g_visual(
                 self.g.G,
                 dest_path=self.module_g_save_path

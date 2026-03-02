@@ -81,9 +81,11 @@ class Admin:
         build_frontend_npm: bool = True,
         build_backend_docker_only: bool = True,
         force_rebuild: bool = False,
+        packages_filter: list[str] | None = None,
     ) -> list[tuple[Path, str]]:
         """
         For each discovered project: classify, then build by type.
+        - packages_filter: if set, only build projects whose dir name is in this list (e.g. MiracleAI, qbrain, qdash).
         - has_dockerfile -> docker build (all types); skip if image already exists unless force_rebuild.
         - frontend_react without Dockerfile -> npm run build if build_frontend_npm.
         - mobile_react_native without Dockerfile -> npm run build if build_frontend_npm.
@@ -91,6 +93,9 @@ class Admin:
         Returns list of (dir_path, image_name) that produced a Docker image (for deploy).
         """
         projects = self.scan_projects()
+        if packages_filter:
+            allowed = {s.strip() for s in packages_filter if s}
+            projects = [(p, n, t, d) for p, n, t, d in projects if p.name in allowed]
         if not projects:
             print(f"[Admin] No projects discovered under {self.project_root}")
             return []
@@ -191,10 +196,13 @@ class Admin:
         build_frontend_npm: bool = True,
         build_backend_docker_only: bool = True,
         force_rebuild: bool = False,
+        packages_filter: list[str] | None = None,
     ) -> dict:
         """
         Full pipeline: discover & classify -> build by type -> (push if GKE) -> deploy.
+        Deploy target: if self.local (env LOCAL=true) -> local K8s cluster; else -> cloud (GKE) using env vars.
         push: if None, push only when not LOCAL (GKE). Set False to skip push, True to force.
+        packages_filter: if set, only build/deploy these package dir names (e.g. MiracleAI, qbrain, qdash).
         build_frontend_npm: run npm run build for frontend_react/mobile without Dockerfile.
         build_backend_docker_only: only build backend images that have a Dockerfile.
         force_rebuild: if True, rebuild Docker images even when they already exist locally.
@@ -205,13 +213,20 @@ class Admin:
                 build_frontend_npm=build_frontend_npm,
                 build_backend_docker_only=build_backend_docker_only,
                 force_rebuild=force_rebuild,
+                packages_filter=packages_filter,
             )
         else:
-            built_pairs = [(p, n) for p, n, _, has_d in self.scan_projects() if has_d]
+            projects = self.scan_projects()
+            if packages_filter:
+                allowed = {s.strip() for s in packages_filter if s}
+                projects = [(p, n, t, has_d) for p, n, t, has_d in projects if p.name in allowed]
+            built_pairs = [(p, n) for p, n, _, has_d in projects if has_d]
         built_names = [name for _, name in built_pairs]
 
         pushed_uris = []
         do_push = push if push is not None else (not self.local)
+        if deploy and built_names and not self.local:
+            self._get_deployer().log_cloud_env()
         if do_push and built_names and ArtifactAdmin:
             pushed_uris = self.push_to_registry(built_names)
 

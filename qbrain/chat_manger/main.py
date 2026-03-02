@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from gem_core.gem import Gem
+from qbrain.gem_core.gem import Gem
 
 # Default model: runs locally, no API key. Small and fast.
 #DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"

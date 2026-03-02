@@ -30,12 +30,12 @@ The design must be production-ready, low-latency, deterministic, and easy to evo
 
 Create/update:
 
-- `graph/brain.py` (main orchestrator class)
-- `graph/brain_schema.py` (node/edge schema constants and typed helpers)
-- `graph/brain_hydrator.py` (DuckDB user memory ingestion)
-- `graph/brain_classifier.py` (hybrid goal classification)
-- `graph/brain_executor.py` (callable gating and execution)
-- `graph/brain_workers.py` (thread/offload helpers)
+- `graph/brn/brain.py` (main orchestrator class)
+- `graph/brn/brain_schema.py` (node/edge schema constants and typed helpers)
+- `graph/brn/brain_hydrator.py` (DuckDB user memory ingestion)
+- `graph/brn/brain_classifier.py` (hybrid goal classification)
+- `graph/brn/brain_executor.py` (callable gating and execution)
+- `graph/brn/brain_workers.py` (thread/offload helpers)
 
 ## Graph Schema Contract
 

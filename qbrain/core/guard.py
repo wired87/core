@@ -12,10 +12,10 @@ import json
 import websockets
 from qbrain.code_manipulation.graph_creator import StructInspector
 from qbrain.graph.local_graph_utils import GUtils
+from qbrain.jax_test.grid.animation_recorder import GridAnimationRecorder
 from qbrain.qf_utils.qf_utils import QFUtils
-from qbrain.a_b_c.bq_agent._bq_core.bq_handler import BQCore
 
-from qbrain.core.qbrain_manager import get_qbrain_table_manager, QBrainTableManager
+from qbrain.core.qbrain_manager import get_qbrain_table_manager
 
 from qbrain.core.module_manager.mcreator import ModuleCreator
 from qbrain.utils.math.operator_handler import EqExtractor
@@ -23,7 +23,6 @@ from qbrain.qf_utils.all_subs import ALL_SUBS
 from qbrain.utils._np.expand_array import expand_structure
 from qbrain.utils.get_shape import extract_complex, get_shape
 from qbrain.utils.xtract_trailing_numbers import extract_trailing_numbers
-#from vertex_trainer.manager import VertexTrainerManager
 from qbrain.workflows.deploy_sim import DeploymentHandler
 from qbrain.utils.run_subprocess import pop_cmd
 
@@ -50,86 +49,169 @@ class PatternMaster:
         # from 0 to amount-1
         return list(product(range(amount), repeat=dim))
 
-
-class Guard(
-    PatternMaster,
-):
-    # todo answer caching
-    # todo cross module param edge map
+class ComponentGraphCreator:
     """
-    nodes -> guard: extedn admin_data
+    Lightweight graph builder that populates the Brain/Guard graph from the
+    current env / module / field / injection tables.
 
-    todo: curretnly all dims implemented within single db inject-> create db / d whcih captures jsut sinfle point
-
+    It is intentionally side‑effect free w.r.t. deployment – it only touches
+    the in‑memory graph `g` and reads from the managers/qb.
     """
 
     def __init__(
         self,
+        qb,
         qfu,
         g,
-        user_id,
+        env_manager,
+        module_db_manager,
         field_manager,
         method_manager,
         injection_manager,
-        env_manager,
-        module_db_manager,
         params_manager,
+        user_id: str = "public",
     ):
-        print("Initializing Guard...")
-
-        PatternMaster.__init__(
-            self,
-            g,
-        )
+        self.qb = qb
+        self.qfu = qfu
+        self.g = g
         self.user_id = user_id
+
+        self.env_manager = env_manager
+        self.module_db_manager = module_db_manager
         self.field_manager = field_manager
         self.method_manager = method_manager
         self.injection_manager = injection_manager
-        self.env_manager = env_manager
-        self.module_db_manager=module_db_manager
         self.params_manager = params_manager
-        self.deployment_handler = DeploymentHandler(
-            user_id
+
+
+    def main(self, env_id: str = "universe", env_data: dict | None = None):
+        """
+        1. Parse payload to get IDs.
+        2. Batch fetch data.
+        3. Convert to pattern (Graph).
+        4. Compile pattern.
+        """
+        print("[ComponentGraphCreator] main: start")
+
+        # If no explicit env_data is provided, try to hydrate from DB.
+        if env_data is None:
+            try:
+                # Prefer user‑scoped envs when user_id is set.
+                env_rows: list[dict] = []
+                if getattr(self, "env_manager", None) is not None and self.user_id:
+                    payload = self.env_manager.retrieve_send_user_specific_env_table_rows(
+                        user_id=self.user_id
+                    )
+
+                    env_rows = payload.get("envs") or []
+                # Fallback: all envs from local DuckDB.
+                if not env_rows and getattr(self.qb, "db", None) is not None:
+                    tbl = self.qb._table_ref(self.env_manager.TABLE_ID)
+                    query = (
+                        f"SELECT id, data FROM {tbl} "
+                        "WHERE (status != 'deleted' OR status IS NULL)"
+                    )
+                    env_rows = self.qb.db.run_query(query, conv_to_dict=True)
+
+                if not env_rows:
+                    print("[ComponentGraphCreator] main: no envs found, aborting graph build")
+                    return
+
+                # For now, build graph for the first env row.
+                row = env_rows[0]
+                env_id = row.get("id", env_id) or env_id
+                raw_data = row.get("data")
+                parsed: dict | None = None
+                if isinstance(raw_data, str) and raw_data:
+                    try:
+                        parsed = json.loads(raw_data)
+                    except Exception as e:
+                        print(f"[ComponentGraphCreator] main: failed to parse env.data JSON: {e}")
+                if isinstance(raw_data, dict):
+                    parsed = raw_data
+                env_data = parsed or {}
+            except Exception as e:
+                print(f"[ComponentGraphCreator] main: error hydrating env_data from DB: {e}")
+                return
+
+        print(f"[ComponentGraphCreator] main: building graph for env_id={env_id}")
+        env_exists: bool = self._validate_env_data(env_id, env_data)
+        if not env_exists:
+            print(f"[ComponentGraphCreator] main: invalid env_data for {env_id}, aborting")
+            return
+
+        # XTRCT NODE IDS
+        module_ids, field_ids, inj_ids = self.create_nodes(
+            env_id,
+            env_data
         )
 
-        self.qb = get_qbrain_table_manager()
-        print("DEBUG: QBrainTableManager initialized")
+        self.create_edges(
+            env_id,
+            env_data
+        )
+        print("Edges created.")
 
-        self.world_cfg=None
-        print("DEBUG: ArtifactAdmin initialized")
-        self.artifact_admin = ArtifactAdmin()
-         
-        self.time = 0
+        self.check_create_ghost_mod(env_id)
 
-        self.qfu:QFUtils = qfu
 
-        self.g = g
-
-        self.ready_map = {
-            k: False
-            for k in ALL_SUBS
-        }
-
-        self.testing = True
-
-        self.mcreator = ModuleCreator(
-            self.g.G,
-            self.qfu,
+        # handler
+        self.handle_env(env_id)
+        self.handle_methods(module_ids=list(module_ids))
+        self.handle_field_interactants(
+            list(field_ids),
+            env_id
         )
 
-        self.eq_extractor = EqExtractor()
-        #self.operator_handler = OperatorHandler()
 
-        self.prev_state = None
-        self.model_params = None
-        self.fnished_modules = False
+        # ETEND FIELDS PARAMS WITH RETURN KEYS
+        self.extend_fields_keys()
 
-        self.code_extractor = StructInspector(
-            G=self.g.G,
-        )
+        self.get_inj_data(inj_ids)
 
-        self.fields = []
-        print("Guard Initialized!")
+        print("[ComponentGraphCreator] main: data_handler... done")
+
+        # Basic sanity check: ensure we actually have nodes in the Brain graph.
+        try:
+            node_count = self.g.G.number_of_nodes()
+            if node_count == 0:
+                print("[ComponentGraphCreator] WARN: Brain graph is empty after main()")
+            else:
+                print(f"[ComponentGraphCreator] main: Brain graph nodes={node_count}")
+        except Exception as e:
+            print(f"[ComponentGraphCreator] main: node existence check failed: {e}")
+
+
+    def create_init_param_nodes(self, fid, param_ids):
+        """Add PARAM nodes and FIELD->PARAM edges."""
+        if not param_ids:
+            return
+        res = self.qb.row_from_id(param_ids, table=self.params_manager.PARAMS_TABLE)
+        for item in res:
+            pid = item["id"]
+            self._node(pid, "PARAM", param_type=item.get("param_type"), value=item.get("value"))
+            self._edge(fid, pid, "has_param", "FIELD", "PARAM")
+
+
+
+    def _validate_env_data(self, env_id: str, env_data: dict) -> bool:
+        """Ensure no cfg entries in env_data are empty. Raises ValueError if invalid."""
+        env_data_exists = True
+        if not env_data:
+            print(f"[guard] env_data for {env_id} is empty")
+            env_data_exists = False
+        modules = env_data.get("modules")
+        if modules is None:
+            print(f"[guard] env_data.modules is missing for {env_id}")
+            env_data_exists = False
+        if isinstance(modules, list) and len(modules) == 0:
+            print(f"[guard] env_data.modules is empty for {env_id}")
+            env_data_exists = False
+        if isinstance(modules, dict) and len(modules) == 0:
+            print(f"[guard] env_data.modules is empty for {env_id}")
+            env_data_exists = False
+        return env_data_exists
+
 
     # ---- NODE / EDGE HELPERS ----
     def _node(self, nid: str, ntype: str, **kwargs):
@@ -171,7 +253,8 @@ class Guard(
                     out[field_id.upper()] = i
         return out
 
-    def create_nodes(self, env_id, env_data):
+
+    def create_nodes(self, env_id="universe", env_data=None):
         """Reset graph and create ENV, MODULE, FIELD, INJECTION nodes."""
         self.g.G = nx.Graph()
         module_ids = set()
@@ -180,6 +263,7 @@ class Guard(
         self._node(env_id, "ENV")
 
         module_ids_raw = env_data.get("modules", [])
+
         if isinstance(module_ids_raw, dict):
             module_ids_raw = list(module_ids_raw.keys())
         module_ids_raw = list(dict.fromkeys(str(m).upper() for m in module_ids_raw))
@@ -290,6 +374,10 @@ class Guard(
 
         res_list = self.qb.row_from_id([env_id], table=self.env_manager.TABLE_ID)
         res = res_list[0] if res_list else {}
+        # Avoid passing duplicate 'id' to dict(...) which would raise:
+        # TypeError: dict() got multiple values for keyword argument 'id'
+        if isinstance(res, dict) and "id" in res:
+            res = {k: v for k, v in res.items() if k != "id"}
         ghost_fields = self.g.get_neighbor_list_rel(node="GHOST_MODULE", trgt_rel="has_field")
         self.g.add_node(dict(
             id=env_id, type="FIELD", sub_type="ENV", keys=keys, values=values, axis_def=axis_def,
@@ -326,6 +414,276 @@ class Guard(
 
             for mfid in interactant_fields:
                 self._edge(fid, mfid, "has_finteractant", "FIELD", "FIELD")
+
+
+
+    def handle_methods(self, module_ids:list[str]):
+        print("handle_methods...")
+        import json
+        method_idx = 0
+        for mid in module_ids:
+            mod_node = self.g.get_node(id=mid)
+            mmethods = mod_node["methods"]
+
+            if isinstance(mmethods, str):
+                mmethods = json.loads(mmethods)
+
+            methods = self.qb.row_from_id(
+                id=mmethods,
+                table=self.method_manager.METHODS_TABLE,
+            )
+
+            methods = {
+                item["id"]: item
+                for item in methods
+            }
+
+            # Sort by execution order (return_key dependencies)
+            method_list = list(methods.values())
+            ordered_methods = self.get_execution_order(method_list)
+
+            for method_data in ordered_methods:
+                method_id = method_data["id"]
+                extra = {k: v for k, v in method_data.items() if k not in ("id", "type")}
+                self._node(method_id, "METHOD", method_idx=method_idx, **extra)
+                self._edge(mid, method_id, "has_method", "MODULE", "METHOD")
+                method_idx += 1
+        print("handle_methods... done")
+
+
+
+
+    def get_execution_order(self, method_definitions: list) -> list:
+        """
+        Determines the correct execution order of methods based on return_key dependencies.
+
+        Expects method dicts with schema: id, return_key, params (str or list).
+        params can be JSON string; parse to list for dependency check.
+
+        Returns:
+            List of method dicts in dependency order.
+        """
+        import json
+
+        def _parse_params(m):
+            p = m.get("params")
+            if p is None:
+                return []
+            if isinstance(p, list):
+                return p
+            if isinstance(p, str):
+                try:
+                    return json.loads(p) if p.strip() else []
+                except (json.JSONDecodeError, AttributeError):
+                    return []
+            return []
+
+        # Identify all keys produced by any method
+        internal_returns = {m["return_key"] for m in method_definitions if m.get("return_key")}
+
+        scheduled_order = []
+        produced_keys = set()
+        remaining = list(method_definitions)
+
+        while remaining:
+            ready = []
+            for m in remaining:
+                params = _parse_params(m)
+                internal_deps = set(params).intersection(internal_returns)
+                if internal_deps.issubset(produced_keys):
+                    ready.append(m)
+
+            if not ready:
+                break
+
+            for m in ready:
+                scheduled_order.append(m)
+                if m.get("return_key"):
+                    produced_keys.add(m["return_key"])
+                remaining.remove(m)
+
+        # Append any unscheduled (e.g. cyclic or orphan) methods
+        scheduled_order.extend(remaining)
+        return scheduled_order
+
+    def get_inj_data(self, inj_ids):
+        # Enrich INJECTION nodes with BQ data
+        if inj_ids:
+            print("Fetching injections from BQ...")
+
+            res = self.qb.row_from_id(
+                list(inj_ids),
+                table=self.injection_manager.table
+            )
+
+            fetched_injections = {item["id"]: item for item in res}
+
+            for inid, inj_data in fetched_injections.items():
+                for nid, attrs in self.g.G.nodes(data=True):
+                    if attrs.get("type") == "INJECTION" and inid in nid and inj_data:
+                        extra = {k: v for k, v in inj_data.items() if k not in ("id", "type")}
+                        self._node(nid, "INJECTION", **extra)
+            print(f"Fetched injections: {len(fetched_injections)}")
+
+
+
+    def extend_fields_keys(self):
+        print("extend_fields_keys...")
+        modules = self.g.get_nodes(
+            filter_key="type",
+            filter_value="MODULE",
+        )
+        import json
+        try:
+            for mid, module in modules:
+                if "GHOST" in mid.upper(): continue
+
+                # GET MODULES METHODS
+                methods = self.g.get_neighbor_list_rel(
+                    trgt_rel="has_method",
+                    node=mid,
+                    as_dict=True,
+                )
+
+                if not len(methods):
+                    print("set_edge_db_to_method... len methods 0")
+                    continue
+
+                print("set_edge_db_to_method meq", type(methods))
+
+                # get module fields
+                fields = self.g.get_neighbor_list_rel(
+                    node=mid,
+                    trgt_rel="has_field",
+                    as_dict=True,
+                )
+
+                if len(list(fields.keys())) == 0: continue
+
+                for eqid, eqattrs in methods.items():
+
+                    # PARAMS from METHOD
+                    return_key = eqattrs.get("return_key", [])
+
+                    for fid, fattrs in fields.items():
+                        if isinstance(fattrs["keys"], str):
+                            fattrs["keys"] = json.loads(fattrs["keys"])
+
+                        if isinstance(fattrs["values"], str):
+                            fattrs["values"] = json.loads(fattrs["values"])
+
+                        # extend field with return key of method since
+                        if return_key not in fattrs["keys"]:
+                            fattrs["keys"].append(return_key)
+                            fattrs["values"].append([])
+
+                        result = self.add_field_index(fid)
+                        if result:
+                            key, value = result
+                            fattrs["keys"].append(key)
+                            fattrs["values"].append(value)
+
+        except Exception as e:
+            print("Err extend_fields_keys", e)
+        print("extend_fields_keys... done")
+
+
+
+
+    def add_field_index(self, fid):
+        """
+        Case we have multiple field parts (e.g. quarks listb_quark_1) -> equation requires index -> extract hiere field part index and save within the field struct
+        :param fid:
+        :return:
+        """
+        numbers = extract_trailing_numbers(fid)
+        if len(numbers):
+            if "quark" in fid.lower():
+                key = "quark_index"
+            else:
+                key = f"{fid.split(f'_{numbers}')[0]}_index".lower()
+            return key, int(numbers)
+
+
+
+class Guard(
+    PatternMaster,
+):
+    # todo answer caching
+    # todo cross module param edge map
+    """
+    nodes -> guard: extedn admin_data
+
+    todo: curretnly all dims implemented within single db inject-> create db / d whcih captures jsut sinfle point
+
+    """
+
+    def __init__(
+        self,
+        qfu,
+        g,
+        user_id,
+        field_manager,
+        method_manager,
+        injection_manager,
+        env_manager,
+        module_db_manager,
+        params_manager,
+    ):
+        print("Initializing Guard...")
+
+        PatternMaster.__init__(
+            self,
+            g,
+        )
+        self.user_id = user_id
+        self.field_manager = field_manager
+        self.method_manager = method_manager
+        self.injection_manager = injection_manager
+        self.env_manager = env_manager
+        self.module_db_manager=module_db_manager
+        self.params_manager = params_manager
+        self.deployment_handler = DeploymentHandler(
+            user_id
+        )
+        self.qb = get_qbrain_table_manager()
+        print("DEBUG: QBrainTableManager initialized")
+
+
+        self.world_cfg=None
+        print("DEBUG: ArtifactAdmin initialized")
+        self.artifact_admin = ArtifactAdmin()
+         
+        self.time = 0
+        self.qfu:QFUtils = qfu
+        self.g = g
+
+        self.ready_map = {
+            k: False
+            for k in ALL_SUBS
+        }
+
+        self.testing = True
+
+        self.mcreator = ModuleCreator(
+            self.g.G,
+            self.qfu,
+        )
+
+        self.eq_extractor = EqExtractor()
+        #self.operator_handler = OperatorHandler()
+
+        self.prev_state = None
+        self.model_params = None
+        self.fnished_modules = False
+
+        self.code_extractor = StructInspector(
+            G=self.g.G,
+        )
+
+        self.fields = []
+        print("Guard Initialized!")
+
 
     def main(self, env_id, env_data, cfg_path=None, grid_streamer=None, grid_animation_recorder=None):
         print("main...")
@@ -403,7 +761,7 @@ class Guard(
             latest_image = self.artifact_admin.get_latest_image()
 
 
-
+            # todo start docker local if LOCAL
             # LAUNCH TRAIING JOB VAIs
             self.trainer.create_custom_job(
                 display_name=env_id,
@@ -442,30 +800,7 @@ class Guard(
                 pass
 
 
-    def create_init_param_nodes(self, fid, param_ids):
-        """Add PARAM nodes and FIELD->PARAM edges."""
-        if not param_ids:
-            return
-        res = self.qb.row_from_id(param_ids, table=self.params_manager.PARAMS_TABLE)
-        for item in res:
-            pid = item["id"]
-            self._node(pid, "PARAM", param_type=item.get("param_type"), value=item.get("value"))
-            self._edge(fid, pid, "has_param", "FIELD", "PARAM")
 
-
-
-    def _validate_env_data(self, env_id: str, env_data: dict) -> None:
-        """Ensure no cfg entries in env_data are empty. Raises ValueError if invalid."""
-        if not env_data:
-            raise ValueError(f"[guard] env_data for {env_id} is empty")
-        modules = env_data.get("modules")
-        if modules is None:
-            raise ValueError(f"[guard] env_data.modules is missing for {env_id}")
-        if isinstance(modules, list) and len(modules) == 0:
-            raise ValueError(f"[guard] env_data.modules is empty for {env_id}")
-        if isinstance(modules, dict) and len(modules) == 0:
-            raise ValueError(f"[guard] env_data.modules is empty for {env_id}")
-        # injections may be empty {} when no injections; only modules must be non-empty
 
     def _push_grid_frame(self, components: dict, grid_streamer, step: int = 0) -> None:
         """Decode DB from components and push to grid streamer (non-blocking)."""
@@ -528,82 +863,9 @@ class Guard(
         except Exception as e:
             print(f"[guard] _save_model_path_to_envs error: {e}")
 
-    def data_handler(self, env_id, env_data):
-        """
-        1. Parse payload to get IDs.
-        2. Batch fetch data.
-        3. Convert to pattern (Graph).
-        4. Compile pattern.
-        """
-        print("sim_start_process...")
-        self._validate_env_data(env_id, env_data)
-
-        # XTRCT NODE IDS
-        module_ids, field_ids, inj_ids = self.create_nodes(
-            env_id,
-            env_data
-        )
-
-        self.create_edges(
-            env_id,
-            env_data
-        )
-        print("Edges created.")
-
-        self.check_create_ghost_mod(env_id)
-
-
-        # hadler
-        self.handle_env(env_id)
-        self.handle_methods(module_ids=list(module_ids))
-        self.handle_field_interactants(
-            list(field_ids),
-            env_id
-        )
-
-
-        # ETEND FIELDS PARAMS WITH RETURN KEYS
-        self.extend_fields_keys()
-
-        self.get_inj_data(inj_ids)
-
-        print("data_hanadler... done")
-
-
-    def get_inj_data(self, inj_ids):
-        # Enrich INJECTION nodes with BQ data
-        if inj_ids:
-            print("Fetching injections from BQ...")
-
-            res = self.qb.row_from_id(
-                list(inj_ids),
-                table=self.injection_manager.table
-            )
-        
-            fetched_injections = {item["id"]: item for item in res}
-
-            for inid, inj_data in fetched_injections.items():
-                for nid, attrs in self.g.G.nodes(data=True):
-                    if attrs.get("type") == "INJECTION" and inid in nid and inj_data:
-                        extra = {k: v for k, v in inj_data.items() if k not in ("id", "type")}
-                        self._node(nid, "INJECTION", **extra)
-            print(f"Fetched injections: {len(fetched_injections)}")
 
 
 
-    def add_field_index(self, fid):
-        """
-        Case we have multiple field parts (e.g. quarks listb_quark_1) -> equation requires index -> extract hiere field part index and save within the field struct
-        :param fid:
-        :return:
-        """
-        numbers = extract_trailing_numbers(fid)
-        if len(numbers):
-            if "quark" in fid.lower():
-                key = "quark_index"
-            else:
-                key = f"{fid.split(f'_{numbers}')[0]}_index".lower()
-            return key, int(numbers)
 
 
     def converter(self, env_id:str):
@@ -1058,92 +1320,7 @@ class Guard(
         return DB
 
 
-    def get_execution_order(self, method_definitions: list) -> list:
-        """
-        Determines the correct execution order of methods based on return_key dependencies.
 
-        Expects method dicts with schema: id, return_key, params (str or list).
-        params can be JSON string; parse to list for dependency check.
-
-        Returns:
-            List of method dicts in dependency order.
-        """
-        import json
-
-        def _parse_params(m):
-            p = m.get("params")
-            if p is None:
-                return []
-            if isinstance(p, list):
-                return p
-            if isinstance(p, str):
-                try:
-                    return json.loads(p) if p.strip() else []
-                except (json.JSONDecodeError, AttributeError):
-                    return []
-            return []
-
-        # Identify all keys produced by any method
-        internal_returns = {m["return_key"] for m in method_definitions if m.get("return_key")}
-
-        scheduled_order = []
-        produced_keys = set()
-        remaining = list(method_definitions)
-
-        while remaining:
-            ready = []
-            for m in remaining:
-                params = _parse_params(m)
-                internal_deps = set(params).intersection(internal_returns)
-                if internal_deps.issubset(produced_keys):
-                    ready.append(m)
-
-            if not ready:
-                break
-
-            for m in ready:
-                scheduled_order.append(m)
-                if m.get("return_key"):
-                    produced_keys.add(m["return_key"])
-                remaining.remove(m)
-
-        # Append any unscheduled (e.g. cyclic or orphan) methods
-        scheduled_order.extend(remaining)
-        return scheduled_order
-
-
-    def handle_methods(self, module_ids:list[str]):
-        print("handle_methods...")
-        import json
-        method_idx = 0
-        for mid in module_ids:
-            mod_node = self.g.get_node(id=mid)
-            mmethods = mod_node["methods"]
-
-            if isinstance(mmethods, str):
-                mmethods = json.loads(mmethods)
-
-            methods = self.qb.row_from_id(
-                id=mmethods,
-                table=self.method_manager.METHODS_TABLE,
-            )
-
-            methods = {
-                item["id"]: item
-                for item in methods
-            }
-
-            # Sort by execution order (return_key dependencies)
-            method_list = list(methods.values())
-            ordered_methods = self.get_execution_order(method_list)
-
-            for method_data in ordered_methods:
-                method_id = method_data["id"]
-                extra = {k: v for k, v in method_data.items() if k not in ("id", "type")}
-                self._node(method_id, "METHOD", method_idx=method_idx, **extra)
-                self._edge(mid, method_id, "has_method", "MODULE", "METHOD")
-                method_idx += 1
-        print("handle_methods... done")
 
 
     def create_method_param_nodes(self, modules):
@@ -1831,65 +2008,6 @@ class Guard(
         return iterator
 
 
-    def extend_fields_keys(self):
-        print("extend_fields_keys...")
-        modules = self.g.get_nodes(
-            filter_key="type",
-            filter_value="MODULE",
-        )
-        import json
-        try:
-            for mid, module in modules:
-                if "GHOST" in mid.upper(): continue
-
-                # GET MODULES METHODS
-                methods = self.g.get_neighbor_list_rel(
-                    trgt_rel="has_method",
-                    node=mid,
-                    as_dict=True,
-                )
-
-                if not len(methods):
-                    print("set_edge_db_to_method... len methods 0")
-                    continue
-
-                print("set_edge_db_to_method meq", type(methods))
-
-                # get module fields
-                fields = self.g.get_neighbor_list_rel(
-                    node=mid,
-                    trgt_rel="has_field",
-                    as_dict=True,
-                )
-
-                if len(list(fields.keys())) == 0: continue
-
-                for eqid, eqattrs in methods.items():
-
-                    # PARAMS from METHOD
-                    return_key = eqattrs.get("return_key", [])
-
-                    for fid, fattrs in fields.items():
-                        if isinstance(fattrs["keys"], str):
-                            fattrs["keys"] = json.loads(fattrs["keys"])
-
-                        if isinstance(fattrs["values"], str):
-                            fattrs["values"] = json.loads(fattrs["values"])
-
-                        # extend field with return key of method since
-                        if return_key not in fattrs["keys"]:
-                            fattrs["keys"].append(return_key)
-                            fattrs["values"].append([])
-
-                        result = self.add_field_index(fid)
-                        if result:
-                            key, value = result
-                            fattrs["keys"].append(key)
-                            fattrs["values"].append(value)
-
-        except Exception as e:
-            print("Err extend_fields_keys", e)
-        print("extend_fields_keys... done")
 
     def sync_field_keys_from_methods(self, dims: int = None):
         # Implement a method within Guard that collects all keys for each field summed in each module,
@@ -2177,7 +2295,7 @@ if __name__ == "__main__":
     grid_animation_recorder = None
     if os.getenv("GRID_STREAM_ENABLED", "false").lower() in ("true", "1"):
         try:
-            from jax_test.grid.animation_recorder import GridAnimationRecorder
+
             env_cfg = {**{"dims": 3, "amount_of_nodes": 1}}
             grid_animation_recorder = GridAnimationRecorder(
                 env_id=env_id,
@@ -2235,62 +2353,3 @@ async def run_start_sim_via_ws():
     except Exception as e:
         print(f"Failed: {e}")
 
-
-"""
-
-equation = eqattrs.get("equation")
-print("eq extracted", equation)
-
-# EXTRACT PARAMS & OPERATORS
-# -> method indices to all ops functions (VARIATION_INDICES is indexed by [module_idx][eq_idx])
-raw_store = VARIATION_INDICES[midx][i] if midx < len(VARIATION_INDICES) and i < len(VARIATION_INDICES[midx]) else None
-eq_store = list(raw_store.keys()) if isinstance(raw_store, dict) else (raw_store if isinstance(raw_store, list) else (list(params) if params else []))
-method_indices: list[int] = eq_extractor_main(
-    equation,
-    eq_store_item=eq_store,
-    
-    
-    
-
-# Iterate Equations
-                for i, (eqid, eqattrs) in enumerate(methods.items()):
-                    # PARAMS from METHOD
-                    params = eqattrs.get("params", [])
-
-                    if isinstance(params, str):
-                        params = json.loads(params)
-
-                    params_origin = eqattrs.get("origin", [])
-                    if isinstance(params_origin, str):
-                        params_origin = json.loads(params_origin)
-                    if not params_origin:
-                        params_origin = [""] * len(params)
-                    if params_origin is None:
-                        params_origin = [""] * len(params)
-
-                    # neighbor_vals: params whose origin is neighbor or interactant
-                    neighbor_vals = [
-                        params[pidx]
-                        for pidx in range(len(params))
-                        if pidx < len(params_origin) and params_origin[pidx] in ["neighbor", "interactant"]
-                    ] if params else []
-
-                    # params index for each item of neighbor_vals
-                    neighbor_ctlr_entry = (
-                        [params.index(nv) for nv in neighbor_vals]
-                        if neighbor_vals else None
-                    )
-
-                    # param index for params of different origins
-                    method_struct["NEIGHBOR_CTLR"][midx].append(neighbor_ctlr_entry)
-
-                    method_struct["METHOD_PARAM_LEN_CTLR"][midx].append(
-                        len(params)
-                    )
-
-# Field's own param
-is_prefixed = pid.endswith("_")
-is_self_prefixed = pid.startswith("_")
-id_prev_val = pid.startswith("prev")
-EXCLUDED_ORIGINS = ["neighbor", "interactant"]
-)"""

@@ -16,7 +16,6 @@ from qbrain.qf_utils.qf_utils import QFUtils
 
 _PARAMS_DEBUG = "[ParamsManager]"
 
-import jax.numpy as jnp
 
 def generate_numeric_id() -> str:
     """Generate a random numeric ID."""
@@ -54,6 +53,12 @@ class ParamsManager:
             )
 
         return self._extract_prompt
+
+
+
+    def load_g(self, user_id, ):
+        pass
+
 
 
     def param_cfg(self):
