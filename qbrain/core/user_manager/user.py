@@ -80,10 +80,12 @@ class UserManager:
             print(f"{_USER_DEBUG} get_or_create_user: no key received, generated uid={uid}")
 
         try:
-            query, job_config = db_queries.bq_get_user(
-                self.pid, self.DATASET_ID, uid
-            )
-            result = self.qb.db.run_query(query, conv_to_dict=True, job_config=job_config)
+            if self.qb.db.local:
+                query, params = db_queries.duck_get_user(uid)
+                result = self.qb.db.run_query(query, conv_to_dict=True, params=params)
+            else:
+                query, job_config = self.qb.bqcore.q_get_user(self.pid, self.DATASET_ID, uid)
+                result = self.qb.db.run_query(query, conv_to_dict=True, job_config=job_config)
             if result and len(result) > 0:
                 row = result[0]
                 user_id = row.get("id") or row.get("uid") or uid
@@ -113,10 +115,12 @@ class UserManager:
         """
         try:
             print(f"{_USER_DEBUG} get_user: uid={uid}")
-            query, job_config = db_queries.bq_get_user(
-                self.pid, self.DATASET_ID, uid
-            )
-            result = self.qb.db.run_query(query, conv_to_dict=True, job_config=job_config)
+            if self.qb.db.local:
+                query, params = db_queries.duck_get_user(uid)
+                result = self.qb.db.run_query(query, conv_to_dict=True, params=params)
+            else:
+                query, job_config = self.qb.bqcore.q_get_user(self.pid, self.DATASET_ID, uid)
+                result = self.qb.db.run_query(query, conv_to_dict=True, job_config=job_config)
             print(f"{_USER_DEBUG} get_user: found={bool(result)}")
             return result[0] if result else None
         except Exception as e:
@@ -137,10 +141,12 @@ class UserManager:
         """
         try:
             print(f"{_USER_DEBUG} get_payment_record: uid={uid}")
-            query, job_config = db_queries.bq_get_payment_record(
-                self.pid, self.DATASET_ID, uid
-            )
-            result = self.qb.db.run_query(query, conv_to_dict=True, job_config=job_config)
+            if self.qb.db.local:
+                query, params = db_queries.duck_get_payment_record(uid)
+                result = self.qb.db.run_query(query, conv_to_dict=True, params=params)
+            else:
+                query, job_config = self.qb.bqcore.q_get_payment_record(self.pid, self.DATASET_ID, uid)
+                result = self.qb.db.run_query(query, conv_to_dict=True, job_config=job_config)
             print(f"{_USER_DEBUG} get_payment_record: found={bool(result)}")
             return result[0] if result else None
         except Exception as e:
@@ -153,10 +159,12 @@ class UserManager:
         try:
             print(f"{_USER_DEBUG} get_standard_stack: user_id={user_id}")
             self._ensure_user_record(user_id)
-            query, job_config = db_queries.bq_get_standard_stack(
-                self.pid, self.DATASET_ID, user_id
-            )
-            result = self.qb.db.run_query(query, job_config=job_config, conv_to_dict=True)
+            if self.qb.db.local:
+                query, params = db_queries.duck_get_standard_stack(user_id)
+                result = self.qb.db.run_query(query, params=params, conv_to_dict=True)
+            else:
+                query, job_config = self.qb.bqcore.q_get_standard_stack(self.pid, self.DATASET_ID, user_id)
+                result = self.qb.db.run_query(query, job_config=job_config, conv_to_dict=True)
             if not result:
                 print(f"{_USER_DEBUG} get_standard_stack: no result")
                 return False
@@ -195,10 +203,12 @@ class UserManager:
         """
         try:
             print(f"{_USER_DEBUG} _ensure_user_record: uid={uid}")
-            query, job_config = db_queries.bq_ensure_user_exists(
-                self.pid, self.DATASET_ID, uid
-            )
-            result = self.qb.db.run_query(query, conv_to_dict=True, job_config=job_config)
+            if self.qb.db.local:
+                query, params = db_queries.duck_ensure_user_exists(uid)
+                result = self.qb.db.run_query(query, conv_to_dict=True, params=params)
+            else:
+                query, job_config = self.qb.bqcore.q_ensure_user_exists(self.pid, self.DATASET_ID, uid)
+                result = self.qb.db.run_query(query, conv_to_dict=True, job_config=job_config)
             if result:
                 print(f"{_USER_DEBUG} _ensure_user_record: user already exists")
                 return True
@@ -225,10 +235,12 @@ class UserManager:
         """
         try:
             print(f"{_USER_DEBUG} _ensure_payment_record: uid={uid}")
-            query, job_config = db_queries.bq_ensure_payment_exists(
-                self.pid, self.DATASET_ID, uid
-            )
-            result = self.qb.db.run_query(query, conv_to_dict=True, job_config=job_config)
+            if self.qb.db.local:
+                query, params = db_queries.duck_ensure_payment_exists(uid)
+                result = self.qb.db.run_query(query, conv_to_dict=True, params=params)
+            else:
+                query, job_config = self.qb.bqcore.q_ensure_payment_exists(self.pid, self.DATASET_ID, uid)
+                result = self.qb.db.run_query(query, conv_to_dict=True, job_config=job_config)
             if result and len(result) > 0:
                 print(f"{_USER_DEBUG} _ensure_payment_record: already exists")
                 return True
@@ -242,7 +254,8 @@ class UserManager:
                 "stripe_payment_intent_id": None,
                 "stripe_payment_method_id": None
             }
-            self.qb.set_item("payment", payment_data, keys={"id": uid})
+            # Ensure one payment record per user (key by uid, not random payment id)
+            self.qb.set_item("payment", payment_data, keys={"uid": uid})
             print(f"{_USER_DEBUG} _ensure_payment_record: created")
             return True
         except Exception as e:

@@ -12,12 +12,11 @@ import os
 import dotenv
 
 from qbrain._db.manager import get_db_manager
+from qbrain._db import queries as db_queries
 from qbrain.utils.str_size import get_str_size
 from google import genai
 
 dotenv.load_dotenv()
-
-from google.cloud import bigquery
 
 _QBRAIN_DEBUG = "[QBrainTableManager]"
 
@@ -249,6 +248,24 @@ class QBrainTableManager:
              "default_table": None,
              "schema": None
         }
+        ,
+        {
+            "manager_name": "PathfinderManager",
+            "description": "Manages time-controller structs and recurring event metadata derived from JAX GTM runs for offline analysis.",
+            "default_table": "controllers",
+            "schema": {
+                "id": "STRING",
+                "env_id": "STRING",
+                "user_id": "STRING",
+                "time_ctlr": "STRING",
+                "event_type": "STRING",
+                "event_signature": "STRING",
+                "meta": "STRING",
+                "created_at": "TIMESTAMP",
+                "updated_at": "TIMESTAMP",
+                "status": "STRING",
+            },
+        }
     ]
     
     @property
@@ -330,36 +347,18 @@ class QBrainTableManager:
         Retrieve all modules for a user.
         Groups by ID and returns only the newest entry per ID (based on created_at).
         """
-        job_config=None
         try:
-            query = f"""
-                    SELECT {select}
-                    FROM (
-                        SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY created_at DESC) as row_num
-                        FROM {self._table_ref(table)}
-                        WHERE (user_id = @user_id OR user_id = 'public') AND (status != 'deleted' OR status IS NOT NULL)
-                    )
-                    WHERE row_num = 1
-                """
-
-            if self.db.local is True:
-                query = sqlglot.transpile(
-                    query,
-                    read="bigquery",
-                    write="duckdb"
-                )[0]
-            else:
-                job_config = bigquery.QueryJobConfig(
-                    query_parameters=[
-                        bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
-                    ]
+            if self._local:
+                query, params = db_queries.duck_get_users_entries(
+                    table=self._table_ref(table),
+                    user_id=user_id,
+                    select=select,
                 )
-            result = self.db.run_query(
-                sql=query,
-                params={"user_id": user_id},
-                job_config=job_config,
-                conv_to_dict=True
-            )
+                result = self.db.run_query(sql=query, params=params, conv_to_dict=True)
+            else:
+                ds_ref = f"{self.pid}.{self.DATASET_ID}"
+                query, job_config = self.bqcore.q_get_users_entries(ds_ref=ds_ref, table=table, user_id=user_id, select=select)
+                result = self.db.run_query(sql=query, job_config=job_config, conv_to_dict=True)
 
             # filter out deleted entries
             result = [entry for entry in result if entry["status"] != "deleted"]
@@ -374,25 +373,28 @@ class QBrainTableManager:
         """
         print("list_session_entries")
 
-        query = f"""
-            SELECT {select}, status
-            FROM (
-                SELECT *, ROW_NUMBER() OVER (PARTITION BY {partition_key} ORDER BY created_at DESC) as row_num
-                FROM {self._table_ref(table)}
-                WHERE user_id = @user_id AND session_id = @session_id
-            )
-            WHERE row_num = 1
-        """
         # Note: We filter status AFTER retrieval/row_numbering to ensure 'deleted' rows supersede 'active' rows.
         # Then we filter out the deleted ones from the result set.
-        
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
-                bigquery.ScalarQueryParameter("session_id", "STRING", session_id)
-            ]
-        )
-        session_rows = self.run_query(query, conv_to_dict=True, job_config=job_config)
+        if self._local:
+            query, params = db_queries.duck_list_session_entries(
+                table=self._table_ref(table),
+                user_id=user_id,
+                session_id=str(session_id),
+                select=select,
+                partition_key=partition_key,
+            )
+            session_rows = self.run_query(query, conv_to_dict=True, params=params)
+        else:
+            ds_ref = f"{self.pid}.{self.DATASET_ID}"
+            query, job_config = self.bqcore.q_list_session_entries(
+                ds_ref=ds_ref,
+                table=table,
+                user_id=user_id,
+                session_id=str(session_id),
+                select=select,
+                partition_key=partition_key,
+            )
+            session_rows = self.run_query(query, conv_to_dict=True, job_config=job_config)
         
         # filters out deleted
         session_rows = [entry for entry in session_rows if entry.get("status") != "deleted"]
@@ -408,25 +410,28 @@ class QBrainTableManager:
             linked_row_id_name:str,
             select: str = "*"
         ):
-        query = f"""
-            SELECT {select}
-            FROM (
-                SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY created_at DESC) as row_num
-                FROM {self._table_ref(table_name)}
-                WHERE env_id = @env_id AND {linked_row_id_name} = @{linked_row_id_name} AND user_id = @user_id AND (status != 'deleted' OR status IS NULL)
+        if self._local:
+            query, params = db_queries.duck_get_envs_linked_rows(
+                table=self._table_ref(table_name),
+                env_id=env_id,
+                linked_row_id=linked_row_id,
+                linked_row_id_name=linked_row_id_name,
+                user_id=user_id,
+                select=select,
             )
-            WHERE row_num = 1
-        """
-
-        job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("env_id", "STRING", env_id),
-                    bigquery.ScalarQueryParameter(linked_row_id_name, "STRING", linked_row_id),
-                    bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
-                ]
+            envs_linked_rows = self.run_query(query, conv_to_dict=True, params=params)
+        else:
+            ds_ref = f"{self.pid}.{self.DATASET_ID}"
+            query, job_config = self.bqcore.q_get_envs_linked_rows(
+                ds_ref=ds_ref,
+                table_name=table_name,
+                env_id=env_id,
+                linked_row_id=linked_row_id,
+                linked_row_id_name=linked_row_id_name,
+                user_id=user_id,
+                select=select,
             )
-            
-        envs_linked_rows = self.run_query(query, conv_to_dict=True, job_config=job_config)
+            envs_linked_rows = self.run_query(query, conv_to_dict=True, job_config=job_config)
         envs_linked_rows = [entry for entry in envs_linked_rows if entry.get("status") != "deleted"]
         return envs_linked_rows
             
@@ -441,26 +446,28 @@ class QBrainTableManager:
             select: str = "*"
         ):
         print("get_modules_linked_rows")
-
-        query = f"""
-            SELECT {select}
-            FROM (
-                SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY created_at DESC) as row_num
-                FROM {self._table_ref(table_name)}
-                WHERE module_id = @module_id AND {linked_row_id_name} = @{linked_row_id_name} AND user_id = @user_id AND (status != 'deleted' OR status IS NULL)
+        if self._local:
+            query, params = db_queries.duck_get_modules_linked_rows(
+                table=self._table_ref(table_name),
+                module_id=module_id,
+                linked_row_id=linked_row_id,
+                linked_row_id_name=linked_row_id_name,
+                user_id=user_id,
+                select=select,
             )
-            WHERE row_num = 1
-        """
-
-        job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter("module_id", "STRING", module_id),
-                    bigquery.ScalarQueryParameter(linked_row_id_name, "STRING", linked_row_id),
-                    bigquery.ScalarQueryParameter("user_id", "STRING", user_id)
-                ]
+            modules_linked_rows = self.run_query(query, conv_to_dict=True, params=params)
+        else:
+            ds_ref = f"{self.pid}.{self.DATASET_ID}"
+            query, job_config = self.bqcore.q_get_modules_linked_rows(
+                ds_ref=ds_ref,
+                table_name=table_name,
+                module_id=module_id,
+                linked_row_id=linked_row_id,
+                linked_row_id_name=linked_row_id_name,
+                user_id=user_id,
+                select=select,
             )
-            
-        modules_linked_rows = self.run_query(query, conv_to_dict=True, job_config=job_config)
+            modules_linked_rows = self.run_query(query, conv_to_dict=True, job_config=job_config)
         modules_linked_rows = [entry for entry in modules_linked_rows if entry.get("status") != "deleted"]
         return modules_linked_rows
         
@@ -471,39 +478,22 @@ class QBrainTableManager:
             nid = [nid]
         
         if self._local:
-            # DuckDB: use list param with unnest
-            tbl = self._table_ref(table)
-            id_placeholders = ", ".join(["?"] * len(nid))
-            user_filter = " AND user_id = ?" if user_id else ""
-            params = list(nid)
-            
-            if user_id:
-                params.append(user_id)
-            query = f"""
-                SELECT {select}
-                FROM (
-                    SELECT {select}, ROW_NUMBER() OVER (PARTITION BY id ORDER BY created_at DESC) as row_num
-                    FROM {tbl}
-                    WHERE id IN ({id_placeholders}) AND (status != 'deleted' OR status IS NOT NULL){user_filter}
-                )
-                WHERE row_num = 1
-            """
+            query, params = db_queries.duck_row_from_id(
+                table=self._table_ref(table),
+                ids=nid,
+                select=select,
+                user_id=user_id,
+            )
             items = self.db.run_query(query, params=params, conv_to_dict=True)
         else:
-            query = f"""
-                SELECT {select}
-                FROM (
-                    SELECT {select}, ROW_NUMBER() OVER (PARTITION BY id ORDER BY created_at DESC) as row_num
-                    FROM {tbl}
-                    WHERE id IN UNNEST(@id) AND (status != 'deleted' OR status IS NOT NULL)
-                )
-                WHERE row_num = 1
-            """
-            query_parameters = [bigquery.ArrayQueryParameter("id", "STRING", nid)]
-            if user_id:
-                query += " AND user_id = @user_id"
-                query_parameters.append(bigquery.ScalarQueryParameter("user_id", "STRING", user_id))
-            job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
+            ds_ref = f"{self.pid}.{self.DATASET_ID}"
+            query, job_config = self.bqcore.q_row_from_id(
+                ds_ref=ds_ref,
+                table=table,
+                ids=nid,
+                select=select,
+                user_id=user_id,
+            )
             items = self.run_query(query, conv_to_dict=True, job_config=job_config)
         return items
 
@@ -536,20 +526,18 @@ class QBrainTableManager:
             # Use schema types for params (sessions.id is INT64, not STRING)
             schema = self.TABLES_SCHEMA.get(clean_table_name, {})
             if self._local:
-                # DuckDB: use table name only, no project.dataset prefix
-                duck_query = f"SELECT * FROM {clean_table_name} WHERE " + " AND ".join([f"{k} = ?" for k in keys.keys()]) + " ORDER BY created_at DESC LIMIT 1"
-                ordered = [int(v) if schema.get(k) in ("INTEGER", "INT64") else str(v) for k, v in keys.items()]
+                duck_query, ordered = db_queries.duck_upsert_copy_select(clean_table_name, keys)
+                # Apply schema-aware typing (sessions.id is INT64, not STRING)
+                ordered = [int(v) if schema.get(k) in ("INTEGER", "INT64") else str(v) for k, v in zip(keys.keys(), ordered)]
                 rows = self.db.run_db(duck_query, conv_to_dict=True, params=ordered)
             else:
-                bq_params = []
-                for k, v in keys.items():
-                    col_type = schema.get(k, "STRING")
-                    if col_type in ("INTEGER", "INT64"):
-                        bq_params.append(bigquery.ScalarQueryParameter(k, "INT64", int(v)))
-                    else:
-                        bq_params.append(bigquery.ScalarQueryParameter(k, "STRING", str(v)))
-                job_config = bigquery.QueryJobConfig(query_parameters=bq_params)
-                rows = list(self.bqclient.query(query, job_config=job_config).result())
+                # Convert values to expected BQ scalar types based on schema (if known)
+                typed_keys: Dict[str, Any] = {
+                    k: (int(v) if schema.get(k) in ("INTEGER", "INT64") else str(v))
+                    for k, v in keys.items()
+                }
+                query, job_config = self.bqcore.q_upsert_copy_select(table_ref=ref, keys=typed_keys)
+                rows = self.db.run_query(sql=query, job_config=job_config, conv_to_dict=True)
             if not rows:
                 print(f"Row not found for upsert_copy in {ref} with keys {keys}")
                 return False
@@ -784,6 +772,7 @@ class QBrainTableManager:
                         self.get_table_schema(table_id=table_name, schema=schema, create_if_not_exists=True)
                         created_tables.append(table_name)
                     else:
+                        from google.cloud import bigquery  # type: ignore
                         schema_list = [bigquery.SchemaField(cn, ct) for cn, ct in schema.items()]
                         table_ref = f"{self.pid}.{self.DATASET_ID}.{table_name}"
                         table = bigquery.Table(table_ref, schema=schema_list)

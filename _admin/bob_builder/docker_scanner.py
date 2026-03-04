@@ -51,6 +51,9 @@ def _dir_to_image_name(dir_path: Path, project_root: Path) -> str:
     if dir_path == project_root:
         # Root Dockerfile: use project root folder name
         name = project_root.name
+    elif dir_path.name == "core" and dir_path.parent.name == "qbrain":
+        # Avoid ambiguous "core" project/image name in user-visible lists
+        name = "qbrain-core"
     normalized = "".join(c if c.isalnum() or c in "._-" else "_" for c in name)
     normalized = normalized.lower().strip("._-") or "image"
     return normalized

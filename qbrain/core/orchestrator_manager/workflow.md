@@ -1,10 +1,10 @@
 ---
-description: BestBrain Simulation Workflow - From Entry to Orchestration
+description: QBrain Core Simulation Workflow - From Entry to Orchestration
 ---
 
-# BestBrain Simulation Workflow
+# QBrain Core Simulation Workflow
 
-This document outlines the end-to-end workflow for a user interacting with the BestBrain simulation platform, from system initialization to the start of a simulation (Orchestration).
+This document outlines the end-to-end workflow for a user interacting with the QBrain Core simulation platform, from system initialization to the start of a simulation (Orchestration).
 
 ## 1. System Initialization (Server Start)
 **Actor:** System / Admin

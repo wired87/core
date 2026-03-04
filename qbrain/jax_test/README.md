@@ -54,6 +54,7 @@ flowchart TB
     E --> E1["payload: serialized_in, serialized_out, tdb"]
     E --> E2["_upsert_generated_data_to_bq(payload)"]
     E --> E3["Write engine_output.json"]
+    E --> E4["Persist per-param time-series → envs (env_id, goal_id, per-param JSON columns)"]
 ```
 
 **Text tree (same steps, linear view):**
@@ -108,7 +109,18 @@ main.py
    - Calc_batch: for each eq, extract params, create in/out features, get precomputed results, run Node, append results.
    - save_t_step: flatten → sum → stack_tdb → sort_results_rtdb → update time_construct.
    - Optional: `divide_time_values_all_dims(divisor)` (e.g. after each step or once at end).
-6. **Serialize and export:** Serialize in_store/out_store, return; Guard calls `_export_engine_state` (payload with serialized in/out, tdb), upsert BQ, write engine_output.json.
+6. **Serialize and export:** Serialize in_store/out_store, return; Guard calls `_export_engine_state` (payload with serialized in/out, tdb), upsert BQ, write `engine_output.json`, and persist stacked per-parameter time-series (values + features) into the `envs` table (one JSON column per param), keyed by `env_id` and `goal_id`.
+
+### Env / goal persistence (grid → envs)
+
+- **Per-param time-series collection**: During `db_layer.save_t_step`, the engine now collects, for each absolute DB param index, a scalar **feature value** (from `sum_results` / `METHOD_TO_DB`) and a scalar **state value** summary (from the current `nodes` slice). These are stored as Python-side histories `param_features_history` and `param_values_history` on `DBLayer`.
+- **Param-to-column mapping**: After the run, `Guard` rebuilds the flat param key order from `DB_PARAM_CONTROLLER`, `AMOUNT_PARAMS_PER_FIELD`, `MODULES`, `FIELDS`, `DB_KEYS`, and `FIELD_KEYS`, then maps each param index to a stable envs column name using the same sanitization scheme as the params manager (alphanumeric, `_`, prefixed with `p_` when needed).
+- **Env row update**: In `_export_engine_state`, `Guard` calls an `EnvManager` helper that:
+  - Ensures the `envs` table has a `goal_id` column plus one `STRING` column per param id.
+  - Upserts the env row for the current `(env_id, user_id)` and sets:
+    - `goal_id` from the `GOAL_ID` env var (if provided),
+    - one JSON cell per param column with structure `{ "values": [...], "features": [...] }` (time-aligned lists).
+- **Lookup semantics**: Downstream workflows can now retrieve **all param state values and features over time** for a given environment and goal via a single `envs` row, using `env_id` and `goal_id` as selectors and per-param columns for detailed inspection.
 
 ## Key components
 
@@ -119,6 +131,8 @@ main.py
 ## Done (checkbox)
 
 - [x] **Iterator + time ctlr** – Stable architecture: all functions on any time data. `build_time_ctlr(in_store, out_store)` → ctlr `(in_grid, out_grid)`. Iterator methods: `locate_feature(feature, ctlr)`, `inject_time_loop(feature, ctlr, loop_score)`, `scan_in_out_features(ctlr)`, `pattern_recall(param_grid, time_map)`. Simple JAX/lax/vmap, minimal branching, no string values.
+- [x] **Single-command Guard grid run** – `Guard.main` writes a grid config, then runs the grid engine via one shell command using `GRID_CMD` (default: `{python} -m jax_test.grid --cfg {cfg_path}`) and persists the resulting model path back into the env row.
+- [x] **Admin CLI single-command grid workflow** – From repo root, `_admin.main` can now discover and run the grid project with a single command (`python -m _admin.main --run-local --run-local-project grid`), aligning the JAX engine with the global run-local admin workflow.
 
 ## TODOs
 

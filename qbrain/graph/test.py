@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 import time
 import traceback
@@ -22,6 +23,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from qbrain.graph.brn.brain import Brain
+from qbrain.graph.brn.brain_classifier import BrainClassifier
 
 
 console = Console()
@@ -253,14 +255,42 @@ async def main() -> None:
     parser.add_argument("--user-id", default="test_user_1")
     parser.add_argument("--mode", choices=["suite", "interactive", "both"], default="suite")
     parser.add_argument("--case-struct", default="", help="Path to relay case struct JSON file.")
-    parser.add_argument("--output-dir", default="graph/test_runs", help="Where JSON test reports are saved.")
+    parser.add_argument(
+        "--output-dir",
+        default="graph/test_runs",
+        help="Where JSON test reports are saved and vector DB is stored.",
+    )
+    parser.add_argument(
+        "--expensive",
+        action="store_true",
+        help="Run an expensive Brain test: build vector index over cases and run an extended query suite.",
+    )
     args = parser.parse_args()
 
     case_struct = _load_case_struct(args.case_struct or None)
     output_dir = Path(args.output_dir)
 
     results: List[QueryRun] = []
-    brain = Brain(user_id=args.user_id, case_struct=case_struct, use_vector=False)
+
+    # --- Brain creation + model (classifier) generation ---
+    # Use configured deep-research backend (if any) just as an identifier.
+    dr_backend = os.environ.get("DEEP_RESEARCH_BACKEND", "chatgpt").strip().lower()
+    brain = Brain(
+        dr_backend,
+        args.user_id,
+    )
+
+    # Attach a BrainClassifier instance to the Brain. This is intentionally
+    # "expensive": it builds a vector index over all relay cases using the
+    # Brain's embedding function and a DuckDB-backed VectorStore.
+    vector_db_path = str(output_dir / "brain_cases_test.duckdb")
+    brain.classifier = BrainClassifier(
+        relay_cases=case_struct,
+        embed_fn=brain._embed_text,
+        vector_db_path=vector_db_path,
+        use_vector=True,
+    )
+
     try:
         try:
             hydrated = brain.hydrate_user_context()
@@ -271,7 +301,13 @@ async def main() -> None:
 
         if args.mode in {"suite", "both"}:
             console.print(Panel("Running suite mode", style="bold blue"))
-            results.extend(await _run_suite(brain, _default_suite()))
+            suite = _default_suite()
+            # In "expensive" mode, scale the suite by repeating it several times
+            # to stress-test Brain creation + model + query pipeline.
+            if args.expensive:
+                console.print(Panel("Expensive mode enabled: repeating suite 5x", style="bold red"))
+                suite = suite * 5
+            results.extend(await _run_suite(brain, suite))
 
         if args.mode in {"interactive", "both"}:
             console.print(Panel("Running interactive mode", style="bold blue"))

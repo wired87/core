@@ -65,6 +65,16 @@ Create/update:
 - `GOAL/SUB_GOAL`: selected case + resolved/missing field details
 - `CONTENT`: chunk refs and retrieval metadata (avoid huge blobs)
 
+### ThinkManager (Graph-Aware Reasoning Helper)
+
+- `ThinkManager` lives in `qbrain/graph/brn/think_manager.py` and operates over the same `nx.MultiGraph` as `Brain`.
+- It is instantiated by `Brain` with `(G, qb, user_id)` and kept side-effect free (read-only analysis by default).
+- Responsibilities:
+  - Suggest candidate graph-backed values for missing case fields (`suggest_missing_fields`).
+  - Provide structured case context (`analyze_case_context`) including graph stats and suggestions.
+  - Summarize individual components and their neighbors (`summarize_component`) and trace coarse case graph context (`trace_case_graph_context`).
+- This keeps \"thinking\" utilities reusable across relay cases and engine workflows without coupling them tightly to classification or execution logic.
+
 ## Brain Workflow
 
 1. **Init**

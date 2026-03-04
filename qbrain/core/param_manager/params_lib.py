@@ -5,12 +5,12 @@ from typing import Dict, Any, List, Optional
 
 import numpy as np
 from google.cloud import bigquery
-from qbrain.a_b_c.bq_agent._bq_core.bq_handler import BQCore
-from qbrain.a_b_c.gemw.gem import Gem
+
 from qbrain.core.param_manager.extraction_prompt import xtract_params_prompt
 
 from qbrain.core.qbrain_manager import get_qbrain_table_manager
 from qbrain.core.handler_utils import require_param, require_param_truthy, get_val
+from qbrain.gem_core.gem import Gem
 from qbrain.qf_utils.all_subs import FERMIONS, G_FIELDS, H
 from qbrain.qf_utils.qf_utils import QFUtils
 
@@ -31,6 +31,100 @@ class ParamsManager:
         self.pid = qb.pid
         self.table = f"{self.PARAMS_TABLE}"
         self._extract_prompt = None  # built lazily to avoid circular import with case
+        # Ensure envs table schema has columns for all existing params.
+        try:
+            self._ensure_env_columns_for_all_params()
+        except Exception as e:
+            print(f"{_PARAMS_DEBUG} __init__: env schema sync warning: {e}")
+
+    # -----------------------------
+    # Internal env-schema helpers
+    # -----------------------------
+
+    def _sanitize_param_column_name(self, raw_id: str) -> str:
+        """
+        Map a param id to a safe column name for the envs table.
+
+        Keeps alphanumeric characters, replaces others with '_', and prefixes
+        with 'p_' to avoid collisions with existing core columns.
+        """
+        safe = "".join(ch if ch.isalnum() else "_" for ch in str(raw_id))
+        if not safe:
+            safe = "param"
+        # Avoid starting with a digit for SQL column identifiers.
+        if safe[0].isdigit():
+            safe = f"p_{safe}"
+        return f"p_{safe}"
+
+    def _infer_bq_type_for_param(self, param_type_value: Any) -> str:
+        """
+        Infer a reasonable BigQuery type for a param column from param_type.
+        """
+        if param_type_value is None:
+            return "STRING"
+        pt = str(param_type_value).strip().lower()
+        if any(tok in pt for tok in ("float", "double", "number")):
+            return "FLOAT64"
+        if any(tok in pt for tok in ("int", "integer")):
+            return "INT64"
+        if "bool" in pt:
+            return "BOOL"
+        return "STRING"
+
+    def _ensure_env_columns_for_param_rows(self, rows: list[dict]) -> None:
+        """
+        Given param rows (with id and optional param_type), ensure envs table has
+        corresponding columns.
+        """
+        if not rows:
+            return
+
+        # Ensure envs table exists and get current schema.
+        try:
+            env_schema = self.qb.get_table_schema(
+                table_id="envs",
+                schema=self.qb.TABLES_SCHEMA.get("envs", {}),
+                create_if_not_exists=True,
+            )
+        except Exception as e:
+            print(f"{_PARAMS_DEBUG} _ensure_env_columns_for_param_rows: schema fetch error: {e}")
+            return
+
+        existing_cols = set(env_schema.keys())
+
+        for row in rows:
+            raw_id = str(row.get("id") or "").strip()
+            if not raw_id:
+                continue
+            col_name = self._sanitize_param_column_name(raw_id)
+            if col_name in existing_cols:
+                continue
+
+            bq_type = self._infer_bq_type_for_param(row.get("param_type"))
+
+            try:
+                print(f"{_PARAMS_DEBUG} _ensure_env_columns_for_param_rows: add column envs.{col_name} {bq_type}")
+                self.qb.insert_col("envs", col_name, bq_type)
+                existing_cols.add(col_name)
+            except Exception as e:
+                print(f"{_PARAMS_DEBUG} _ensure_env_columns_for_param_rows: add column warning for {col_name}: {e}")
+
+    def _ensure_env_columns_for_all_params(self) -> None:
+        """
+        On manager init, sync envs table schema with all existing params.
+        """
+        try:
+            tbl = getattr(self.qb, "_table_ref", None)
+            params_ref = tbl("params") if callable(tbl) else "params"
+            rows = self.qb.run_db(
+                f"SELECT id, param_type FROM {params_ref}",
+                conv_to_dict=True,
+            ) or []
+        except Exception as e:
+            print(f"{_PARAMS_DEBUG} _ensure_env_columns_for_all_params: query error: {e}")
+            return
+
+        self._ensure_env_columns_for_param_rows(rows)
 
     def get_axis(self, params:dict):
         # get axis for pasm from BQ
@@ -146,6 +240,11 @@ class ParamsManager:
                 prev_param["value"] = None
                 prev_params.append(prev_param)
             self.qb.set_item(self.PARAMS_TABLE, param_data)
+            # Ensure envs table has matching columns for newly created/updated params.
+            try:
+                self._ensure_env_columns_for_param_rows(param_data)
+            except Exception as e:
+                print(f"{_PARAMS_DEBUG} set_param: env schema sync warning: {e}")
             print(f"{_PARAMS_DEBUG} set_param: done")
         except Exception as e:
             print(f"{_PARAMS_DEBUG} set_param: error: {e}")
@@ -305,8 +404,8 @@ class ParamsManager:
             self.set_param(batch_data, user_id)
             print(f"Uploaded {len(batch_data)} SM params")
 
-_default_bqcore = BQCore(dataset_id="QBRAIN")
-_default_param_manager = ParamsManager(get_qbrain_table_manager(_default_bqcore))
+
+_default_param_manager = ParamsManager(get_qbrain_table_manager(None))
 params_manager = _default_param_manager  # backward compat
 
 def handle_get_users_params(data=None, auth=None):

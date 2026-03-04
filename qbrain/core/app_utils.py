@@ -1,5 +1,6 @@
 import os
 import sys
+from pathlib import Path
 from qbrain.qf_utils.all_subs import ALL_SUBS
 import dotenv
 
@@ -11,7 +12,8 @@ SCHEMA_GRID = [
     for i in range(MAX_GRID_SIZE)
 ]
 
-ARSENAL_PATH=r"C:\Users\bestb\PycharmProjects\BestBrain\core\arsenal" if os.name == "nt" else r"core/arsenal"
+_CORE_DIR = Path(__file__).resolve().parent
+ARSENAL_PATH = str((_CORE_DIR / "arsenal").resolve())
 
 ## GCP
 GCP_ID = os.environ.get("GCP_PROJECT_ID")

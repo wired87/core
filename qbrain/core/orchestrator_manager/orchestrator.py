@@ -6,7 +6,6 @@ zeig mir alle files an
 """
 import ast
 
-from qbrain.jax_test.grid.animation_recorder import GridAnimationRecorder
 from qbrain.utils.math.operator_handler import OperatorHandler, EqExtractor
 
 """
@@ -64,7 +63,7 @@ from qbrain.chat_manger.main import AIChatClassifier
 from qbrain.core.env_manager.env_lib import EnvManager
 from qbrain.core.guard import Guard, ComponentGraphCreator
 from qbrain.core.model_manager.model_lib import ModelManager
-from qbrain.a_b_c.bq_agent._bq_core.bq_handler import BQCore
+
 from qbrain.core.session_manager.session import SessionManager
 from qbrain.core.researcher2.researcher2.core import ResearchAgent
 from qbrain.core.collector_manager import CaseCollectorManager
@@ -120,13 +119,19 @@ class Thalamus:
         cases,
         user_id: str = "public",
         relay=None,
+        *,
+        collect_cases_into_graph: bool = True,
+        build_component_graph: bool = True,
+        parse_equations: bool = False,
     ):
         _dr_backend = os.environ.get("DEEP_RESEARCH_BACKEND", "chatgpt").strip().lower()
 
-        # Create BQCore and QBrainTableManager; provide qb to all managers
-        self.bqcore = BQCore(dataset_id=self.DATASET_ID)
+        # Use the shared/global QBrainTableManager (DuckDB by default unless configured otherwise).
         from qbrain.core.qbrain_manager import get_qbrain_table_manager
-        self._qb = get_qbrain_table_manager(self.bqcore)
+        self._qb = get_qbrain_table_manager()
+
+        # Core model interface used for classification and follow-up prompts.
+        self.gem = Gem()
 
         self.env_manager = EnvManager(self._qb)
         self.session_manager = SessionManager(self._qb)
@@ -138,10 +143,6 @@ class Thalamus:
         self.method_manager = MethodManager(self._qb)
         self.user_manager = UserManager(self._qb)
         self.params_manager = ParamsManager(self._qb)
-        self.gem = Gem()
-
-        # Use shared/global QBrainTableManager for downstream managers
-        self._qb = get_qbrain_table_manager()
 
         self.research_agent = ResearchAgent(
             self.file_manager,
@@ -159,11 +160,12 @@ class Thalamus:
         # Discover all manager relay case structs and mirror them into the Brain graph.
         # This is read‑only and does not affect handler wiring; it only adds CASE nodes
         # for introspection and tooling.
-        try:
-            self.case_collector = CaseCollectorManager(gutils=self.g)
-            self.case_collector.collect_cases_into_graph()
-        except Exception as e:
-            print(f"[Thalamus] CaseCollectorManager error during init: {e}")
+        if collect_cases_into_graph:
+            try:
+                self.case_collector = CaseCollectorManager(gutils=self.g)
+                self.case_collector.collect_cases_into_graph()
+            except Exception as e:
+                print(f"[Thalamus] CaseCollectorManager error during init: {e}")
 
         # fill Brain with data
         self.data_handler = ComponentGraphCreator(
@@ -178,22 +180,25 @@ class Thalamus:
             params_manager=self.params_manager,
             user_id=user_id,
         )
-        self.data_handler.main()
+        if build_component_graph:
+            self.data_handler.main()
 
-
-        # split eq into parts (p -> op -> p)
-
-
-        for k,v in self.g.G.nodes(data=True):
-            if v["type"] == "METHODS":
-                self.eq_processor = EqExtractor(self.g)
-                self.eq_processor.visit(
-                    ast.parse(
-                        v["equation"],
-                        mode='eval'
-                    )
-                )
-                self.eq_processor.batches
+        # Optional: split equations into parts (p -> op -> p). Keep disabled by default
+        # for fast interactive/chat test startup.
+        if parse_equations:
+            try:
+                for _, v in self.g.G.nodes(data=True):
+                    ntype = str(v.get("type") or "").upper()
+                    if ntype not in {"METHOD", "METHODS"}:
+                        continue
+                    eq = v.get("equation")
+                    if not eq:
+                        continue
+                    self.eq_processor = EqExtractor(self.g)
+                    self.eq_processor.visit(ast.parse(str(eq), mode="eval"))
+                    _ = getattr(self.eq_processor, "batches", None)
+            except Exception as e:
+                print(f"[Thalamus] equation parse warning: {e}")
 
         self.guard = Guard(
             qfu=self.qfu,
@@ -765,21 +770,8 @@ class Thalamus:
             for k, v in config.items():
                 try:
                     grid_streamer = getattr(self.relay, "_grid_streamer", None) if self.relay else None
+                    # qdash controller engine runs without matplotlib-based animation recording.
                     grid_animation_recorder = None
-                    if os.getenv("GRID_STREAM_ENABLED", "false").lower() in ("true", "1"):
-                        try:
-                            env_res = self.env_manager.retrieve_env_from_id(k)
-                            env_cfg = (env_res.get("envs") or [{}])[0] if env_res else {}
-                            env_cfg = {**{"dims": 3, "amount_of_nodes": 1}, **env_cfg}
-                            grid_animation_recorder = GridAnimationRecorder(
-                                env_id=k,
-                                user_id=user_id,
-                                env_cfg=env_cfg,
-                                cfg={},
-                                env_manager=self.env_manager,
-                            )
-                        except Exception as rec_err:
-                            print(f"_handle_start_sim_process: animation recorder init: {rec_err}")
                     print(f"_handle_start_sim_process: running guard.main for env_id={k}")
                     components = self.guard.main(
                         env_id=k,

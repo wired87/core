@@ -33,7 +33,7 @@ py -m _admin.main --force-rebuild --no-deploy
   - `MiracleAI` (mobile_react_native, no Dockerfile)
   - `jax_test` (backend_py, has Dockerfile)
   - `qbrain` (backend_drf, has Dockerfile)
-  - `core` (unknown, has Dockerfile) — **note:** `qbrain/core` has a Dockerfile; may be double-counted or path confusion
+  - `qbrain-core` (unknown, has Dockerfile) — `qbrain/core` (avoids ambiguous `core` name)
   - `qdash` (frontend_react, has Dockerfile)
 
 - **Full `py -m _admin.main --scan-only`:** Was hanging; fixed by lazy-init of DockerAdmin/GkeDeployer (see Resolved).
@@ -42,7 +42,7 @@ py -m _admin.main --force-rebuild --no-deploy
 
 ## Resolved
 
-1. **Scan-only hang:** Resolved by lazy-initializing `DockerAdmin` and `GkeDeployer` (and deferring their imports) so `--scan-only` does not load docker_admin (which pulls in qbrain) or create deployer. Scan-only now completes and prints 6 projects including 5 with Dockerfiles: root (BestBrain), jax_test, qbrain, qbrain\\core, qdash.
+1. **Scan-only hang:** Resolved by lazy-initializing `DockerAdmin` and `GkeDeployer` (and deferring their imports) so `--scan-only` does not load docker_admin (which pulls in qbrain) or create deployer. Scan-only now completes and prints 6 projects including 5 with Dockerfiles: root (BestBrain), jax_test, qbrain, qbrain-core, qdash.
 2. **qbrain build context:** Admin now passes `context_dir=project_root` when building the qbrain image so `qbrain/Dockerfile` gets the correct context (r.txt, manage.py, qbrain/).
 
 ---

@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 from jax import jit, vmap, lax
+import numpy as np
 
 from dtypes import TimeMap
 from jax import ops
@@ -70,6 +71,12 @@ class DBLayer:
         self.gpu = gpu
         self.DIMS = DIMS
         self.history_nodes = []
+
+        # Python-side collectors (not traced by JAX) for per-parameter time series.
+        # Keys: absolute unscaled param index (int) as produced by get_rel_db_index.
+        # Values: list[float] over simulation steps.
+        self.param_values_history: dict[int, list[float]] = {}
+        self.param_features_history: dict[int, list[float]] = {}
 
         # For sum_results: arange over equations (same length as LEN_FEATURES_PER_EQ).
         self.DB_CTL_VARIATION_LEN_PER_EQUATION_CUMSUM = len(LEN_FEATURES_PER_EQ)
@@ -263,11 +270,92 @@ class DBLayer:
                 self.sort_results_rtdb(sumed_results)
             except Exception as e_rtdb:
                 print("Err sort_results_rtdb (skipping this step):", e_rtdb)
+            # Collect per-parameter time series (values + features) on CPU side.
+            try:
+                self._update_param_time_series(sumed_results)
+            except Exception as e_hist:
+                print("Err save_t_step (_update_param_time_series):", e_hist)
             self.time_construct = self.time_construct.at[0].set(self.nodes)
             jax.debug.print(f"save_t_step... done")
             return all_results
         except Exception as e:
             print("Err save_t_step", e)
+
+    def _update_param_time_series(self, sumed_results):
+        """
+        Update Python-side histories for each parameter:
+        - features: aggregated feature value per param (from sumed_results + METHOD_TO_DB mapping)
+        - values: scalar summary of current param state derived from self.nodes.
+
+        This runs on the host only and must NOT affect JAX-traced execution.
+        """
+        # Map methods -> absolute unscaled param indices using METHOD_TO_DB and controller helpers.
+        try:
+            sumed_results = jnp.ravel(jnp.asarray(sumed_results, dtype=jnp.float32))
+        except Exception:
+            return
+
+        try:
+            def _coord_to_abs_idx(coord):
+                c = jnp.ravel(jnp.asarray(coord))
+                if c.size < 3:
+                    return jnp.int32(0)
+                return self.get_rel_db_index(c[-3], c[-2], c[-1])
+
+            idx_map = vmap(_coord_to_abs_idx, in_axes=0)(self.METHOD_TO_DB)
+            idx_np = np.asarray(idx_map).ravel()
+            feat_np = np.asarray(sumed_results, dtype=np.float32).ravel()
+        except Exception:
+            return
+
+        if idx_np.size == 0 or feat_np.size == 0:
+            return
+
+        # Ensure lengths match by trimming/padding features.
+        n = idx_np.size
+        if feat_np.size < n:
+            feat_np = np.concatenate([feat_np, np.zeros(n - feat_np.size, dtype=np.float32)])
+        elif feat_np.size > n:
+            feat_np = feat_np[:n]
+
+        # Snapshot of current nodes as real-valued array for value summaries.
+        try:
+            nodes_arr = np.asarray(self.nodes)
+            if np.iscomplexobj(nodes_arr):
+                nodes_arr = np.abs(nodes_arr.astype(np.complex64)).astype(np.float32)
+            else:
+                nodes_arr = nodes_arr.astype(np.float32)
+        except Exception:
+            nodes_arr = None
+
+        for abs_idx, feat_val in zip(idx_np, feat_np):
+            try:
+                p_idx = int(abs_idx)
+            except Exception:
+                continue
+
+            # Feature history: one scalar per step.
+            try:
+                self.param_features_history.setdefault(p_idx, []).append(float(feat_val))
+            except Exception:
+                pass
+
+            # Value history: scalar summary of current param slice in nodes.
+            if nodes_arr is None:
+                continue
+            try:
+                start, length = self.get_db_index(p_idx)
+                s = int(start)
+                ln = int(length)
+                if ln <= 0 or s < 0 or s + ln > nodes_arr.size:
+                    continue
+                slice_arr = nodes_arr[s:s + ln]
+                if slice_arr.size == 0:
+                    continue
+                val_scalar = float(np.mean(slice_arr))
+                self.param_values_history.setdefault(p_idx, []).append(val_scalar)
+            except Exception:
+                continue
 
     @jit
     def scatter_results_to_db(self, results, db_start_idx):

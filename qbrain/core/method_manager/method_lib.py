@@ -4,8 +4,7 @@ import random
 from typing import Dict, Any, List, Optional, Callable, Tuple, Union
 
 import numpy as np
-from google.cloud import bigquery
-from qbrain.a_b_c.bq_agent._bq_core.bq_handler import BQCore
+
 from qbrain.core.method_manager.gen_type import generate_methods_out_schema
 from qbrain.core.method_manager.xtrct_prompt import xtrct_method_prompt
 from qbrain.core.module_manager.create_runnable import create_runnable
@@ -15,31 +14,6 @@ from qbrain.core.handler_utils import require_param, require_param_truthy, get_v
 from qbrain.qf_utils.qf_utils import QFUtils
 
 
-
-#
-# Define Schemas
-METHOD_SCHEMA = [
-    bigquery.SchemaField("id", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("code", "STRING", mode="NULLABLE"),
-    bigquery.SchemaField("description", "STRING", mode="NULLABLE"),
-    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
-    bigquery.SchemaField("updated_at", "TIMESTAMP", mode="NULLABLE"),
-    bigquery.SchemaField("status", "STRING", mode="NULLABLE"),
-    bigquery.SchemaField("params", "STRING", mode="NULLABLE"),
-    bigquery.SchemaField("equation", "STRING", mode="NULLABLE"),
-    bigquery.SchemaField("jax_code", "STRING", mode="NULLABLE"),
-]
-
-SESSIONS_METHODS_SCHEMA = [
-    bigquery.SchemaField("id", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("session_id", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("method_id", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("status", "STRING", mode="NULLABLE"),
-    bigquery.SchemaField("created_at", "TIMESTAMP", mode="NULLABLE"),
-    bigquery.SchemaField("updated_at", "TIMESTAMP", mode="NULLABLE"),
-]
 
 def generate_numeric_id() -> str:
     """Generate a random numeric ID."""
@@ -58,12 +32,6 @@ class MethodManager:
         self.session_link_ref = f"{self.SESSIONS_METHODS_TABLE}"
         self.qfu = QFUtils()
         self._extract_prompt = None  # built lazily to avoid circular import with case
-
-    def _ensure_method_table(self):
-        schema = {f.name: f.field_type for f in METHOD_SCHEMA}
-        self.qb.get_table_schema(table_id=self.METHODS_TABLE, schema=schema, create_if_not_exists=True)
-        self.qb.insert_col(self.METHODS_TABLE, "equation", "STRING")
-        self.qb.insert_col(self.METHODS_TABLE, "jax_code", "STRING")
 
 
     def execute_method_testwise(self, methods:list[dict], user_id, g):
@@ -227,7 +195,7 @@ class MethodManager:
         Uses Gem LLM with req_struct/out_struct from SET_METHOD case.
         """
         try:
-            from gem_core.gem import Gem
+            from qbrain.gem_core.gem import Gem
             gem = Gem()
 
             prompt = xtrct_method_prompt(
@@ -369,8 +337,8 @@ class MethodManager:
 
 
 # Instantiate
-_default_bqcore = BQCore(dataset_id="QBRAIN")
-_qb:QBrainTableManager = get_qbrain_table_manager(_default_bqcore)
+
+_qb:QBrainTableManager = get_qbrain_table_manager(None)
 params_manager = ParamsManager(_qb)
 
 _default_method_manager = MethodManager(_qb, params_manager)

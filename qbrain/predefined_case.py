@@ -10,9 +10,10 @@ from qbrain.core.method_manager.case import RELAY_METHOD
 from qbrain.core.module_manager.ws_modules_manager.case import RELAY_MODULE
 from qbrain.core.param_manager.case import RELAY_PARAM
 from qbrain.core.session_manager.case import RELAY_SESSION
+from qbrain.control_engine import RELAY_CONTROL_ENGINE
 
 # Manually composed RELAY_CASES_CONFIG from case structs
-# Order: ENV, FIELD, INJECTION, SESSION, MODULE, PARAMS, METHOD, FILE
+# Order: ENV, FIELD, INJECTION, SESSION, MODULE, PARAMS, METHOD, FILE, CONTROL_ENGINE
 RELAY_CASES_CONFIG = [
     *RELAY_ENV,
     *RELAY_FIELD,
@@ -22,4 +23,5 @@ RELAY_CASES_CONFIG = [
     *RELAY_PARAM,
     *RELAY_METHOD,
     *RELAY_FILE,
+    *RELAY_CONTROL_ENGINE,
 ]

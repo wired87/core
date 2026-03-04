@@ -7,7 +7,6 @@ from tempfile import TemporaryDirectory
 import networkx as nx
 
 from qbrain.code_manipulation.graph_creator import StructInspector
-from qbrain.core.orchestrator_manager.orchestrator import Thalamus
 
 
 import asyncio

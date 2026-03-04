@@ -1,6 +1,7 @@
 import ast
 import inspect
 import os
+from pathlib import Path
 
 from qbrain.core.app_utils import TESTING, ARSENAL_PATH
 
@@ -33,7 +34,10 @@ class ModuleLoader(
 
         self.modules = {}
         self.device = "gpu" if TESTING is False else "cpu"
-        self.module_g_save_path = rf"C:\Users\bestb\PycharmProjects\BestBrain\outputs\module_{self.id}_G.html" if os.name == "nt" else f"outputs/module_{self.id}_G.html"
+        repo_root = Path(__file__).resolve().parents[3]
+        outputs_dir = repo_root / "outputs"
+        outputs_dir.mkdir(parents=True, exist_ok=True)
+        self.module_g_save_path = str(outputs_dir / f"module_{self.id}_G.html")
         self.finished=False
 
 

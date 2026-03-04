@@ -4,14 +4,23 @@ import random
 from datetime import datetime
 from typing import Dict, Any, List
 
-from qbrain.a_b_c.bq_agent._bq_core.bq_handler import BQCore
 from qbrain.core.qbrain_manager import get_qbrain_table_manager
-from qbrain.core.handler_utils import param_missing_error, require_param, require_param_truthy, get_val
+from qbrain.core.handler_utils import require_param, require_param_truthy, get_val
 
 # Debug prefix for manager methods (grep-friendly)
 _ENV_DEBUG = "[EnvManager]"
 
-ENV_SCHEMA = {"id": "STRING", "sim_time": "INTEGER", "cluster_dim": "INTEGER", "dims": "INTEGER", "user_id": "STRING", "data": "STRING", "created_at": "TIMESTAMP", "updated_at": "TIMESTAMP"}
+ENV_SCHEMA = {
+    "id": "STRING",
+    "sim_time": "INTEGER",
+    "cluster_dim": "INTEGER",
+    "dims": "INTEGER",
+    "user_id": "STRING",
+    "goal_id": "STRING",
+    "data": "STRING",
+    "created_at": "TIMESTAMP",
+    "updated_at": "TIMESTAMP",
+}
 
 class EnvManager:
     DATASET_ID = "QBRAIN"
@@ -26,7 +35,15 @@ class EnvManager:
     def _ensure_env_table(self):
         """Check if envs table exists, create if not."""
         self.qb.get_table_schema(table_id=self.TABLE_ID, schema=ENV_SCHEMA, create_if_not_exists=True)
-        self.qb.insert_col(self.TABLE_ID, "data", "STRING")
+        # Ensure dynamic columns also exist on legacy tables.
+        try:
+            self.qb.insert_col(self.TABLE_ID, "data", "STRING")
+        except Exception as e:
+            print(f"{_ENV_DEBUG} _ensure_env_table: data column warning: {e}")
+        try:
+            self.qb.insert_col(self.TABLE_ID, "goal_id", "STRING")
+        except Exception as e:
+            print(f"{_ENV_DEBUG} _ensure_env_table: goal_id column warning: {e}")
 
     def retrieve_send_user_specific_env_table_rows(self, user_id: str, select: str = "*") -> Dict[str, Any]:
         """
@@ -136,6 +153,59 @@ class EnvManager:
             print(f"{_ENV_DEBUG} set_env: done")
         except Exception as e:
             print(f"{_ENV_DEBUG} set_env: error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+
+    def update_env_param_series(
+        self,
+        env_id: str,
+        user_id: str,
+        goal_id: str | None,
+        param_series: Dict[str, Any],
+    ) -> None:
+        """
+        Upsert stacked param time-series (values + features) into the envs table.
+
+        Each key in param_series is an envs column name (already sanitized),
+        and each value is a JSON-serializable dict like:
+            {"values": [...], "features": [...]}
+        """
+        try:
+            print(f"{_ENV_DEBUG} update_env_param_series: env_id={env_id}, user_id={user_id}")
+            self._ensure_env_table()
+
+            if not param_series:
+                print(f"{_ENV_DEBUG} update_env_param_series: empty series, skipping")
+                return
+
+            # Ensure each param column exists (STRING storing JSON payload).
+            for col in param_series.keys():
+                try:
+                    self.qb.insert_col(self.TABLE_ID, col, "STRING")
+                except Exception as ce:
+                    print(f"{_ENV_DEBUG} update_env_param_series: insert_col warning for {col}: {ce}")
+
+            row: Dict[str, Any] = {
+                "id": env_id,
+                "user_id": user_id,
+            }
+            if goal_id:
+                row["goal_id"] = goal_id
+
+            for col, payload in param_series.items():
+                try:
+                    if isinstance(payload, (dict, list)):
+                        row[col] = json.dumps(payload)
+                    else:
+                        row[col] = json.dumps(payload, default=str)
+                except Exception as se:
+                    print(f"{_ENV_DEBUG} update_env_param_series: serialize warning for {col}: {se}")
+
+            self.qb.set_item(self.TABLE_ID, row, keys={"id": env_id, "user_id": user_id})
+            print(f"{_ENV_DEBUG} update_env_param_series: done")
+        except Exception as e:
+            print(f"{_ENV_DEBUG} update_env_param_series: error: {e}")
             import traceback
             traceback.print_exc()
             raise
@@ -330,9 +400,7 @@ class EnvManager:
             ]
 
 
-# Default instance for standalone use (no orchestrator context)
-_default_bqcore = BQCore(dataset_id="QBRAIN")
-_default_env_manager = EnvManager(get_qbrain_table_manager(_default_bqcore))
+_default_env_manager = EnvManager(get_qbrain_table_manager(None))
 env_manager = _default_env_manager  # backward compat
 
 def handle_get_env(data=None, auth=None):

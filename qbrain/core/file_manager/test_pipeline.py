@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import pprint
+from pathlib import Path
 from qbrain.core.file_manager.file_lib import file_manager
 
 # Windows console: avoid UnicodeEncodeError for emoji/special chars
@@ -15,8 +16,9 @@ def _safe_print(s):
 def test_file_manager_pipeline():
     _safe_print("Testing File Manager Pipeline...")
     
-    file_path = r"C:\Users\bestb\PycharmProjects\BestBrain\test_paper.pdf"
-    if os.path.exists(file_path):
+    repo_root = Path(__file__).resolve().parents[4]
+    file_path = repo_root / "test_paper.pdf"
+    if file_path.exists():
         with open(file_path, "rb") as f:
             encoded_string = base64.b64encode(f.read()).decode("utf-8")
         _safe_print(f"Using PDF: {file_path}")

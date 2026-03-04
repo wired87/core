@@ -260,7 +260,7 @@ The `_admin` CLI can run every discovered project (Dockerfile or package.json/ma
 - **Run one project** (path relative to repo root):
   ```bash
   python -m _admin.main --run-local --run-local-project qdash
-  python -m _admin.main --run-local --run-local-project jax_test
+  python -m _admin.main --run-local --run-local-project grid
   ```
 - **Custom ports**: `--run-local-port 8000` or `--run-local-port backend_drf:8000,frontend:3000`
 
@@ -276,3 +276,40 @@ Projects are classified as `backend_drf`, `backend_fastapi`, `backend_py`, `fron
 - [ ] Implement relay case consumption hardening and payload contract validation.
 - [ ] Add Guard answer caching and cross-module parameter/field consistency checks.
 - [ ] Add observability (latency, error rates, case-level tracing) for Relay/Orchestrator/Guard.
+
+## Global TODO Rollup (docs + code)
+
+- **Core engine / orchestration**
+  - Unify case registry so wired actions and implemented handlers match one-to-one; make `CHAT` and `START_SIM` first-class registry entries (or equivalent contract wrappers) and close the `CONVERT_MODULE` placeholder with a concrete callable and tests.
+  - Add payload contract validation at relay ingress (required keys, type checks, unknown-field policy).
+  - Implement `get_data` live bridge objective (BigQuery → tabular display pipeline) and remove hardcoded test identity flows.
+  - Improve method extraction (bracket parsing and dedupe) and reliably inject method defs into `Guard.method_layer`.
+  - Add Guard consistency guarantees (answer caching, method‑param‑field reconciliation, deterministic ordering for repeated runs).
+  - Add per-case latency and error instrumentation and broader observability for Relay/Orchestrator/Guard; introduce async-safe batching and batched `get`/`link` operations in managers.
+  - Add session lifecycle controls (idle timeout, reconnect semantics, explicit closure audit) and stabilize graph serialization and the runtime graph/persistence boundary.
+
+- **Simulation / JAX GTM engine (`grid`)**
+  - Track energetic time distribution over time.
+  - Implement blur-based prefill of results from in-feature lines so not every value requires full computation; extend model payload with controller section, total time-step feature, and a configurable test switch.
+  - Evolve time-engine ideas: alternative-reality branches, iterator time-travel, time-step consistency checks, zero-shot horizon, rollback/replay, interpolation between steps, confidence/uncertainty signals, canonical vs alternative realities, cross-step invariants, and minimal state for offline validation.
+
+- **Frontend / QDash**
+  - Full terminal agent capabilities (intent handling, tool use) and a pure relay-based commit flow.
+  - Geometry-only drag-and-drop from the right-side view into the central grid background component (file conversion handled in the frontend).
+  - User self-management of the Gemini API key inside the app (settings or prompt-based).
+  - Deep integration with the `qbrain` backend/services.
+  - In-screen visualization mapping module parameters to visualization techniques (including retro n‑D views).
+  - “Add model” env switch wired into `conversation.models` with a clear rule for when the list is reset vs kept across terminal submits.
+
+- **Docs / workflow mastermap**
+  - Build workflow replay timelines per session and a policy-based optimizer that proposes minimal remediation for failed simulations.
+  - Add a schema drift detector and migration assistant for QBRAIN tables.
+  - Expand `MODEL` and `GMAIL` action buses into normalized case contracts.
+
+## Implemented Results Snapshot
+
+- **Session management (`core/session_manager`)**: Sessions table in the QBRAIN dataset, random numeric session IDs, Relay integration, and an 8-test suite; demo and integration flows verified, all tests passing.
+- **Injection management (`core/injection_manager`)**: BigQuery-backed `injections` table with full CRUD API and WebSocket handlers wired into `relay_station.py`; 9-test suite, all tests passing, ready to receive energy designer data.
+- **GTM JAX simulation engine (`grid`)**: End-to-end Guard → GNN workflow defined (DB build, simulation loop, export); iterator + time-controller architecture stabilized; scan-in/out feature scoring and indexing implemented.
+- **Nginx + deployment tooling (`qbrain/nginx`, `_admin`)**: Env-driven Nginx config rendering with `startup.sh` integration; `_admin` CLI can discover and run the monolith backend, QDash, and `grid` locally, including an optional QDash demo recording workflow.
+- **BigQuery Toolbox (`qbrain/_bigquery_toolbox`)**: Streamlit-based analytics and ingestion toolbox with RAG search, text-to-SQL, and vector search, including Local Core mode for direct engine integration.

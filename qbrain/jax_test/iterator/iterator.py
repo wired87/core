@@ -130,3 +130,82 @@ class Iterator:
             dists = vmap(lambda t: dist_row(row, time_map[t]))(jnp.arange(time_map.shape[0]))
             return jnp.argmin(dists)
         return vmap(closest_one)(param_grid)
+
+    def extract_segment_arrays(self, ctlr, segment_spec, *, data_store=None, feature_store=None, energy_store=None):
+        """
+        Extract JAX arrays per data type for a given time-controller segment.
+
+        Args:
+            ctlr: Tuple (in_grid, out_grid) as produced by build_time_ctlr.
+            segment_spec: Dict with flat index ranges or explicit indices, e.g.:
+                {
+                    "flat_index_start": int,
+                    "flat_index_end": int,
+                    "t_indices": [...],        # optional override
+                    "var_indices": [...],      # optional override
+                }
+            data_store/feature_store/energy_store:
+                Optional Python containers with additional states; when provided,
+                they are indexed using the same (t_indices, var_indices) pattern
+                and converted to jax arrays.
+
+        Returns:
+            Dict with keys:
+                - "data_states": jnp.ndarray
+                - "feature_states": jnp.ndarray
+                - "energy_states": jnp.ndarray
+            Missing entries are returned as empty arrays of shape (0,).
+        """
+        in_g, out_g = ctlr
+        T = in_g.shape[0]
+        N_all = in_g.shape[1] + out_g.shape[1]
+
+        flat_start = int(segment_spec.get("flat_index_start", 0))
+        flat_end = int(segment_spec.get("flat_index_end", T * N_all - 1))
+
+        # Build flat indices and map back to (t, var_idx)
+        flat_idx = jnp.arange(flat_start, flat_end + 1, dtype=jnp.int32)
+        t_idx = flat_idx // N_all
+        var_idx = flat_idx % N_all
+
+        # Clip to valid ranges
+        t_idx = jnp.clip(t_idx, 0, T - 1)
+
+        # Split var_idx into in/out ranges
+        n_in = in_g.shape[1]
+        in_mask = var_idx < n_in
+        out_mask = ~in_mask
+
+        in_t = t_idx[in_mask]
+        in_v = var_idx[in_mask]
+        out_t = t_idx[out_mask]
+        out_v = var_idx[out_mask] - n_in
+
+        data_states = jnp.array([])
+        feature_states = jnp.array([])
+        energy_states = jnp.array([])
+
+        if in_t.size > 0:
+            data_states = in_g[in_t, in_v]
+        if out_t.size > 0:
+            feature_states = out_g[out_t, out_v]
+
+        if energy_store is not None:
+            # Generic fallback: treat energy_store as list-of-lists indexed by t
+            # and flatten selected entries.
+            try:
+                energy_vals = []
+                for ti in t_idx.tolist():
+                    row = energy_store[ti] if ti < len(energy_store) else None
+                    if row is not None:
+                        energy_vals.append(row)
+                if energy_vals:
+                    energy_states = jnp.asarray(energy_vals)
+            except Exception:
+                energy_states = jnp.array([])
+
+        return {
+            "data_states": data_states,
+            "feature_states": feature_states,
+            "energy_states": energy_states,
+        }

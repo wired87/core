@@ -12,11 +12,11 @@ import json
 import websockets
 from qbrain.code_manipulation.graph_creator import StructInspector
 from qbrain.graph.local_graph_utils import GUtils
-from qbrain.jax_test.grid.animation_recorder import GridAnimationRecorder
 from qbrain.qf_utils.qf_utils import QFUtils
 
 from qbrain.core.qbrain_manager import get_qbrain_table_manager
 
+from qbrain.core.pathfinder_manager.pathfinder import PathfinderManager
 from qbrain.core.module_manager.mcreator import ModuleCreator
 from qbrain.utils.math.operator_handler import EqExtractor
 from qbrain.qf_utils.all_subs import ALL_SUBS
@@ -725,6 +725,17 @@ class Guard(
             model_path = os.getenv("GRID_MODEL_OUT", os.path.join(project_root, "model_out.json"))
             if os.path.isfile(model_path):
                 self._save_model_path_to_envs(env_id, model_path)
+                # Offline pathfinder analysis (best-effort, non-blocking for core run)
+                try:
+                    pathfinder = PathfinderManager()
+                    controller_id = pathfinder.build_and_persist_for_env(
+                        env_id=env_id,
+                        user_id=self.user_id,
+                    )
+                    if controller_id:
+                        print(f"[guard] pathfinder controller created: {controller_id}")
+                except Exception as e:
+                    print(f"[guard] pathfinder analysis error: {e}")
             else:
                 print(f"[guard] model file not found, skipping envs update: {model_path}")
 
@@ -2292,21 +2303,6 @@ if __name__ == "__main__":
         )
         print(f"[guard __main__] created env {env_id}")
 
-    grid_animation_recorder = None
-    if os.getenv("GRID_STREAM_ENABLED", "false").lower() in ("true", "1"):
-        try:
-
-            env_cfg = {**{"dims": 3, "amount_of_nodes": 1}}
-            grid_animation_recorder = GridAnimationRecorder(
-                env_id=env_id,
-                user_id=user_id,
-                env_cfg=env_cfg,
-                cfg={},
-                env_manager=env_manager,
-            )
-        except Exception as e:
-            print(f"[guard __main__] animation recorder init: {e}")
-
     g = GUtils()
     qfu = QFUtils(g)
     guard = Guard(
@@ -2320,7 +2316,9 @@ if __name__ == "__main__":
         params_manager=params_manager,
         env_manager=env_manager,
     )
-    guard.main(env_id=env_id, env_data=env_data, grid_animation_recorder=grid_animation_recorder)
+    # For standalone guard __main__ flow we currently skip matplotlib-based animation recording
+    # to keep CLI usage lightweight and dependency‑free.
+    guard.main(env_id=env_id, env_data=env_data, grid_animation_recorder=None)
 
     # Debug: print saved paths from envs
     updated = env_manager.retrieve_env_from_id(env_id)

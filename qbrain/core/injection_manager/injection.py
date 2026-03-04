@@ -6,7 +6,7 @@ Injection format: {id: str, data: [[times], [energies]], ntype: str}
 """
 
 from typing import Optional, Dict, Any, List
-from qbrain.a_b_c.bq_agent._bq_core.bq_handler import BQCore
+
 from qbrain.core.qbrain_manager import get_qbrain_table_manager
 
 _INJ_DEBUG = "[InjectionManager]"
@@ -353,8 +353,8 @@ class InjectionManager:
             return []
 
 
-_default_bqcore = BQCore(dataset_id="QBRAIN")
-_default_injection_manager = InjectionManager(get_qbrain_table_manager(_default_bqcore))
+
+_default_injection_manager = InjectionManager(get_qbrain_table_manager(None))
 injection_manager = _default_injection_manager  # backward compat
 
 import random

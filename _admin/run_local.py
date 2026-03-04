@@ -401,7 +401,7 @@ def run_one_in_new_terminal(
     # (inner uses cwd_abs for consistent absolute cwd on all platforms)
     try:
         if os.name == "nt":
-            title = f"BestBrain {rel}"
+            title = f"{project_root.name} {rel}"
             win_cmd = f'cd /d "{cwd_abs}" && set PYTHONPATH={env.get("PYTHONPATH", "")} && set DJANGO_SETTINGS_MODULE={env.get("DJANGO_SETTINGS_MODULE", "")} && {cmd_str}'
             if verbose:
                 print(f"[Admin run-local] [DEBUG] {rel} -> title={title!r}")

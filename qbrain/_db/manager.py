@@ -6,7 +6,6 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-# Default DuckDB path: qbrain/local.duckdb (canonical location after moving root files into qbrain)
 _DEFAULT_DUCK_PATH = str(Path(__file__).resolve().parent.parent / "local.duckdb")
 
 
@@ -39,7 +38,7 @@ class DBManager:
     def __init__(
         self,
         local: bool = True,
-        duck_path: str = "local.duckdb",
+        duck_path: str = _DEFAULT_DUCK_PATH,
         dataset_id: Optional[str] = None,
     ):
         """
@@ -60,16 +59,31 @@ class DBManager:
             self.get_table_schema = self._duck_get_table_schema
         else:
             self._con = None
+            self._bqcore = None
             if dataset_id:
-                from qbrain.a_b_c.bq_agent._bq_core.bq_handler import BQCore
-                bqcore = BQCore(dataset_id=dataset_id)
+                try:
+                    from qbrain._bigquery_toolbox.bq_handler import BQCore  # type: ignore
+                except Exception as e:
+                    raise ImportError(
+                        "BigQuery support requires qbrain._bigquery_toolbox.bq_handler.BQCore "
+                        "and google-cloud-bigquery dependencies."
+                    ) from e
 
+                bqcore = BQCore(dataset_id=dataset_id)
                 self._bqcore = bqcore
                 self.pid = bqcore.pid
                 self.bqclient = bqcore.bqclient
                 self.ds_id = bqcore.ds_id
                 self.ds_ref = bqcore.ds_ref or f"{bqcore.pid}.{bqcore.ds_id}"
                 self.get_table_schema = bqcore.get_table_schema
+            else:
+                # Remote mode without dataset configured: keep manager instantiable,
+                # but operations requiring BigQuery will fail until configured.
+                self.pid = None
+                self.bqclient = None
+                self.ds_id = None
+                self.ds_ref = None
+                self.get_table_schema = None
 
     def close(self):
         """Close connection (DuckDB only)."""
@@ -138,7 +152,6 @@ class DBManager:
                 )
             return self.bqcore.run_query(query, conv_to_dict=conv_to_dict, job_config=job_config)
         return self._run_duck(query, conv_to_dict=conv_to_dict, job_config=job_config, bind_values=params)
-
 
 
     def _run_query_duck(

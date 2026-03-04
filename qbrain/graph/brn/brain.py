@@ -15,11 +15,11 @@ from qbrain.core.orchestrator_manager.orchestrator import Thalamus
 from qbrain.core.qbrain_manager import get_qbrain_table_manager
 from qbrain.core.researcher2.researcher2.core import ResearchAgent
 from qbrain.gem_core.gem import Gem
-from qbrain.graph.brn.brain_classifier import BrainClassifier
 from qbrain.graph.brn.brain_executor import BrainExecutor, _flatten_required_keys
 from qbrain.graph.brn.brain_hydrator import BrainHydrator
 from qbrain.graph.brn.brain_schema import BrainEdgeRel, BrainNodeType, DataCollectionResult, GoalDecision
 from qbrain.graph.brn.brain_workers import BrainWorkers
+from qbrain.graph.brn.think_manager import ThinkManager
 from qbrain.graph.local_graph_utils import GUtils
 from qbrain.predefined_case import RELAY_CASES_CONFIG
 from qbrain.core.model_manager.model_lib import ModelManager
@@ -70,6 +70,11 @@ class Brain(GUtils):
         self.long_term_ids: List[str] = []
         self.last_goal_node_id: Optional[str] = None
         self._qb = get_qbrain_table_manager()
+        try:
+            self.think_manager: Optional[ThinkManager] = ThinkManager(G=self.G, qb=self._qb, user_id=self.user_id)
+        except Exception as exc:
+            print(f"Brain.__init__: ThinkManager init warning: {exc}")
+            self.think_manager = None
         self.workers = BrainWorkers(max_workers=4)
         self.hydrator = BrainHydrator(self._qb)
         self.executor = BrainExecutor()
@@ -448,6 +453,13 @@ class Brain(GUtils):
         self.ingest_input(user_query, content_type="text", request_id=request_id)
         decision = self.classify_goal(user_query)
         collect = self.collect_required_data(decision, user_payload=user_payload)
+        suggestions: Dict[str, Any] = {}
+        if getattr(self, "think_manager", None) is not None and collect.missing:
+            try:
+                case_item: Dict[str, Any] = decision.case_item or {}
+                suggestions = self.think_manager.suggest_missing_fields(case_item, collect.missing)
+            except Exception as exc:
+                print(f"execute_or_ask: ThinkManager.suggest_missing_fields warning: {exc}")
         created_sub_goal_id: Optional[str] = None
 
         if collect.missing:
@@ -477,6 +489,14 @@ class Brain(GUtils):
             resolved_fields=collect.resolved,
             missing_fields=collect.missing,
         )
+
+        if suggestions:
+            try:
+                # Attach ThinkManager suggestions without mutating core executor semantics.
+                if isinstance(result, dict):
+                    result.setdefault("suggestions", suggestions)
+            except Exception as exc:
+                print(f"execute_or_ask: attach suggestions warning: {exc}")
 
         # If execution succeeded, remove active GOAL and related SUB_GOAL nodes.
         if str(result.get("status") or "").lower() == "executed":

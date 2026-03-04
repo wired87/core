@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 from google.cloud import bigquery
-from qbrain.a_b_c.bq_agent._bq_core.bq_handler import BQCore
+
 
 from qbrain.core.file_manager import RawModuleExtractor
 from qbrain.core.qbrain_manager import get_qbrain_table_manager
@@ -252,8 +252,8 @@ class ModuleWsManager:
 
 
 # Default instance for standalone use (no orchestrator context)
-_default_bqcore = BQCore(dataset_id="QBRAIN")
-_default_module_manager = ModuleWsManager(get_qbrain_table_manager(_default_bqcore))
+
+_default_module_manager = ModuleWsManager(get_qbrain_table_manager(None))
 module_manager = _default_module_manager  # backward compat
 
 # -- RELAY HANDLERS --

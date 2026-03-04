@@ -1,17 +1,15 @@
 
 import base64
 import json
-import os
 import random
 from datetime import datetime
 from typing import Dict, Any, List, TypedDict, Callable, Optional
 
 import dotenv
 from qbrain.core.file_manager.extractor import RawModuleExtractor
-from qbrain.core.file_manager.graph_processor import GraphProcessor, get_graph_processor
+from qbrain.core.file_manager.graph_processor import get_graph_processor
 from qbrain.core.qbrain_manager import get_qbrain_table_manager
 from qbrain.core.handler_utils import require_param, require_param_truthy, get_val
-from qbrain.a_b_c.bq_agent._bq_core.bq_handler import BQCore
 dotenv.load_dotenv()
 
 
@@ -712,8 +710,8 @@ Return only valid JSON, no markdown or extra text."""
  
 
 # Default instance for standalone use (no orchestrator context)
-_default_bqcore = BQCore(dataset_id="QBRAIN")
-_default_file_manager = FileManager(get_qbrain_table_manager(_default_bqcore))
+
+_default_file_manager = FileManager(get_qbrain_table_manager(None))
 file_manager = _default_file_manager  # backward compat
 
 # -- VALIDATION HANDLERS --
@@ -749,13 +747,15 @@ def handle_route_file(data=None, auth=None):
     return get_file_manager().route_file_action(user_id=user_id, data=file_data)
 
 if __name__ == "__main__":
+    from pathlib import Path
+    repo_root = Path(__file__).resolve().parents[4]
+    test_pdf = repo_root / "test_paper.pdf"
+    demo_files = [open(test_pdf, "rb")] if test_pdf.exists() else []
     _default_file_manager.process_and_upload_file_config(
         user_id="public",
         data={
             "id": "hi",
-            "files": [
-                open(r"C:\Users\bestb\PycharmProjects\BestBrain\test_paper.pdf", "rb")
-            ]
+            "files": demo_files
         },
         testing=False
     )

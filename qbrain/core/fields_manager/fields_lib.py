@@ -1,11 +1,8 @@
-import base64
 import random
 import json
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
-from google.cloud import bigquery
-from qbrain.a_b_c.bq_agent._bq_core.bq_handler import BQCore
 from qbrain.core.fields_manager.prompt import extract_fields_prompt
 from qbrain.core.fields_manager.set_type import SetFieldItem
 
@@ -15,28 +12,6 @@ from qbrain.qf_utils.all_subs import FERMIONS, G_FIELDS, H
 from qbrain.qf_utils.qf_utils import QFUtils
 
 _FIELDS_DEBUG = "[FieldsManager]"
-
-# Define Schemas
-FIELD_SCHEMA = [
-    bigquery.SchemaField("id", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("params", "STRING", mode="NULLABLE"),  # Storing JSON as STRING
-    bigquery.SchemaField("module", "STRING", mode="NULLABLE"),
-    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
-]
-
-FIELD_TO_FIELD_SCHEMA = [
-    bigquery.SchemaField("id", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("field_id", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("interactant_field_id", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
-]
-
-MODULE_TO_FIELD_SCHEMA = [
-    bigquery.SchemaField("id", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("module_id", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("field_id", "STRING", mode="REQUIRED"),
-    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
-]
 
 def generate_numeric_id() -> str:
     """Generate a random numeric ID."""
@@ -87,7 +62,7 @@ class FieldsManager:
         Uses Gem LLM with req_struct/out_struct from SET_FIELD case.
         """
         try:
-            from gem_core.gem import Gem
+            from qbrain.gem_core.gem import Gem
             gem = Gem()
             prompt, config = self._get_extract_prompt(
                 user_input,
@@ -111,13 +86,6 @@ class FieldsManager:
             traceback.print_exc()
             return None
 
-    def _ensure_fields_table(self):
-        schema = {f.name: f.field_type for f in FIELD_SCHEMA}
-        self.qb.get_table_schema(table_id=self.FIELDS_TABLE, schema=schema, create_if_not_exists=True)
-
-    def _ensure_fields_to_fields_table(self):
-        schema = {f.name: f.field_type for f in FIELD_TO_FIELD_SCHEMA}
-        self.qb.get_table_schema(table_id=self.FIELDS_TO_FIELDS_TABLE, schema=schema, create_if_not_exists=True)
 
     def get_field_interactants(self, field_id: str, select: str = "*") -> Dict[str, list[str or None]]:
         try:
@@ -132,9 +100,6 @@ class FieldsManager:
             return {"interactant_ids": []}
 
 
-    def _ensure_module_to_field_table(self):
-        schema = {f.name: f.field_type for f in MODULE_TO_FIELD_SCHEMA}
-        self.qb.get_table_schema(table_id=self.MODULE_TO_FIELD_TABLE, schema=schema, create_if_not_exists=True)
 
 
     def get_fields_by_user(self, user_id: str, select: str = "*") -> List[Dict[str, Any]]:
@@ -325,8 +290,8 @@ class FieldsManager:
             self.set_field(batch_data, user_id)
             print(f"Uploaded {len(batch_data)} SM fields")
 
-_default_bqcore = BQCore(dataset_id="QBRAIN")
-_default_field_manager = FieldsManager(get_qbrain_table_manager(_default_bqcore))
+
+_default_field_manager = FieldsManager(get_qbrain_table_manager(None))
 fields_manager = _default_field_manager  # backward compat
 
 # HANDLERS

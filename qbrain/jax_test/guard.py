@@ -2,6 +2,8 @@ import base64
 import json
 import os
 import zoneinfo
+from typing import Any, Dict, List
+
 import jax.numpy as jnp
 
 from data_handler.load_sa_creds import load_service_account_credentials
@@ -35,6 +37,19 @@ def _to_json_serializable(data):
             return {"real": float(jnp.real(v)), "imag": float(jnp.imag(v))}
         return float(v) if hasattr(v, "real") else v
     return data
+
+
+def _sanitize_param_column_name(raw_id: str) -> str:
+    """
+    Map a param id to a safe column name for the envs table.
+    Mirrors logic from ParamsManager._sanitize_param_column_name.
+    """
+    safe = "".join(ch if ch.isalnum() else "_" for ch in str(raw_id))
+    if not safe:
+        safe = "param"
+    if safe[0].isdigit():
+        safe = f"p_{safe}"
+    return f"p_{safe}"
 
 
 class Guard:
@@ -247,6 +262,119 @@ class Guard:
             print("engine state saved to", out_path)
         except Exception as e:
             print("export_engine_state failed:", e)
+
+        # Persist stacked param series (values + features) into envs table.
+        try:
+            self._persist_param_series_to_env(dl)
+        except Exception as e:
+            print("[jax_test.Guard] persist_param_series_to_env warning:", e)
+
+    def _build_param_keys(self) -> List[str]:
+        """
+        Build a flat list of param keys in the same order as controller metadata.
+        Mirrors jax_test.grid.live_payload._flat_keys_from_cfg.
+        """
+        gnn = self.gnn_layer
+        param_ctrl = getattr(gnn, "DB_PARAM_CONTROLLER", []) or []
+        amount_per_field = getattr(gnn, "AMOUNT_PARAMS_PER_FIELD", []) or []
+        modules = getattr(gnn, "MODULES", None) or [0]
+        fields = getattr(gnn, "FIELDS", None) or [1]
+        db_keys = getattr(gnn, "DB_KEYS", None)
+        field_keys = getattr(gnn, "FIELD_KEYS", None)
+
+        try:
+            param_ctrl = list(param_ctrl)
+        except TypeError:
+            param_ctrl = [param_ctrl]
+        try:
+            amount_per_field = list(amount_per_field)
+        except TypeError:
+            amount_per_field = [amount_per_field]
+        try:
+            modules = list(modules)
+        except TypeError:
+            modules = [modules]
+        try:
+            fields = list(fields)
+        except TypeError:
+            fields = [fields]
+
+        n_modules = max(1, max(modules) + 1) if modules else 1
+        n_fields = max(1, max(fields)) if fields else 1
+
+        keys: List[str] = []
+        idx = 0
+        for _mi in range(n_modules):
+            for _fi in range(n_fields):
+                flat_idx = _mi * n_fields + _fi
+                n_params = amount_per_field[flat_idx] if flat_idx < len(amount_per_field) else 1
+                for _pi in range(n_params):
+                    if db_keys and idx < len(db_keys):
+                        keys.append(str(db_keys[idx]))
+                    elif field_keys and idx < len(field_keys):
+                        keys.append(str(field_keys[idx]))
+                    else:
+                        keys.append(f"p_{idx}")
+                    idx += 1
+        return keys
+
+    def _build_param_series_payload(self, dl) -> Dict[str, Any]:
+        """
+        Combine DBLayer per-param histories into column payloads:
+            { env_col_name: {\"values\": [...], \"features\": [...] }, ... }
+        """
+        values_hist: Dict[int, list] = getattr(dl, "param_values_history", {}) or {}
+        features_hist: Dict[int, list] = getattr(dl, "param_features_history", {}) or {}
+        if not values_hist and not features_hist:
+            return {}
+
+        keys = self._build_param_keys()
+        all_indices = sorted(set(list(values_hist.keys()) + list(features_hist.keys())))
+        out: Dict[str, Any] = {}
+        for idx in all_indices:
+            if idx < 0:
+                continue
+            key = keys[idx] if idx < len(keys) else f"p_{idx}"
+            col_name = _sanitize_param_column_name(key)
+            vals = values_hist.get(idx, []) or []
+            feats = features_hist.get(idx, []) or []
+            # Ensure JSON-serializable primitives.
+            vals_f = [float(v) for v in vals]
+            feats_f = [float(f) for f in feats]
+            out[col_name] = {
+                "values": vals_f,
+                "features": feats_f,
+            }
+        return out
+
+    def _persist_param_series_to_env(self, dl) -> None:
+        """
+        Persist merged param series into envs table row for (env_id, user_id, goal_id).
+        """
+        try:
+            from qbrain.core.env_manager.env_lib import EnvManager
+        except Exception as e:
+            print("[jax_test.Guard] EnvManager import warning:", e)
+            return
+
+        env_id = os.getenv("ENV_ID")
+        user_id = os.getenv("USER_ID")
+        goal_id = os.getenv("GOAL_ID")
+
+        if not env_id or not user_id:
+            print("[jax_test.Guard] _persist_param_series_to_env: missing ENV_ID or USER_ID, skipping")
+            return
+
+        series = self._build_param_series_payload(dl)
+        if not series:
+            print("[jax_test.Guard] _persist_param_series_to_env: empty series, skipping")
+            return
+
+        try:
+            mgr = EnvManager()
+            mgr.update_env_param_series(env_id=env_id, user_id=user_id, goal_id=goal_id, param_series=series)
+        except Exception as e:
+            print("[jax_test.Guard] _persist_param_series_to_env: update_env_param_series warning:", e)
 
     def finish(self):
         # Collect data

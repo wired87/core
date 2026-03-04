@@ -1,6 +1,10 @@
 from qbrain.core.qbrain_manager import get_qbrain_table_manager
 from qbrain.core.handler_utils import require_param, get_val
-from gem_core.gem import Gem
+try:
+    # Prefer package-relative import when qbrain is installed as a package
+    from qbrain.gem_core.gem import Gem
+except ImportError:  # Fallback for environments where gem_core is on sys.path directly
+    from gem_core.gem import Gem
 
 class ModelManager:
     """
