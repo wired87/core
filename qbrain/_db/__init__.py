@@ -7,8 +7,16 @@ pip install duckdb
 """
 
 from qbrain._db import queries as queries
-from qbrain._db.manager import DBManager
-from qbrain._db.vector_store import VectorStore
+from qbrain._db.log_facade import db_log
+from qbrain._db.manager import DBManager, get_db_manager
+from qbrain._db.workflows import db_check, db_status
 
 
-__all__ = ["queries", "DBManager", "VectorStore"]
+__all__ = [
+    "queries",
+    "DBManager",
+    "get_db_manager",
+    "db_status",
+    "db_check",
+    "db_log",
+]

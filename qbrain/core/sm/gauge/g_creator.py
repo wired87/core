@@ -104,7 +104,7 @@ class GaugeCreator(GaugeUtils):
     def gfield(
             self,
             ntype,
-            dim
+            dim=1
     ):
         field_value=self.field_value(dim=dim)
 
@@ -112,7 +112,7 @@ class GaugeCreator(GaugeUtils):
             k: v
             for k, v in GAUGE_FIELDS[ntype].items()
         }
-
+        # uniform format
         field = {
             "gg_coupling": field_value,
             "gf_coupling": field_value,
@@ -125,7 +125,7 @@ class GaugeCreator(GaugeUtils):
             "fmunu": self.fmunu(dim),
             "prev_fmunu": self.fmunu(dim),
             "dmu_fmunu": self.dmu_fmunu(dim),
-            **const,
+            **{k:[v] for k, v in const.items()},
         }
 
         return field

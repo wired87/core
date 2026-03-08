@@ -1,0 +1,154 @@
+{
+  "$schema": "https://raw.githubusercontent.com/google-gemini/gemini-cli/main/schemas/settings.schema.json",
+  "general": {
+    "preferredEditor": "code",
+    "vimMode": false,
+    "defaultApprovalMode": "auto_edit",
+    "devtools": false,
+    "enableAutoUpdate": true,
+    "enableAutoUpdateNotification": true,
+    "enableNotifications": false,
+    "checkpointing": {
+      "enabled": false
+    },
+    "plan": {
+      "directory": "C:\\Users\\bestb\\PycharmProjects\\BestBrain\\.gemini\\plans",
+      "modelRouting": true
+    },
+    "retryFetchErrors": false,
+    "maxAttempts": 10,
+    "debugKeystrokeLogging": false,
+    "sessionRetention": {
+      "enabled": true,
+      "maxAge": "30d",
+      "maxCount": 100,
+      "minRetention": "1d"
+    }
+  },
+  "output": {
+    "format": "text"
+  },
+  "ui": {
+    "theme": "default",
+    "autoThemeSwitching": true,
+    "terminalBackgroundPollingInterval": 60,
+    "hideWindowTitle": false,
+    "inlineThinkingMode": "off",
+    "showStatusInTitle": false,
+    "dynamicWindowTitle": true,
+    "showHomeDirectoryWarning": true,
+    "showCompatibilityWarnings": true,
+    "hideTips": false,
+    "showShortcutsHint": true,
+    "hideBanner": false,
+    "hideContextSummary": false,
+    "footer": {
+      "showLabels": true,
+      "hideCWD": false,
+      "hideSandboxStatus": false,
+      "hideModelInfo": false,
+      "hideContextPercentage": true
+    },
+    "hideFooter": false,
+    "showMemoryUsage": false,
+    "showLineNumbers": true,
+    "showCitations": false,
+    "showModelInfoInChat": false,
+    "showUserIdentity": true,
+    "useAlternateBuffer": false,
+    "useBackgroundColor": true,
+    "showSpinner": true,
+    "loadingPhrases": "tips",
+    "errorVerbosity": "low",
+    "customWittyPhrases": []
+  },
+  "model": {
+    "name": "gemini-2.5-flash",
+    "maxSessionTurns": -1,
+    "summarizeToolOutput": {
+      "run_shell_command": {
+        "tokenBudget": 2000
+      }
+    },
+    "compressionThreshold": 0.5,
+    "disableLoopDetection": false,
+    "skipNextSpeakerCheck": true
+  },
+  "context": {
+    "fileName": [
+      "GEMINI.md",
+      "CONTEXT.md"
+    ],
+    "includeDirectories": [
+      "C:\\Users\\bestb\\PycharmProjects\\BestBrain",
+      "C:\\Users\\bestb\\PycharmProjects\\BestBrain\\qdash",
+      "C:\\Users\\bestb\\PycharmProjects\\BestBrain\\qbrain",
+      "C:\\Users\\bestb\\PycharmProjects\\BestBrain\\_admin"
+    ],
+    "loadMemoryFromIncludeDirectories": true,
+    "includeDirectoryTree": true,
+    "discoveryMaxDirs": 200,
+    "fileFiltering": {
+      "respectGitIgnore": true,
+      "respectGeminiIgnore": true,
+      "enableRecursiveFileSearch": true,
+      "enableFuzzySearch": true
+    }
+  },
+  "tools": {
+    "sandbox": false,
+    "shell": {
+      "enableInteractiveShell": true,
+      "pager": "cat",
+      "showColor": false,
+      "inactivityTimeout": 300,
+      "enableShellOutputEfficiency": true
+    },
+    "useRipgrep": true,
+    "truncateToolOutputThreshold": 40000,
+    "disableLLMCorrection": true
+  },
+  "mcpServers": {
+    "github": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "ghcr.io/modelcontextprotocol/servers/github:latest"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+      },
+      "timeout": 60000,
+      "trust": false,
+      "description": "GitHub MCP: list PRs, create issues, manage repos."
+    }
+  },
+  "mcp": {
+    "allowed": [
+      "github"
+    ],
+    "excluded": []
+  },
+  "billing": {
+    "overageStrategy": "ask"
+  },
+  "security": {
+    "disableYoloMode": false,
+    "enablePermanentToolApproval": false,
+    "folderTrust": {
+      "enabled": true
+    },
+    "environmentVariableRedaction": {
+      "enabled": false,
+      "allowed": [],
+      "blocked": []
+    }
+  },
+  "privacy": {
+    "usageStatisticsEnabled": true
+  }
+}

@@ -6,10 +6,11 @@ from flax import linen as nn
 import jax
 import jax.numpy as jnp
 from flax import nnx
-from flax.nnx.nnx.transforms.transforms import jit_fn
 from jax import vmap, jit
 
-from utils import SHIFT_DIRS, DIM, create_runnable
+from qbrain.core.app_utils import SHIFT_DIRS
+from qbrain.jax_test.utils import DIM, create_runnable
+
 
 class ModuleUtils:
 
@@ -74,7 +75,7 @@ class Node(nnx.Module):
 
     def __init__(self,axis, runnable=None, *, amount_variations=None, neighbor_val_item=None):
         self.embedding_dim = 64
-        self.runnable = runnable if runnable is not None else test
+        self.runnable = runnable
         self.param_blur = .99
         self.result_blur = .01
         self.amount_variations = amount_variations  # optional, for per-eq variation count
@@ -159,7 +160,6 @@ class Node(nnx.Module):
             return self.runnable(*_args)
 
         def calc_single_axis(px_val, shift):
-            _args = args
             for neighbor_grid_idx in self.neighbor_idx:
                 _args[neighbor_grid_idx] = jnp.roll(
                     args[neighbor_grid_idx],
@@ -169,7 +169,7 @@ class Node(nnx.Module):
             kernel = vmap(calc_shift_item, in_axes=self.axis)
             return kernel(*_args)
 
-        def work_pm_shift(shift_struct):
+        def work_pm_shift(grid, shift):
             kernel = vmap(calc_single_axis, in_axes=0)
             result = kernel(grid, shift)
             return result

@@ -108,7 +108,7 @@ class FermCreator(FermUtils):
     def create_f_core_batch(
             self,
             ntype,
-            dim:int = 3,
+            dim:int = 1,
             just_v=False,
             just_k=False,
     ):
@@ -123,13 +123,14 @@ class FermCreator(FermUtils):
                 yterm=psi,
                 gf_coupling=psi,
                 gg_coupling=psi,
-                dmu_psi= self.dmu(dim),
+                dmu_psi=self.dmu(dim), # todo do not save diff
                 psi=psi,
                 dirac=psi,
                 psi_bar=psi,
                 prev=psi,
                 velocity=psi,
-                **item,
+                # wrap as list for later reshape to arr
+                **{k:[v] for k,v in item.items()},
             )
 
             if just_v:

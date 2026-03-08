@@ -49,6 +49,57 @@ class FieldsManager:
         respoonse_cfg = self.resturn_config()
         return prompt, respoonse_cfg
 
+    def extract_prompt(
+        self,
+        instructions: str,
+        params: List[Dict[str, Any]],
+        fallback_params: List[Dict[str, Any]],
+    ) -> str:
+        """Static prompt for extraction. Used by intelligent_extraction as manager_prompt_ext."""
+        return extract_fields_prompt(
+            instructions=instructions,
+            params=params,
+            fallback_params=fallback_params,
+        )
+
+    def intelligent_processor(
+        self,
+        raw_payload: Dict[str, Any] | List[Dict[str, Any]],
+        user_id: str,
+        **kwargs,
+    ) -> List[Dict[str, Any]]:
+        """
+        Process raw extraction payload into normalized field dicts for set_item.
+        Sets params from fields.keys, params section. Returns list ready for set_field.
+        """
+        items = []
+        if isinstance(raw_payload, list):
+            items = [f for f in raw_payload if isinstance(f, dict)]
+        elif isinstance(raw_payload, dict):
+            for key in ("field", "fields", "data", "items"):
+                val = raw_payload.get(key)
+                if isinstance(val, list):
+                    items = [f for f in val if isinstance(f, dict)]
+                    break
+                elif isinstance(val, dict):
+                    items = [val]
+                    break
+
+        result = []
+        for f in items:
+            fid = f.get("id") or generate_numeric_id()
+            f["id"] = fid
+            f["user_id"] = user_id
+            f["status"] = "active"
+            if "params" in f and not isinstance(f["params"], str):
+                f["params"] = json.dumps(f["params"]) if f["params"] is not None else "[]"
+            if "keys" in f and not isinstance(f["keys"], str):
+                f["keys"] = json.dumps(f["keys"]) if f["keys"] is not None else "{}"
+            if "interactant_fields" in f and not isinstance(f.get("interactant_fields"), str):
+                f["interactant_fields"] = json.dumps(f["interactant_fields"]) if f.get("interactant_fields") else "[]"
+            result.append(f)
+        return result
+
     def extract_from_file_bytes(
             self,
             file_bytes: bytes or str,
@@ -185,7 +236,7 @@ class FieldsManager:
         if not isinstance(field_data, list):
             field_data = [field_data]
 
-        now = datetime.now().isoformat()
+        now = datetime.now()
 
         for f in field_data:
             f["user_id"] = user_id

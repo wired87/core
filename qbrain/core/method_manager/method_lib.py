@@ -1,7 +1,7 @@
 import json
 import logging
 import random
-from typing import Dict, Any, List, Optional, Callable, Tuple, Union
+from typing import Dict, Any, List, Optional, Callable
 
 import numpy as np
 
@@ -11,9 +11,8 @@ from qbrain.core.module_manager.create_runnable import create_runnable
 from qbrain.core.param_manager.params_lib import ParamsManager
 from qbrain.core.qbrain_manager import get_qbrain_table_manager, QBrainTableManager
 from qbrain.core.handler_utils import require_param, require_param_truthy, get_val
+from qbrain.graph import GUtils
 from qbrain.qf_utils.qf_utils import QFUtils
-
-
 
 def generate_numeric_id() -> str:
     """Generate a random numeric ID."""
@@ -34,153 +33,300 @@ class MethodManager:
         self._extract_prompt = None  # built lazily to avoid circular import with case
 
 
-    def execute_method_testwise(self, methods:list[dict], user_id, g):
-        """
-        Collect shapes from test execution with param vals from param shape
-        """
-        print("execute_method_testwise...")
+    def execute_method_testwise(self, methods: list[dict], user_id, g):
+        print("[START] execute_method_testwise")
+        try:
+            return_key_ids = self._collect_return_keys(methods)
+            return_key_param_entries = self._load_return_param_entries(return_key_ids)
+            param_entries = self._load_user_params(user_id)
 
-        test_dims = 3
-        return_key_ids = [m["return_key"] for m in methods]
-        print("execute_method_testwise return_key_ids", return_key_ids)
-        return_key_param_entries = self.qb.row_from_id(return_key_ids, table="params")
+            self._merge_graph_param_entries(g, return_key_ids, return_key_param_entries)
+            self._merge_graph_param_entries_into_user_params(g, param_entries)
 
-        if return_key_param_entries:
-            return_key_param_entries = {p["id"]: p for p in return_key_param_entries}
+            print("Entries fetched:")
+            print("return_key_ids",return_key_ids)
+            print("return_key_param_entries",return_key_param_entries)
+            print("param_entries",param_entries)
 
-        param_entries = self.qb.get_users_entries(user_id, table="params")
-        if param_entries:
-            param_entries = {p["id"]: p for p in param_entries}
+            adapted_return_params = self._process_methods(
+                methods,
+                param_entries,
+                return_key_param_entries,
+                user_id,
+            )
+            self._persist_params(adapted_return_params, user_id)
+        except Exception as e:
+            print("[ERROR] execute_method_testwise", e)
+        print("[DONE] execute_method_testwise")
 
-        for k in return_key_ids:
-            v = {}
-            if g.G.has_node(k):
-                v = g.G.nodes[k]
-            if return_key_param_entries and k in return_key_param_entries:
-                return_key_param_entries[k].update(v)
+    def _collect_return_keys(self, methods):
+        print("[START] _collect_return_keys")
+        try:
+            ids = [m["return_key"] for m in methods]
+            print("return_key_ids:", ids)
+            return ids
+        except Exception as e:
+            print("[ERROR] _collect_return_keys", e)
+            return []
+        finally:
+            print("[DONE] _collect_return_keys")
+
+    def _load_return_param_entries(self, return_key_ids):
+        print("[START] _load_return_param_entries")
+        try:
+            entries = self.qb.row_from_id(return_key_ids, table="params")
+            if entries:
+                entries = {p["id"]: p for p in entries}
             else:
-                return_key_param_entries[k] = v
+                entries = {}
+            return entries
+        except Exception as e:
+            print("[ERROR] _load_return_param_entries", e)
+            return {}
+        finally:
+            print("[DONE] _load_return_param_entries")
 
+    def _load_user_params(self, user_id):
+        print("[START] _load_user_params")
+        try:
+            entries = self.qb.get_users_entries(user_id, table="params")
+            if entries:
+                entries = {p["id"]: p for p in entries}
+            else:
+                entries = {}
+            return entries
+        except Exception as e:
+            print("[ERROR] _load_user_params", e)
+            return {}
+        finally:
+            print("[DONE] _load_user_params")
+
+    def _merge_graph_param_entries(self, g, return_key_ids, return_key_param_entries):
+        print("[START] _merge_graph_param_entries")
+        try:
+            for k in return_key_ids:
+                node_data = {}
+                if g.G.has_node(k):
+                    node_data = g.G.nodes[k]
+
+                if k in return_key_param_entries:
+                    return_key_param_entries[k].update(node_data)
+                else:
+                    return_key_param_entries[k] = node_data
+        except Exception as e:
+            print("[ERROR] _merge_graph_param_entries", e)
+        finally:
+            print("[DONE] _merge_graph_param_entries")
+
+    def _merge_graph_param_entries_into_user_params(self, g, param_entries):
+        """Merge PARAM nodes from graph into param_entries so method execution has all params (fixes mismatch vs param_rows from SM workflow)."""
+        try:
+            for nid, attrs in g.G.nodes(data=True):
+                if attrs.get("type") == "PARAM":
+                    param_data = {
+                        "id": nid,
+                        "param_type": attrs.get("param_type"),
+                        "description": attrs.get("description", ""),
+                        "const": attrs.get("const"),
+                        "axis_def": attrs.get("axis_def"),
+                        "value": attrs.get("value"),
+                        "shape": attrs.get("shape"),
+                    }
+                    if nid in param_entries:
+                        param_entries[nid].update(param_data)
+                    else:
+                        param_entries[nid] = param_data
+        except Exception as e:
+            print("[ERROR] _merge_graph_param_entries_into_user_params", e)
+
+    def _process_methods(self, methods, param_entries, return_key_param_entries, user_id):
+        print("[START] _process_methods")
         adapted_return_params = []
 
-        for i, _def_content in enumerate(methods):
-            params = _def_content.get("params")
-            equation = _def_content.get("equation")
-            return_key = _def_content.get("return_key")
-            code = _def_content.get("code")
-            try:
+        try:
+            for method in methods:
+                payload = self._execute_single_method(
+                    method,
+                    param_entries,
+                    return_key_param_entries,
+                )
 
-                _def_id = _def_content["id"]
+                if payload:
+                    adapted_return_params.append(payload)
 
-                # try get param shape from db
-                param_shape=None
-                param_entry = return_key_param_entries[return_key]
-                if param_entry:
-                    param_shape = param_entry["shape"]
+        except Exception as e:
+            print("[ERROR] _process_methods", e)
 
-                if not param_shape:
-                    # CALC THE RESULT SHAPE
-                    val_params = []
-                    for p_key in params:
-                        p_shape = param_entries[p_key]["shape"]
-                        param_type = param_entries[p_key]["param_type"]
-                        param_value = param_entries[p_key]["value"]
+        print("[DONE] _process_methods")
+        return adapted_return_params
 
-                        # adapt_to_n_dims returns nested data or scalar; used to infer if param is array-like
-                        resolved = self.adapt_to_n_dims(
-                            p_key=p_key,
-                            param_type=param_type,
-                            flat_value=param_value,
-                            shape=p_shape,
-                        )
+    def _execute_single_method(self, method, param_entries, return_key_param_entries):
+        print("[START] _execute_single_method")
 
-                        is_array = resolved and isinstance(resolved, (list, tuple)) and len(resolved)
-                        # Build placeholder: use complex64 so physics methods (e.g. calc_psi_bar) that
-                        # call .conj() on args do not fail (Python int has no .conj())
-                        if is_array:
-                            arr_shape = np.array(resolved).shape
-                            val_params.append(np.ones(arr_shape, dtype=np.complex64))
-                        else:
-                            val_params.append(np.asarray(1, dtype=np.complex64))
-                    print("val_params", params, val_params)
+        try:
+            params = method.get("params")
+            code = method.get("code")
+            return_key = method.get("return_key")
+            _def_id = method["id"]
 
-                    runnable: Callable = create_runnable(code)
-                    result = runnable(*val_params)
+            print("CALC METHOD TESTWISE WITH:")
+            print("code:", code)
+            print("return_key:", return_key)
+            print("params:", params)
 
-                    if result:
-                        result_shape = np.array(result).shape
+            param_entry = return_key_param_entries.get(return_key)
+            param_shape = None
 
-                        # upsert resul
-                        if param_entry:
-                            payload = param_entry
+            if param_entry:
+                param_shape = param_entry.get("shape")
 
-                        else:
-                            payload = dict(
-                                id=return_key,
-                                param_type=type(result),
-                                axis_def=0,
-                                description=f"return key of {_def_id}"
-                            )
-                        payload["shape"]=result_shape
-                        adapted_return_params.append(payload)
+            if param_shape:
+                print("shape already known:", param_shape)
+                return None
 
-                    else:
-                        print("no result shape found...")
+            val_params = self._build_placeholder_params(params, param_entries)
+            runnable: Callable = create_runnable(code)
+            result = runnable(*val_params)
+
+            if result is None:
+                print("no result returned")
+                return None
+
+            result_shape = np.array(result).shape
+
+            if param_entry:
+                payload = param_entry
+            else:
+                payload = dict(
+                    id=return_key,
+                    param_type=str(type(result)),
+                    axis_def=0,
+                    description=f"return key of {_def_id}",
+                )
+
+            payload["shape"] = result_shape
+            return payload
+
+        except Exception as e:
+            print("[ERROR] _execute_single_method", e)
+            return None
+        finally:
+            print("[DONE] _execute_single_method")
+
+    def _build_placeholder_params(self, params, param_entries):
+        print("[START] _build_placeholder_params")
+        val_params = []
+        # inbalance between params and methods params -> create param entries from -> maybe user_id wrong?
+        try:
+            for p_key in params:
+                p_shape = param_entries[p_key]["shape"]
+                param_type = param_entries[p_key]["param_type"]
+                param_value = param_entries[p_key]["value"]
+
+                resolved = self.adapt_to_n_dims(
+                    p_key=p_key,
+                    param_type=param_type,
+                    flat_value=param_value,
+                    shape=p_shape,
+                )
+
+                is_array = resolved and isinstance(resolved, (list, tuple)) and len(resolved)
+
+                if is_array:
+                    arr_shape = np.array(resolved).shape
+                    # Replace dim 1 with 2 for matmul compatibility: (1,) @ (2,2) fails
+                    arr_shape = tuple(2 if d == 1 else d for d in arr_shape)
+                    val_params.append(np.ones(arr_shape, dtype=np.complex64))
                 else:
-                    raise Exception(f"runnable failed for code {code}, params {params},")
+                    # Use (2,2) so matmul/@ works; (1,1) can mismatch when other param has dim 2
+                    val_params.append(np.ones((2, 2), dtype=np.complex64))
 
+            print("val_params built:", val_params)
+            return val_params
+
+        except Exception as e:
+            print("[ERROR] _build_placeholder_params", e)
+            return []
+        finally:
+            print("[DONE] _build_placeholder_params")
+
+    def _persist_params(self, adapted_return_params, user_id):
+        print("[START] _persist_params")
+
+        try:
+            if adapted_return_params:
                 self.params_manager.set_param(
                     param_data=adapted_return_params,
                     user_id=user_id,
                 )
-                print("eq extractted", equation)
-            except Exception as e:
-                # Skip on shape mismatch / validation failure - continue workflow (minimal fix)
-                print(f"Err method manager execute_method_testwise", e, params)
-        print("execute_method_testwise... done")
+        except Exception as e:
+            print("[ERROR] _persist_params", e)
+        finally:
+            print("[DONE] _persist_params")
 
 
-    def adapt_to_n_dims(self, p_key, param_type: type, flat_value: list, shape: Tuple[int, ...]) -> Union[List, Tuple]:
+
+
+
+
+
+
+    def extract_prompt(
+        self,
+        params: List[Dict[str, Any]],
+        fallback_params: List[Dict[str, Any]],
+        instructions: str,
+    ) -> str:
+        """Static prompt for extraction. Used by intelligent_extraction as manager_prompt_ext."""
+        return xtrct_method_prompt(
+            params=params,
+            fallback_params=fallback_params,
+            instructions=instructions,
+        )
+
+    def intelligent_processor(
+        self,
+        raw_payload: Dict[str, Any] | List[Dict[str, Any]],
+        user_id: str,
+        **kwargs,
+    ) -> List[Dict[str, Any]]:
         """
-        Recursively nests a 1D list into N-dimensions based on the provided shape.
-
-        :param param_type: The desired container type (list or tuple)
-        :param flat_value: The 1D data source
-        :param shape: A tuple defining the dimensions (e.g., (3, 2, 2))
-        :return: Nested structure of param_type
+        Process raw extraction payload into normalized method dicts for set_item.
+        Infers params (required args) from method definition; fallback from methods.params.
+        Returns list ready for set_method.
         """
-        try:
-            if not shape:
-                print("no shape for", p_key, param_type, flat_value, shape)
-                return flat_value[0] if flat_value else None
-
-            # Calculate how many elements belong in each sub-slice of the current dimension
-            # Example: if shape is (3, 4) and flat_value has 12 items,
-            # the first dimension (3) contains 3 groups of 4 items each.
-            stride = 1
-            for dim in shape[1:]:
-                stride *= dim
-
-            nested = []
-            for i in range(0, len(flat_value), stride):
-                chunk = flat_value[i: i + stride]
-
-                # If there are more dimensions to process, recurse
-                if len(shape) > 1:
-                    nested.append(self.adapt_to_n_dims(param_type, chunk, shape[1:]))
-                else:
-                    # Base case: reached the last dimension
-                    nested.extend(chunk)
+        items = []
+        if isinstance(raw_payload, list):
+            items = [m for m in raw_payload if isinstance(m, dict)]
+        elif isinstance(raw_payload, dict):
+            for key in ("methods", "items"):
+                val = raw_payload.get(key)
+                if isinstance(val, list):
+                    items = [m for m in val if isinstance(m, dict)]
+                    break
+                elif isinstance(val, dict):
+                    items = [val]
                     break
 
-            ptype = param_type(nested)
-            print("param_shape", ptype)
-            return ptype
-        except Exception as e:
-            print(f"Err method manager adapt_to_n_dims", e)
-        return None
-
-
+        result = []
+        for m in items:
+            mid = m.get("id") or generate_numeric_id()
+            m["id"] = mid
+            m["user_id"] = user_id
+            if "equation" in m and "code" not in m:
+                m["code"] = m.get("equation", "")
+            if "params" in m and not isinstance(m["params"], list):
+                if isinstance(m["params"], str):
+                    try:
+                        m["params"] = json.loads(m["params"]) if m["params"] else []
+                    except json.JSONDecodeError:
+                        m["params"] = [m["params"]] if m["params"] else []
+                elif m["params"] is None:
+                    m["params"] = []
+            if "params" not in m:
+                m["params"] = []
+            result.append(m)
+        return result
 
     def extract_from_file_bytes(
             self,
@@ -228,15 +374,9 @@ class MethodManager:
             traceback.print_exc()
             return None
 
-    def set_method(self, rows: List[Dict] or Dict, user_id: str, g=None):
+    def set_method(self, rows: List[Dict] or Dict, user_id: str, g:GUtils=None):
         if isinstance(rows, dict):
             rows = [rows]
-
-        if g is not None:
-            self.execute_method_testwise(rows, user_id, g)
-
-
-
         print("set method rows", len(rows))
         self.qb.set_item(self.METHODS_TABLE, rows)
 
@@ -284,8 +424,7 @@ class MethodManager:
 
         self.qb.set_item(
             self.METHODS_TABLE, 
-            {"params": params}, 
-            keys={"id": method_id, "user_id": user_id}
+            {"params": params}
         )
 
     def retrieve_user_methods(self, user_id: str) -> List[Dict[str, Any]]:
@@ -309,7 +448,7 @@ class MethodManager:
         method_ids = [row['method_id'] for row in links]
         
         result = self.qb.row_from_id(
-            id=method_ids,
+            nid=method_ids,
             select="*",
             table=self.table_ref
         )
@@ -323,7 +462,7 @@ class MethodManager:
             method_id = [method_id]
 
         rows = self.qb.row_from_id(
-            id=method_id,
+            nid=method_id,
             select=select,
             table=self.METHODS_TABLE
         )
@@ -493,3 +632,68 @@ def handle_get_method(data=None, auth=None):
     if not row:
         return {"error": "Method not found"}
     return {"type": "GET_METHOD", "data": row}
+
+
+"""
+
+    def adapt_to_n_dims(self, p_key, param_type: type, flat_value: list, shape: Tuple[int, ...]) -> Union[List, Tuple]:
+        try:
+            # Normalize shape: may come as scalar, None, tuple, or JSON string
+            if isinstance(shape, str):
+                try:
+                    s = json.loads(shape)
+                    shape = tuple(s) if isinstance(s, (list, tuple)) else (s,) if s is not None else ()
+                except Exception:
+                    shape = ()
+            elif shape is None:
+                shape = ()
+            elif not isinstance(shape, (list, tuple)):
+                shape = (shape,) if shape else ()
+
+            # Parse flat_value if JSON string
+            if isinstance(flat_value, str):
+                try:
+                    flat_value = json.loads(flat_value)
+                except Exception:
+                    pass
+
+            if not shape:
+                print("no shape for", p_key, param_type, flat_value, shape)
+                if flat_value is None:
+                    return None
+                if isinstance(flat_value, (list, tuple)):
+                    return flat_value[0] if flat_value else None
+                return flat_value  # scalar (int, float, etc.)
+
+            # flat_value must be iterable for reshaping
+            if not isinstance(flat_value, (list, tuple)):
+                return flat_value
+
+            # Container type for nesting: only list/tuple are valid
+            container = list if param_type not in (list, tuple) else param_type
+
+            # Calculate how many elements belong in each sub-slice of the current dimension
+            stride = 1
+            for dim in shape[1:]:
+                stride *= dim
+
+            nested = []
+            for i in range(0, len(flat_value), stride):
+                chunk = flat_value[i: i + stride]
+
+                if len(shape) > 1:
+                    nested.append(self.adapt_to_n_dims(p_key, param_type, chunk, shape[1:]))
+                else:
+                    nested.extend(chunk)
+                    break
+
+            ptype = container(nested)
+            print("param_shape", ptype)
+            return ptype
+        except Exception as e:
+            print(f"Err method manager adapt_to_n_dims", e)
+        return None
+
+"""
+
+

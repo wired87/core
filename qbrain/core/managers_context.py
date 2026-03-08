@@ -74,10 +74,10 @@ def get_model_manager():
 
 
 def get_param_manager():
-    """Return param_manager from current orchestrator, or default."""
+    """Return params_manager from current orchestrator, or default."""
     orch = get_orchestrator()
     if orch is not None:
-        return orch.param_manager
+        return getattr(orch, "params_manager", None) or getattr(orch, "param_manager", None)
     from qbrain.core.param_manager.params_lib import _default_param_manager
     return _default_param_manager
 

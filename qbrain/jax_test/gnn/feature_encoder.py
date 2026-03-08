@@ -1,10 +1,9 @@
 import jax
 from jax import vmap
-from flax import nnx
 import jax.numpy as jnp
+import equinox as eqx
 
-
-class FeatureEncoder(nnx.Module):
+class FeatureEncoder(eqx.Module):
     # represents singe eq
 
     # todo do not get linears from db because difeent variatons (e.g. ff interaction) need diferent linears
@@ -18,7 +17,7 @@ class FeatureEncoder(nnx.Module):
             d_model: int = 64,
     ):
         # Wir speichern für jede Eingabe eine Projektion auf 64 Dimensionen
-        self.rngs = nnx.Rngs(42)
+        self.rngs = jax.random.PRNGKey(42)
         self.d_model = d_model
         self.amount_variations = amount_variations
         self.db_layer = db_layer
@@ -33,7 +32,7 @@ class FeatureEncoder(nnx.Module):
         self.in_ts = []  # CHANGED: gnn.py serialize() expects feature_encoder.in_ts
 
         self.in_linears = []
-        self.out_linears:list[nnx.Linear] = []
+        self.out_linears:list[eqx.nn.Linear] = []
 
         self.result_blur = .9
 
@@ -232,7 +231,7 @@ class FeatureEncoder(nnx.Module):
         print(f"build_linears for {eq_idx}...")
 
         def build_single(ilen):
-            linear = nnx.Linear(
+            linear = eqx.nn.Linear(
                 in_features=ilen,
                 out_features=self.d_model,
                 rngs=self.rngs
@@ -538,10 +537,10 @@ class FeatureEncoder(nnx.Module):
             feature_len_per_out
         ):
             linears.extend([
-                nnx.Linear(
+                eqx.nn.Linear(
                     in_features=in_dim,
                     out_features=self.d_model,
-                    rngs=self.rngs
+                    key=self.rngs
                 )
                 for _ in range(amount_features)
             ])
@@ -550,70 +549,3 @@ class FeatureEncoder(nnx.Module):
         self.out_linears.append(linears)
         print("create_out_linears... done")
 
-
-"""
-# check build out skeleton
-jax.lax.cond(
-    len(self.out_skeleton) == 0,
-    lambda: self.build_out_skeleton(
-        item=jax.tree_util.tree_map(
-            lambda x: x[0], output
-        )
-    ),
-    lambda: print("pass"),
-)
-
-
-        def _create_single_linear(
-                item_len,
-                feature_len_item
-        ):
-            linears = [
-                nnx.Linear(
-                    in_features=item_len,
-                    out_features=self.d_model,
-                    rngs=self.rngs
-                )
-                for _ in range(feature_len_item)
-            ]
-            return jnp.array(linears)
-            
-# CHANGED: was module-level; GNN calls self.feature_encoder.create_out_linears() -> add as method.
-def create_out_linears(self):
-    def _create_single_linear(item_len):
-        return nnx.Linear(
-            in_features=item_len,
-            out_features=self.d_model,
-            rngs=self.rngs
-        )
-    # CHANGED: METHOD_TO_DB, DB_CTL_VARIATION_LEN_PER_FIELD, DB_PARAM_CONTROLLER live on db_layer.
-    out_rel_db_idx = self.db_layer.get_abs_unscaled_db_idx(
-        self.db_layer.METHOD_TO_DB
-    )
-    # CHANGED: avoid iterating over JAX arrays (0-d elements raise); use range + index.
-    #var_lens = jnp.atleast_1d(self.db_layer.DB_CTL_VARIATION_LEN_PER_FIELD)
-    linear_batch = []
-    for i in range(len(out_rel_db_idx)):
-        db_idx = int(out_rel_db_idx[i]) if hasattr(out_rel_db_idx[i], "__int__") else out_rel_db_idx[i]
-        len_unscaled_param = jnp.int64(
-            self.db_layer.DB_PARAM_CONTROLLER[db_idx]
-        )
-        # CHANGED: len_unscaled_param is scalar per i; vmap needs at least one batched axis -> create one linear per iteration.
-        linear_batch.append(_create_single_linear(int(len_unscaled_param)))
-    print("classify_feature...")
-    # CHANGED: linear_batch is list of nnx.Linear modules, not numeric -> return list, not jnp.array.
-    return linear_batch
-        try:
-            feature_block_single_param_grid = []
-            for item in _arange:
-                res = _work_param(
-                    item
-                )
-                feature_block_single_param_grid.append(res)
-
-            # working single parameter
-            features = jnp.array(feature_block_single_param_grid)
-        except Exception as e:
-            print("Err gen_in_feature_single_variation", e)
-            return jnp.array([])
-"""

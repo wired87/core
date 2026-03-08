@@ -15,6 +15,7 @@ from qbrain.core.orchestrator_manager.orchestrator import Thalamus
 from qbrain.core.qbrain_manager import get_qbrain_table_manager
 from qbrain.core.researcher2.researcher2.core import ResearchAgent
 from qbrain.gem_core.gem import Gem
+from qbrain.graph.brn.brain_classifier import BrainClassifier
 from qbrain.graph.brn.brain_executor import BrainExecutor, _flatten_required_keys
 from qbrain.graph.brn.brain_hydrator import BrainHydrator
 from qbrain.graph.brn.brain_schema import BrainEdgeRel, BrainNodeType, DataCollectionResult, GoalDecision
@@ -64,12 +65,13 @@ class Brain(GUtils):
         G = _get_brain_graph(use_shared_kg=use_shared_kg)
         super().__init__(G=G, nx_only=True, enable_data_store=False)
         self.user_id = user_id
-
+        self._dr_backend=_dr_backend
         self.max_short_term = max_short_term
         self.short_term_ids: Deque[str] = deque(maxlen=max_short_term)
         self.long_term_ids: List[str] = []
         self.last_goal_node_id: Optional[str] = None
         self._qb = get_qbrain_table_manager()
+        self.qb = self._qb  # Alias for compatibility with _embed_text, _ensure_content_chunk_table
         try:
             self.think_manager: Optional[ThinkManager] = ThinkManager(G=self.G, qb=self._qb, user_id=self.user_id)
         except Exception as exc:
@@ -78,13 +80,12 @@ class Brain(GUtils):
         self.workers = BrainWorkers(max_workers=4)
         self.hydrator = BrainHydrator(self._qb)
         self.executor = BrainExecutor()
-        """self.classifier = BrainClassifier(
-            relay_cases=self.relay_cases,
+        self.classifier = BrainClassifier(
+            relay_cases=RELAY_CASES_CONFIG,
             embed_fn=self._embed_text,
-            vector_db_path=vector_db_path,
-            use_vector=use_vector,
-        )"""
-
+            vector_db_path="brain_cases.duckdb",
+            use_vector=True,
+        )
 
         self._ensure_content_chunk_table()
         self._init_user_node()

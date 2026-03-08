@@ -1,17 +1,15 @@
 import base64
 import json
 import os
-import zoneinfo
 from typing import Any, Dict, List
 
 import jax.numpy as jnp
 
-from data_handler.load_sa_creds import load_service_account_credentials
-from data_handler.main import load_data
-from gnn.gnn import GNN
-
 import jax
-from jax_utils.deserialize_in import parse_value
+from qbrain.jax_test.jax_utils.deserialize_in import parse_value
+from qbrain.auth.load_sa_creds import load_service_account_credentials
+from qbrain.jax_test.data_handler.main import load_data
+from qbrain.jax_test.gnn.gnn import GNN
 
 
 def _to_json_serializable(data):
@@ -83,10 +81,6 @@ class Guard:
             **self.cfg
         )
 
-        from data_handler.bq_handler import BQCore
-        self.bqclient = BQCore(
-            dataset_id=os.getenv("BQ_DATASET")
-        )
         self._live_ws = None
 
     def divide_vector(self, vec, divisor):
@@ -137,53 +131,17 @@ class Guard:
         return send_live
 
     def main(self):
-        self.run()
+        self.gnn_layer.main()
         #results = self.finish()
         print("SIMULATION PROCESS FINISHED")
         return None
 
 
     def run(self):
-        # Optional: connect to backend for LIVE_DATA streaming (WS_ENDP, USER_ID, ENV_ID)
-        ws_endp = os.getenv("WS_ENDP")
-        user_id = os.getenv("USER_ID")
-        env_id = os.getenv("ENV_ID")
-        if ws_endp and user_id and env_id:
-            try:
-                import websocket
-                self._live_ws = websocket.create_connection(ws_endp)
-                self._live_ws.send(json.dumps({
-                    "type": "gpu",
-                    "auth": {"user_id": user_id, "env_id": env_id},
-                    "data": {},
-                }))
-                # Wire GNN to send LIVE_DATA each step (throttled by VIS_FPS)
-                vis_fps = int(os.getenv("VIS_FPS", "30") or "30")
-                self.gnn_layer._send_live = self._make_send_live(vis_fps)
-                self.gnn_layer._vis_fps = vis_fps
-                self.gnn_layer._vis_step_counter = 0
-                print("[jax_test.Guard] LIVE_DATA WebSocket connected to", ws_endp)
-            except Exception as e:
-                print("[jax_test.Guard] LIVE_DATA WebSocket skip:", e)
-                self._live_ws = None
 
-        # start sim on gpu
-        print("run...")
-        try:
-            serialized_in, serialized_out = self.gnn_layer.main()
-        finally:
-            if getattr(self, "_live_ws", None) is not None:
-                try:
-                    self._live_ws.close()
-                except Exception:
-                    pass
-                self._live_ws = None
         print("run... done")
 
-        self._export_engine_state(
-            serialized_in,
-            serialized_out,
-        )
+
 
     def _export_data(self):
         print("_export_data...")
@@ -486,15 +444,4 @@ class Guard:
         return result
 
 if __name__ == "__main__":
-    Guard()._upsert_generated_data_to_bq(
-        payload={
-                "nodes": [],
-
-                "history_nodes": [],
-                "SCALED_PARAMS": [],
-                "OUT_SHAPES": [],
-                "METHOD_TO_DB": [],
-                "serialized_out": [],
-                "serialized_in": [],
-            }
-    )
+    Guard().main()

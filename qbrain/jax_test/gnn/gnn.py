@@ -1,16 +1,17 @@
 import jax
 from jax import jit, vmap
+
+from qbrain.jax_test.gnn.db_layer import DBLayer
+import jax.numpy as jnp
+
+from qbrain.jax_test.gnn.feature_encoder import FeatureEncoder
+from qbrain.jax_test.gnn.injector import InjectorLayer
+from qbrain.jax_test.jax_utils.conv_flat_to_shape import bring_flat_to_shape
+from qbrain.jax_test.mod import Node
+from qbrain.jax_test.utils import create_runnable, SHIFT_DIRS
+
+
 # todo _BYTE binary_view = ' '.join(format(b, '08b') for b in text.encode('utf-8'))
-from gnn.db_layer import DBLayer
-from gnn.feature_encoder import FeatureEncoder
-from gnn.injector import InjectorLayer
-from jax_utils.conv_flat_to_shape import bring_flat_to_shape
-from mod import Node
-from ops.ops_defs import OPS_FUNCTIONS
-from utils import SHIFT_DIRS, create_runnable
-import jax.numpy as jnp
-import jax.numpy as jnp
-from diffrax import diffeqsolve, ODETerm, Tsit5, Dopri5, Euler, SaveAt
 
 class GNN:
 
@@ -20,7 +21,7 @@ class GNN:
             time:int,
             gpu,
             DIMS,
-            **cfg
+            **cfg,
     ):
         # DB_TO_METHOD_EDGES
         # METHOD_PARAM_LEN_CTLR
@@ -32,6 +33,7 @@ class GNN:
 
         self.time = time
         self.amount_nodes = amount_nodes
+
         # Generate grid coordinates based on amount_nodes dimensionality
         self.schema_grid = [
             (i,i,i)
@@ -50,7 +52,11 @@ class GNN:
         )
 
         # CHANGED: FeatureEncoder expects (AXIS, db_layer, amount_variations); was TypeError missing 2 args.
-        _n_var = int(jnp.sum(self.db_layer.DB_CTL_VARIATION_LEN_PER_FIELD)) if hasattr(self.db_layer, "DB_CTL_VARIATION_LEN_PER_FIELD") else max(1, len(self.db_layer.METHOD_TO_DB))
+        _n_var = int(
+            jnp.sum(self.db_layer.DB_CTL_VARIATION_LEN_PER_FIELD)
+        ) if hasattr(self.db_layer, "DB_CTL_VARIATION_LEN_PER_FIELD") \
+            else max(1, len(self.db_layer.METHOD_TO_DB))
+
         self.feature_encoder = FeatureEncoder(self.db_layer.AXIS, self.db_layer, amount_variations=_n_var)
 
         self.injector = InjectorLayer(
@@ -599,6 +605,7 @@ class GNN:
         print("shape_input... done")
         return inputs  # CHANGED: was 'input' (builtin) -> "Value after * must be an iterable, not builtin_function_or_method"
 
+
     def extract_eq_variations(self, eq_idx):
         """
         Extract variations
@@ -647,8 +654,6 @@ class GNN:
         )
         print("extract_eq_variations... done")
         return edges, amount_params_current_eq, total_amount_params_current_eq
-
-
 
 
     def serialize(self, data):

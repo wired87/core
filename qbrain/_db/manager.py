@@ -1,217 +1,62 @@
 """
-DB Manager: unified interface for DuckDB (local) and BigQuery (remote).
+DB Manager: unified interface for DuckDB (local).
 """
-import os
+import json
 import re
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
+from datetime import datetime
 
-_DEFAULT_DUCK_PATH = str(Path(__file__).resolve().parent.parent / "local.duckdb")
+from duckdb import DuckDBPyConnection
 
-
+from qbrain._db.log_facade import db_log
 from qbrain._db.workflows import (
+    db_check,
     db_connect,
     db_close,
     db_exec,
     db_create_table,
+    db_status,
     duck_insert,
 )
+
 _db_mgr: Optional["DBManager"] = None
-LOCAL_DB:str = os.getenv("LOCAL_DB", "True")
+
 
 def get_db_manager() -> "DBManager":
-    """Return QBrainTableManager. Uses BigQuery when LOCAL_DB=False and bqcore given; else DuckDB."""
     global _db_mgr
-
     if _db_mgr is None:
-        _db_mgr = DBManager(
-            local=LOCAL_DB == "True",
-            dataset_id=os.getenv("PROJECT"),
-        )
+        _db_mgr = DBManager()
     return _db_mgr
+
 
 class DBManager:
     """
-    Unified DB manager: DuckDB when local=True, BigQuery when local=False.
+    DuckDB manager.
     """
 
-    def __init__(
-        self,
-        local: bool = True,
-        duck_path: str = _DEFAULT_DUCK_PATH,
-        dataset_id: Optional[str] = None,
-    ):
-        """
-        Args:
-            local: If True, use DuckDB; if False, use BigQuery.
-            duck_path: Path for DuckDB file (used when local=True).
-            bqcore: BQCore instance for BigQuery (required when local=False).
-            dataset_id: Dataset ID for BQ; used to create BQCore if bqcore not provided.
-        """
-        self.local = local
-
-        if local:
-            self._con = db_connect(duck_path)
-            self._bqcore = None
-            self.pid = os.getenv("PROJECT", "local")
-            self.ds_id = os.getenv("PROJECT", "local")
-            self.ds_ref = os.getenv("PROJECT", "local")
-            self.get_table_schema = self._duck_get_table_schema
-        else:
-            self._con = None
-            self._bqcore = None
-            if dataset_id:
-                try:
-                    from qbrain._bigquery_toolbox.bq_handler import BQCore  # type: ignore
-                except Exception as e:
-                    raise ImportError(
-                        "BigQuery support requires qbrain._bigquery_toolbox.bq_handler.BQCore "
-                        "and google-cloud-bigquery dependencies."
-                    ) from e
-
-                bqcore = BQCore(dataset_id=dataset_id)
-                self._bqcore = bqcore
-                self.pid = bqcore.pid
-                self.bqclient = bqcore.bqclient
-                self.ds_id = bqcore.ds_id
-                self.ds_ref = bqcore.ds_ref or f"{bqcore.pid}.{bqcore.ds_id}"
-                self.get_table_schema = bqcore.get_table_schema
-            else:
-                # Remote mode without dataset configured: keep manager instantiable,
-                # but operations requiring BigQuery will fail until configured.
-                self.pid = None
-                self.bqclient = None
-                self.ds_id = None
-                self.ds_ref = None
-                self.get_table_schema = None
+    def __init__(self):
+        self._con:DuckDBPyConnection = db_connect()
 
     def close(self):
-        """Close connection (DuckDB only)."""
         if self._con:
             db_close(self._con)
             self._con = None
 
+    def create_sql_schema(self, schema):
+        cols = []
+        for k, v in schema.items():
+            cols.append(f"{k} {v}")
+        schema_sql = ", ".join(cols)
+        return schema_sql
+
+
     def run_query(
         self,
         sql: str,
-        params: Optional[Dict[str, Any]] = None,
-        conv_to_dict: bool = False,
-        job_config=None,
-    ) -> Union[List[Dict], List, None]:
-        """
-        Execute SELECT query and return results.
-
-        Args:
-            sql: SQL string. Use @param for BigQuery; @param converted to ? for DuckDB.
-            params: Dict of param name -> value.
-            conv_to_dict: Return list of dicts instead of rows.
-            job_config: BigQuery QueryJobConfig (used when local=False, overrides params).
-        """
-        if self.local:
-            if params is None and job_config and hasattr(job_config, "query_parameters") and job_config.query_parameters:
-                params = {p.name: p.value for p in job_config.query_parameters}
-            return self._run_query_duck(sql, params, conv_to_dict)
-        return self._run_query_bq(sql, params, conv_to_dict, job_config)
-
-
-    def _run_duck(self, query, conv_to_dict=False, job_config=None, bind_values=None):
-        """Execute query on DuckDB."""
-        import re
-        if bind_values is None and job_config and hasattr(job_config, "query_parameters") and job_config.query_parameters:
-            bind_values = {p.name: p.value for p in job_config.query_parameters}
-        if bind_values:
-            if isinstance(bind_values, dict):
-                ordered = []
-                for m in re.finditer(r"@(\w+)", query):
-                    k = m.group(1)
-                    if k in bind_values:
-                        ordered.append(bind_values[k])
-                query = re.sub(r"@\w+", "?", query)
-            else:
-                ordered = list(bind_values)
-            cur = self._con.execute(query, ordered)
-        else:
-            cur = self._con.execute(query)
-        result = cur.fetchall()
-        if conv_to_dict and result:
-            cols = [d[0] for d in cur.description] if cur.description else []
-            return [dict(zip(cols, row)) for row in result]
-        return list(result) if result else []
-
-
-    def run_db(self, query, conv_to_dict=False, job_config=None, params=None):
-        """
-        Single entry point for DB operations. Uses BigQuery or DuckDB based on init.
-        Accepts params dict (for both) or job_config (BQ only).
-        """
-        if self.bqcore is not None:
-            if job_config is None and params:
-                from google.cloud import bigquery
-                job_config = bigquery.QueryJobConfig(
-                    query_parameters=[bigquery.ScalarQueryParameter(k, "STRING", str(v)) for k, v in params.items()]
-                )
-            return self.bqcore.run_query(query, conv_to_dict=conv_to_dict, job_config=job_config)
-        return self._run_duck(query, conv_to_dict=conv_to_dict, job_config=job_config, bind_values=params)
-
-
-    def _run_query_duck(
-        self,
-        sql: str,
-        bind_values: Optional[Union[Dict[str, Any], List[Any]]],
-        conv_to_dict: bool,
-    ):
-        """Execute query on DuckDB. bind_values: dict for @param, list for ? placeholders."""
-        if bind_values:
-            if isinstance(bind_values, dict):
-                # Convert @param to ? in left-to-right order; build ordered values
-                ordered = []
-                for m in re.finditer(r"@(\w+)", sql):
-                    k = m.group(1)
-                    if k in bind_values:
-                        ordered.append(bind_values[k])
-                sql = re.sub(r"@\w+", "?", sql)
-                cur = self._con.execute(sql, ordered)
-            else:
-                # bind_values is a list (positional) for queries with ? placeholders
-                cur = self._con.execute(sql, list(bind_values))
-        else:
-            cur = self._con.execute(sql)
-        result = cur.fetchall()
-        if conv_to_dict and result:
-            cols = [d[0] for d in cur.description] if cur.description else []
-            return [dict(zip(cols, row)) for row in result]
-        return list(result) if result else []
-
-    def _run_query_bq(
-        self,
-        sql: str,
-        params: Optional[Dict[str, Any]],
-        conv_to_dict: bool,
-        job_config,
-    ):
-        """Execute query on BigQuery."""
-        if job_config is None and params:
-            from google.cloud import bigquery
-            job_config = bigquery.QueryJobConfig(
-                query_parameters=[
-                    bigquery.ScalarQueryParameter(k, "STRING", str(v))
-                    for k, v in params.items()
-                ]
-            )
-        return self._bqcore.run_query(
-            sql, conv_to_dict=conv_to_dict, job_config=job_config
-        )
-
-    def execute(
-        self,
-        sql: str,
         params: Optional[Union[Dict[str, Any], List[Any]]] = None,
+        conv_to_dict: bool = False,
     ):
-        """
-        Execute DDL/DML (INSERT, UPDATE, DELETE, CREATE, etc.).
-        No result returned.
-        """
-        if self.local:
+        if params:
             if isinstance(params, dict):
                 ordered = []
                 for m in re.finditer(r"@(\w+)", sql):
@@ -219,20 +64,38 @@ class DBManager:
                     if k in params:
                         ordered.append(params[k])
                 sql = re.sub(r"@\w+", "?", sql)
-                db_exec(self._con, sql, ordered)
+                cur = self._con.execute(sql, ordered)
             else:
-                db_exec(self._con, sql, params)
+                cur = self._con.execute(sql, list(params))
         else:
-            job_config = None
-            if isinstance(params, dict):
-                from google.cloud import bigquery
-                job_config = bigquery.QueryJobConfig(
-                    query_parameters=[
-                        bigquery.ScalarQueryParameter(k, "STRING", str(v))
-                        for k, v in params.items()
-                    ]
-                )
-            self._bqcore.run_query(sql, job_config=job_config)
+            cur = self._con.execute(sql)
+
+        result = cur.fetchall()
+        print("result:", len(result))
+
+        if conv_to_dict and result:
+            cols = [d[0] for d in cur.description] if cur.description else []
+            return [dict(zip(cols, row)) for row in result]
+
+        return list(result) if result else []
+
+
+    def execute(
+        self,
+        sql: str,
+        params: Optional[Union[Dict[str, Any], List[Any]]] = None,
+    ):
+        if isinstance(params, dict):
+            ordered = []
+            for m in re.finditer(r"@(\w+)", sql):
+                k = m.group(1)
+                if k in params:
+                    ordered.append(params[k])
+            sql = re.sub(r"@\w+", "?", sql)
+            db_exec(self._con, sql, ordered)
+        else:
+            db_exec(self._con, sql, params)
+
 
     def insert(
         self,
@@ -240,88 +103,111 @@ class DBManager:
         rows: Union[Dict, List[Dict]],
         upsert: bool = False,
     ) -> bool:
-        """
-        Insert rows into table.
-        Uses DuckDB (duck_insert) when local, BQ insert when remote.
-        """
+        db_log("info", "insert", table=table, rows=len(rows), upsert=upsert)
         if not isinstance(rows, list):
             rows = [rows]
+
         if not rows:
             return True
 
-        if self.local:
-            return duck_insert(self._con, table, rows, upsert=upsert)
-        # BigQuery
-        return self._bqcore.bq_insert(table, rows, upsert=upsert)
+        schema = self._duck_get_table_schema(table, create_if_not_exists=False)
+
+        new_rows = []
+
+        for row in rows:
+            new_row = {}
+
+            for col, val in row.items():
+                if not isinstance(val, (str, datetime)):
+                    val = json.dumps(val)
+
+                new_row[col] = val
+
+                if col not in schema:
+                    self._duck_insert_col(
+                        table,
+                        col,
+                    )
+            new_rows.append(new_row)
+
+        ok = duck_insert(self._con, table, new_rows, upsert=upsert)
+        if not ok:
+            db_log("error", "insert failed", table=table)
+        return ok
+
+    def del_entry(self, nid: str, table: str, user_id: str, name_id: str = "id") -> bool:
+        """
+        Hard delete entry from DuckDB table.
+        """
+        try:
+            sql = f"""
+            DELETE FROM {table}
+            WHERE {name_id} = ? AND user_id = ?
+            """
+            self._con.execute(sql, [nid, user_id])
+            return True
+        except Exception as e:
+            return False
 
     def create_table(self, table_name: str, schema_sql: str):
-        """Create table if not exists (DuckDB only; BQ uses schema management)."""
-        if self.local:
-            db_create_table(self._con, table_name, schema_sql)
-        else:
-            raise NotImplementedError(
-                "create_table for BigQuery: use bqcore.get_table_schema / ensure_table_exists"
-            )
+        db_create_table(
+            self._con,
+            table_name,
+            schema_sql,
+        )
 
     def insert_col(self, table_id: str, column_name: str, column_type: str):
-        """
-        Add column to table if it does not exist.
-        BQ: delegates to bqcore.insert_col
-        DuckDB: ALTER TABLE ADD COLUMN (checks first, DuckDB has no IF NOT EXISTS).
-        """
-        if not self.local:
-            return self._bqcore.insert_col(table_id, column_name, column_type)
         return self._duck_insert_col(table_id, column_name, column_type)
 
-    def _duck_insert_col(self, table_id: str, column_name: str, column_type: str):
-        """DuckDB: add column if not exists (check information_schema first)."""
+    def _duck_insert_col(self, table_id: str, column_name: str):
         try:
             r = self._con.execute(
                 "SELECT 1 FROM information_schema.columns WHERE table_schema = 'main' AND table_name = ? AND column_name = ?",
                 [table_id, column_name],
             ).fetchone()
+
             if r:
                 return
-            col_type = self._bq_to_duck_type(column_type)
-            self._con.execute(f"ALTER TABLE {table_id} ADD COLUMN {column_name} {col_type}")
-        except Exception as e:
-            print(f"[WARN] DuckDB add column: {e}")
 
-    def _bq_to_duck_type(self, bq_type: str) -> str:
-        """Map BigQuery column types to DuckDB."""
-        t = bq_type.upper().strip()
-        if t.startswith("ARRAY<") and t.endswith(">"):
-            inner = t[6:-1].strip()  # e.g. FLOAT64
-            inner_duck = self._bq_to_duck_type(inner)
-            return f"{inner_duck}[]"
-        m = {
-            "STRING": "VARCHAR",
-            "INT64": "BIGINT",
-            "INTEGER": "BIGINT",
-            "FLOAT64": "DOUBLE",
-            "BOOL": "BOOLEAN",
-            "TIMESTAMP": "TIMESTAMP",
-            "JSON": "VARCHAR",  # DuckDB JSON stored as text
-        }
-        return m.get(t, bq_type)
+            col_type = "STRING"
+            self._con.execute(
+                f"ALTER TABLE {table_id} ADD COLUMN {column_name} {col_type}"
+            )
+
+        except Exception as e:
+            db_log("error", "Err _duck_insert_col", error=str(e), table=table_id)
+
+
 
     def _duck_get_table_schema(
-        self, table_id: str, schema: Dict[str, str], create_if_not_exists: bool = True
+        self,
+        table_id: str,
+        create_if_not_exists: bool = True,
+        schema: Optional[Dict[str, str]] = None,
     ) -> Dict[str, str]:
-        """DuckDB: ensure table exists with schema, return current schema."""
+
+        schema = schema or {}
+
         r = self._con.execute(
             "SELECT 1 FROM information_schema.tables WHERE table_schema = 'main' AND table_name = ?",
             [table_id],
         ).fetchone()
+
         if r:
             rows = self._con.execute(
                 "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = 'main' AND table_name = ?",
                 [table_id],
             ).fetchall()
+
             return {row[0]: row[1] for row in rows}
-        if create_if_not_exists:
-            col_defs = [f"{col} {self._bq_to_duck_type(dt)}" for col, dt in schema.items()]
+
+        if create_if_not_exists and schema:
+            col_defs = [
+                f"{col} STRING"
+                for col, dt in schema.items()
+            ]
             db_create_table(self._con, table_id, ", ".join(col_defs))
+            return schema
         return schema
 
     def showup(
@@ -329,55 +215,46 @@ class DBManager:
         table_name: Optional[str] = None,
         limit: int = 100,
     ) -> None:
-        """
-        Render table data in console using rich Table.
-        Handles both DuckDB and BigQuery.
 
-        Args:
-            table_name: Table to display. If None, lists all tables and shows data from each.
-            limit: Max rows per table to display.
-        """
         try:
             from rich.console import Console
             from rich.table import Table
         except ImportError:
-            print("[WARN] rich not installed. Run: pip install rich")
+            db_log("warn", "rich not installed. Run: pip install rich")
             return
 
         console = Console()
 
-        def _table_ref(t: str) -> str:
-            if self.local:
-                return t
-            return f"`{self.pid}.{self.ds_id}.{t}`"
-
         def _get_tables() -> List[str]:
-            if self.local:
-                rows = self._con.execute(
-                    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' ORDER BY table_name"
-                ).fetchall()
-                return [r[0] for r in rows]
-            if self._bqcore is None:
-                return []
-            tables = self._bqcore.list_tables()
-            return tables or []
+            rows = self._con.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' ORDER BY table_name"
+            ).fetchall()
+            return [r[0] for r in rows]
 
-        def _render_table(tbl_name: str) -> None:
-            query = f"SELECT * FROM {_table_ref(tbl_name)} LIMIT {limit}"
+        def _render_table(tbl_name: str):
+
+            query = f"SELECT * FROM {tbl_name} LIMIT {limit}"
+
             try:
                 rows = self.run_query(query, conv_to_dict=True)
             except Exception as e:
                 console.print(f"[red]Error querying {tbl_name}: {e}[/red]")
                 return
+
             if not rows:
                 console.print(f"[dim]{tbl_name}: (empty)[/dim]")
                 return
+
             table = Table(title=tbl_name, show_header=True, header_style="bold cyan")
+
             for col in rows[0].keys():
                 table.add_column(col, overflow="fold", max_width=40)
+
             for row in rows:
                 table.add_row(*[str(row.get(c, ""))[:80] for c in rows[0].keys()])
+
             console.print(table)
+
             if len(rows) >= limit:
                 console.print(f"[dim]... (limited to {limit} rows)[/dim]\n")
 
@@ -385,19 +262,59 @@ class DBManager:
             _render_table(table_name)
         else:
             tables = _get_tables()
+
             if not tables:
                 console.print("[yellow]No tables found.[/yellow]")
                 return
+
             for t in tables:
                 _render_table(t)
                 console.print()
 
-    @property
-    def connection(self):
-        """DuckDB connection (when local) or None."""
-        return self._con
+    def print_table(self, table_name: str, limit: Optional[int] = 1000) -> None:
+        """
+        Render all items of a specific table in the rich terminal.
+        Uses DuckDB .show() when possible; falls back to showup() on encoding errors.
+        """
+        limit_clause = f" LIMIT {limit}" if limit else ""
+        query = f"SELECT * FROM {table_name}{limit_clause}"
+        try:
+            self._con.sql(query).show()
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            self.showup(table_name=table_name, limit=limit or 1000)
+        except Exception as e:
+            db_log("error", "print_table failed", table=table_name, error=str(e))
+
+    def status(self) -> dict:
+        """Return DB status: path, tables, connection_alive."""
+        return db_status(self._con)
+
+    def check(self) -> bool:
+        """Quick health check: connection alive and DB reachable."""
+        return db_check(self._con)
+
+    def get_state(self) -> dict:
+        """Extended state: status + table row counts (for debug)."""
+        from qbrain._db.config import duck_db_verbose
+
+        state = db_status(self._con)
+        if duck_db_verbose() >= 2:
+            counts = {}
+            for tbl in state.get("tables", []):
+                try:
+                    r = self._con.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()
+                    counts[tbl] = r[0] if r else 0
+                except Exception:
+                    counts[tbl] = None
+            state["row_counts"] = counts
+        return state
 
     @property
-    def bqcore(self):
-        """BQCore instance (when not local) or None."""
-        return self._bqcore
+    def connection(self):
+        return self._con
+
+
+if __name__ == "__main__":
+    db = DBManager()
+    db.print_table("params")       # Shows up to 1000 rows
+    #db.print_table("params", None) # Shows all rows

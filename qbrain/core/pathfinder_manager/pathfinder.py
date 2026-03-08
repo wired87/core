@@ -3,6 +3,7 @@ import os
 from typing import Any, Dict, List, Optional, Tuple
 
 import jax.numpy as jnp
+import pandas as pd
 
 from qbrain.core.qbrain_manager import get_qbrain_table_manager
 from qbrain.jax_test.iterator.iterator import Iterator, build_time_ctlr
@@ -19,12 +20,126 @@ class PathfinderManager:
     - Persists controller struct into the controllers table
     """
 
-    def __init__(self, qb=None, iterator: Optional[Iterator] = None, d_model: int = 64):
+    def __init__(self, g, qb=None, iterator: Optional[Iterator] = None, d_model: int = 64):
         self.qb = qb or get_qbrain_table_manager()
+        self.g=g
         self.iterator = iterator or Iterator(d_model=d_model)
         self.d_model = d_model
 
     # ---- Metadata / engine output loading ----
+
+    def create_edge(self, operator_idx, param_idx, time_id=0):
+        return (time_id, operator_idx, param_idx)
+
+    def filter_nodes(self):
+        sorted_operators = sorted(
+            [v for k, v in self.g.G.nodes(data=True) if v.get('type') == 'OPERATOR'],
+            key=lambda x: x.get('op_idx', float('inf'))
+        )
+        sorted_params = sorted(
+            [v for k, v in self.g.G.nodes(data=True) if v.get('type') == 'PARAMS'],
+            key=lambda x: x.get('op_idx', float('inf'))
+        )
+        return sorted_operators, sorted_params
+
+    def create_nodes(self, operators, params):
+        from qbrain.embedder import embed
+        operators = jnp.stack([embed(v) for v in operators])
+        params = jnp.stack([embed(v) for v in params])
+        return operators, params
+
+
+    def main(self, goal="psi"):
+        sorted_operators, sorted_params = self.filter_nodes()
+
+        binary_ops, unary_ops = self.bin_unary_op_classification()
+
+        operators, params = self.create_nodes(sorted_operators, sorted_params)
+
+        op_ids, params_ids = self.get_ids(sorted_operators, sorted_params)
+
+        operator_edges, params_edges = self.create_edges(sorted_operators, sorted_params, op_ids, params_ids)
+
+        equation = self.find(
+            param_ids=params_ids,
+            param_embeddings=params,
+            goal=goal,
+            binary_operators=binary_ops,
+            unary_operators=unary_ops
+        )
+
+
+    def bin_unary_op_classification(self):
+        sorted_operators, sorted_params = self.filter_nodes()
+        binary_ops = []
+        unary_ops = []
+        for node in sorted_operators:
+            if node.get('sub_type') == 'binary':
+                binary_ops.append(node.get('id'))
+            else:
+                unary_ops.append(node.get('id'))
+        return binary_ops, unary_ops
+
+
+    def find(
+            self,
+            param_ids,
+            param_embeddings:jnp.array,
+            goal,
+            binary_operators,
+            unary_operators,
+    ):
+        from pysr import PySRRegressor
+        model = PySRRegressor(
+            niterations=40,  # Anzahl der Such-Zyklen
+            # Hier definierst du EXAKT die Operatoren aus deinem Grid-Layer
+            binary_operators=binary_operators, #["+", "*", "/"],
+            unary_operators=unary_operators, #["square", "inv(x) = 1/x"],
+
+            # Deine Parameter-Namen (Knoten-Labels)
+            variable_names=param_ids, #["masse", "geschwindigkeit"],
+
+            # Komplexitäts-Kontrolle (Dein Ansatz mit der Länge!)
+            # 'parsimony' bestraft zu lange Gleichungen
+            parsimony=0.001,
+            maxsize=10,  # Maximale Anzahl an Operatoren + Parametern
+
+            # Verhindert Division durch Null etc.
+            constraints={'/': (-1, 1)},
+        )
+        param_embed_df = pd.DataFrame(param_embeddings)
+        equation = model.fit(param_embed_df, goal)
+        print("eq identified", equation)
+        return equation
+
+    def get_ids(self, sorted_operators, sorted_params):
+        op_ids = [node["id"] for node in sorted_operators]
+        params_ids = [node["id"] for node in sorted_params]
+        return op_ids, params_ids
+
+
+    def create_edges(self, sorted_operators, sorted_params, op_ids, params_ids):
+        operator_edges= []
+        params_edges= []
+
+        for node in sorted_operators:
+            for src, trgt, attrs in self.g.G.edges(data=True):
+                if node["id"] == src and trgt in params_ids:
+                    operator_edges.append(
+                        [node["id"], trgt]
+                    )
+        for node in sorted_params:
+            for src, trgt, attrs in self.g.G.edges(data=True):
+                if node["id"] == src and trgt in op_ids:
+                    params_edges.append(
+                        [node["id"], trgt]
+                    )
+        return operator_edges, params_edges
+
+
+
+
+
 
     def load_env_run_metadata(self, env_id: str, user_id: str) -> Dict[str, Any]:
         rows = self.qb.row_from_id(env_id, table="envs", user_id=user_id, select="*")

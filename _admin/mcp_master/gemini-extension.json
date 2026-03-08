@@ -1,0 +1,27 @@
+{
+  "name": "qbrain-relay",
+  "version": "1.0.0",
+  "description": "QBrain relay cases as Gemini CLI extension: params, envs, modules, fields, methods, files, sessions, control engine, sim analysis, research.",
+  "mcpServers": {
+    "qbrain-relay": {
+      "command": "py",
+      "args": ["${extensionPath}/mcp_server.py"],
+      "cwd": "${extensionPath}"
+    }
+  },
+  "contextFileName": "GEMINI.md",
+  "settings": [
+    {
+      "name": "Gemini API Key",
+      "description": "API key for Gemini (used by QBrain extraction and enrichment).",
+      "envVar": "GEMINI_API_KEY",
+      "sensitive": true
+    },
+    {
+      "name": "Relay WebSocket URL",
+      "description": "WebSocket URL for QBrain relay (optional).",
+      "envVar": "RELAY_WS_URL",
+      "sensitive": false
+    }
+  ]
+}

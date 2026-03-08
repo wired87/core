@@ -69,7 +69,8 @@ class ModuleCreator(
                             module_file
                         ),
                         "r",
-                        encoding="utf-8").read()
+                        encoding="utf-8"
+                    ).read()
                 )
         print("sm load successfully modules:", new_modules)
 

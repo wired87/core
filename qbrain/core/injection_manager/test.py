@@ -503,12 +503,12 @@ def main():
     print("\n" + "="*80)
     print(" INJECTION MANAGER - COMPREHENSIVE TEST SUITE")
     print("="*80)
-    print(f"Started at: {datetime.now().isoformat()}")
+    print(f"Started at: {datetime.now()}")
     
     tests = InjectionManagerTests()
     tests.run_all_tests()
     
-    print(f"Completed at: {datetime.now().isoformat()}")
+    print(f"Completed at: {datetime.now()}")
 
 
 if __name__ == "__main__":

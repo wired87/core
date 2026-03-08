@@ -43,15 +43,15 @@ class HiggsCreator(HiggsUtils):
                 "h": field_value,  # The physical scalar field component
                 "dV_dh": field_value,  # Potential derivative
                 "laplacian_h": field_value,
-                "vev": 246.0,  # Vacuum Expectation Value (VEV)
-                "energy": 0,  # Energy contribution per node
+                "vev": [246.0],  # Vacuum Expectation Value (VEV)
+                "energy": [0],  # Energy contribution per node
                 "energy_density": field_value,
 
                 # --- Scalars (Constants/System Aggregates) ---
                 "potential_energy_H": field_value,
                 "total_energy_H": field_value,  # Total system energy (System Scalar)
-                "mass": 125.0,  # Higgs mass constant
-                "lambda_H": 0.13 # Coupling constant
+                "mass": [125.0],  # Higgs mass constant
+                "lambda_H": [0.13] # Coupling constant
             }
 
             if just_vals:

@@ -10,7 +10,49 @@ All queries use parameter placeholders for safety.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List, Optional, Tuple
+
+
+def _flatten_ids(ids: List[Any]) -> List[str]:
+    """
+    Normalize ids for IN clause: expand JSON strings, flatten nested lists,
+    filter None/null, deduplicate. Ensures each id gets its own ? placeholder.
+    """
+    out: List[str] = []
+    seen: set = set()
+    for x in ids:
+        if x is None:
+            continue
+        if isinstance(x, str):
+            s = x.strip()
+            if not s or s.lower() == "null":
+                continue
+            if s.startswith("[") and s.endswith("]"):
+                try:
+                    parsed = json.loads(s)
+                    if isinstance(parsed, list):
+                        for p in _flatten_ids(parsed):
+                            if p not in seen:
+                                seen.add(p)
+                                out.append(p)
+                        continue
+                except json.JSONDecodeError:
+                    pass
+            if s not in seen:
+                seen.add(s)
+                out.append(s)
+        elif isinstance(x, (list, tuple)):
+            for p in _flatten_ids(list(x)):
+                if p not in seen:
+                    seen.add(p)
+                    out.append(p)
+        else:
+            s = str(x).strip()
+            if s and s not in seen:
+                seen.add(s)
+                out.append(s)
+    return out
 
 
 # --------------------------------------------------------------------------------------
@@ -33,6 +75,29 @@ def duck_get_users_entries(table: str, user_id: str, select: str = "*") -> Tuple
         WHERE row_num = 1
     """
     return query, {"user_id": user_id}
+
+
+def duck_get_envs_by_user_goal(
+    table: str,
+    user_id: str,
+    goal_id: Optional[str] = None,
+    select: str = "*",
+) -> Tuple[str, Dict[str, Any]]:
+    """Query envs by user_id and optionally goal_id. Returns latest rows per env."""
+    goal_filter = " AND goal_id = @goal_id" if goal_id else ""
+    params: Dict[str, Any] = {"user_id": user_id}
+    if goal_id:
+        params["goal_id"] = goal_id
+    query = f"""
+        SELECT {select}
+        FROM (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY created_at DESC) AS row_num
+            FROM {table}
+            WHERE user_id = @user_id AND (status != 'deleted' OR status IS NULL){goal_filter}
+        )
+        WHERE row_num = 1
+    """
+    return query, params
 
 
 def duck_list_session_entries(
@@ -102,11 +167,12 @@ def duck_row_from_id(
     select: str = "*",
     user_id: Optional[str] = None,
 ) -> Tuple[str, List[Any]]:
-    if not ids:
-        raise ValueError("ids must not be empty")
-    id_placeholders = ", ".join(["?"] * len(ids))
+    flat_ids = _flatten_ids(ids)
+    if not flat_ids:
+        raise ValueError("ids must not be empty (after flattening)")
+    id_placeholders = ", ".join(["?"] * len(flat_ids))
     user_filter = " AND user_id = ?" if user_id else ""
-    params: List[Any] = list(ids)
+    params: List[Any] = list(flat_ids)
     if user_id:
         params.append(user_id)
     query = f"""
@@ -116,8 +182,9 @@ def duck_row_from_id(
             FROM {table}
             WHERE id IN ({id_placeholders}) AND (status != 'deleted' OR status IS NULL){user_filter}
         )
-        WHERE row_num = 1
     """
+    print("query", query)
+    print("params", params)
     return query, params
 
 

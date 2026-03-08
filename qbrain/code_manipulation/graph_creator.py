@@ -1,7 +1,8 @@
 import ast
 import importlib
-from typing import Union, Optional, Callable, Dict, Any, Tuple
+from typing import Union, Optional, Callable
 
+from qbrain.graph.local_graph_utils import GUtils
 
 def _get_docstring(node: Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef]) -> str:
     """Extracts docstring from function or class node."""
@@ -59,12 +60,10 @@ class StructInspector(ast.NodeVisitor):
     The graph stores the entire structure; no redundant internal dicts are kept.
     """
 
-    def __init__(self, G):
-        from qbrain.graph.local_graph_utils import GUtils
-        from qbrain.qf_utils.qf_utils import QFUtils
+    def __init__(self, G=None):
+
         self.current_class: Optional[str] = None
         self.g = GUtils(G=G)
-        self.qfu = QFUtils(G=G)
 
     def visit_ClassDef(self, node: ast.ClassDef):
         """Track current class for method resolution."""
@@ -119,7 +118,6 @@ class StructInspector(ast.NodeVisitor):
                 # print("METHOD-module edge created", method_id)
                 params = self.process_method_params(node, method_id, return_key)
 
-
                 data = {
                     "id": method_id,
                     "tid": 0,
@@ -152,11 +150,8 @@ class StructInspector(ast.NodeVisitor):
                     )
                 )
 
-
-
         except Exception as e:
             print("Err _process_function", e)
-
         self.generic_visit(node)
 
 
@@ -211,7 +206,6 @@ class StructInspector(ast.NodeVisitor):
                 attrs=dict(
                     id=return_key,
                     type='PARAM',
-                    param_type="Any",
                 )
             )
             # METHOD -> PARAM
@@ -220,7 +214,6 @@ class StructInspector(ast.NodeVisitor):
                 trt=return_key,
                 attrs=dict(
                     rel='returns_param',
-                    type="Any",
                     trgt_layer='PARAM',
                     src_layer='METHOD',
                 ))

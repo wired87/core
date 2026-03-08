@@ -6,6 +6,7 @@ from typing import Dict, Any, List
 
 from qbrain.core.qbrain_manager import get_qbrain_table_manager
 from qbrain.core.handler_utils import require_param, require_param_truthy, get_val
+from qbrain._db import queries as db_queries
 
 # Debug prefix for manager methods (grep-friendly)
 _ENV_DEBUG = "[EnvManager]"
@@ -31,19 +32,54 @@ class EnvManager:
         self.TABLE_ID = "envs"
         self.pid = self.qb.pid
         self.session_link_tref = "session_to_envs"
+        # Ensure envs table exists with at least the minimal schema so
+        # downstream queries do not fail on missing table.
+        try:
+            self.qb.ensure_table(self.TABLE_ID)
+        except Exception as e:
+            print(f"Err {_ENV_DEBUG} __init__: {e}")
 
     def _ensure_env_table(self):
         """Check if envs table exists, create if not."""
         self.qb.get_table_schema(table_id=self.TABLE_ID, schema=ENV_SCHEMA, create_if_not_exists=True)
-        # Ensure dynamic columns also exist on legacy tables.
+
+    def retrieve_envs_by_user_goal(
+        self,
+        user_id: str,
+        goal_id: str | None = None,
+        select: str = "*",
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieve env rows for user_id and optionally goal_id.
+        Used by SimResultAnalyzer to fetch param time-series for analysis.
+        """
         try:
-            self.qb.insert_col(self.TABLE_ID, "data", "STRING")
+            print(f"{_ENV_DEBUG} retrieve_envs_by_user_goal: user_id={user_id}, goal_id={goal_id}")
+            if getattr(self.qb, "_local", True):
+                query, params = db_queries.duck_get_envs_by_user_goal(
+                    table=self.qb._table_ref(self.TABLE_ID),
+                    user_id=user_id,
+                    goal_id=goal_id,
+                    select=select,
+                )
+                rows = self.qb.run_query(sql=query, params=params, conv_to_dict=True) or []
+            else:
+                ds_ref = f"{self.qb.pid}.{self.DATASET_ID}"
+                query = (
+                    f"SELECT {select} FROM `{ds_ref}.{self.TABLE_ID}` "
+                    f"WHERE user_id = @user_id AND (status != 'deleted' OR status IS NULL)"
+                )
+                params: Dict[str, Any] = {"user_id": user_id}
+                if goal_id:
+                    query += " AND goal_id = @goal_id"
+                    params["goal_id"] = goal_id
+                query += " ORDER BY created_at DESC"
+                rows = self.qb.run_query(sql=query, params=params, conv_to_dict=True) or []
+            print(f"{_ENV_DEBUG} retrieve_envs_by_user_goal: got {len(rows)} row(s)")
+            return rows
         except Exception as e:
-            print(f"{_ENV_DEBUG} _ensure_env_table: data column warning: {e}")
-        try:
-            self.qb.insert_col(self.TABLE_ID, "goal_id", "STRING")
-        except Exception as e:
-            print(f"{_ENV_DEBUG} _ensure_env_table: goal_id column warning: {e}")
+            print(f"{_ENV_DEBUG} retrieve_envs_by_user_goal: error: {e}")
+            return []
 
     def retrieve_send_user_specific_env_table_rows(self, user_id: str, select: str = "*") -> Dict[str, Any]:
         """
@@ -135,7 +171,7 @@ class EnvManager:
             raise
 
 
-    def set_env(self, env_data: Dict[str, Any], user_id: str):
+    def set_env(self, env_data: Dict[str, Any], user_id: str="public"):
         """
         Insert user env.
         env_data should match env_item_type (id, sim_time, cluster_dim, dims)
@@ -149,7 +185,7 @@ class EnvManager:
                     row["data"] = json.dumps(row["data"])
                 except Exception as e:
                     print(f"{_ENV_DEBUG} set_env: serializing data: {e}")
-            self.qb.set_item(self.TABLE_ID, row, keys={"id": row.get("id"), "user_id": user_id})
+            self.qb.set_item(self.TABLE_ID, row)
             print(f"{_ENV_DEBUG} set_env: done")
         except Exception as e:
             print(f"{_ENV_DEBUG} set_env: error: {e}")
@@ -178,13 +214,6 @@ class EnvManager:
             if not param_series:
                 print(f"{_ENV_DEBUG} update_env_param_series: empty series, skipping")
                 return
-
-            # Ensure each param column exists (STRING storing JSON payload).
-            for col in param_series.keys():
-                try:
-                    self.qb.insert_col(self.TABLE_ID, col, "STRING")
-                except Exception as ce:
-                    print(f"{_ENV_DEBUG} update_env_param_series: insert_col warning for {col}: {ce}")
 
             row: Dict[str, Any] = {
                 "id": env_id,
@@ -373,9 +402,9 @@ class EnvManager:
             import traceback
             traceback.print_exc()
             return [
-                {"timestamp": datetime.now().isoformat(), "message": f"System: Log retrieval initialized for {env_id}."},
-                {"timestamp": datetime.now().isoformat(), "message": "System: Waiting for simulation stream..."},
-                {"timestamp": datetime.now().isoformat(), "message": f"Error: {e}"}
+                {"timestamp": datetime.now(), "message": f"System: Log retrieval initialized for {env_id}."},
+                {"timestamp": datetime.now(), "message": "System: Waiting for simulation stream..."},
+                {"timestamp": datetime.now(), "message": f"Error: {e}"}
             ]
 
     def get_env_data(self, env_id: str, user_id: str) -> List[Dict[str, Any]]:

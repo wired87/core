@@ -1,12 +1,8 @@
 import importlib
 import os
 import sys
-from pathlib import Path
-from tempfile import TemporaryDirectory
 
 import networkx as nx
-
-from qbrain.code_manipulation.graph_creator import StructInspector
 
 
 import asyncio
@@ -19,19 +15,14 @@ from asgiref.sync import sync_to_async
 
 from urllib.parse import parse_qs
 
-from qbrain.graph import Brain
+from qbrain.core.orchestrator_manager.orchestrator import Thalamus
 from qbrain.predefined_case import RELAY_CASES_CONFIG
 
 from qbrain.utils.deserialize import deserialize
 
-from qbrain.chat_manger.main import AIChatClassifier
-
-from qbrain.utils.dj_websocket.handler import ConnectionManager
 from qbrain.utils.ws_registry import live_data_registry
 
-
 from qbrain.graph.local_graph_utils import GUtils
-from qbrain.utils.utils import Utils
 
 
 from qbrain.core.session_manager.session import session_manager
@@ -160,108 +151,9 @@ class Relay(
         self._gpu_user_id = None
         self._gpu_env_id = None
 
-        # Core components (g, qfu, guard, orchestrator) created in connect() when user_id is known
         self.g = GUtils(nx_only=False, G=nx.Graph(), g_from_path=None)
         self.brain = None
 
-
-    @property
-    def connection_manager(self):
-        if self._connection_manager is None:
-            self._connection_manager = ConnectionManager()
-        return self._connection_manager
-
-    @property
-    def utils(self):
-        if self._utils is None:
-            self._utils = Utils()
-        return self._utils
-
-    @property
-    def user_manager(self):
-        if self._user_manager is None:
-            from qbrain.core.managers_context import get_user_manager
-            self._user_manager = get_user_manager()
-        return self._user_manager
-
-    @property
-    def cg(self):
-        if self._cg is None:
-            self._cg = GUtils(nx_only=True, enable_data_store=False)
-            self._inspector = StructInspector(self._cg.G)
-            from qbrain.core.handler_inspector import register_handlers_to_gutils
-            register_handlers_to_gutils(self._cg)
-        return self._cg
-
-    @property
-    def inspector(self):
-        _ = self.cg  # Ensure cg (and inspector) initialized
-        return self._inspector
-
-    @property
-    def chat_classifier(self):
-        if self._chat_classifier is None:
-            self._chat_classifier = AIChatClassifier(case_struct=self.relay_cases)
-        return self._chat_classifier
-
-    @property
-    def tmp(self):
-        if self._tmp is None:
-            self._tmp = TemporaryDirectory()
-            self._root = Path(self._tmp.name)
-        return self._tmp
-
-    @property
-    def root(self):
-        if self._root is None:
-            _ = self.tmp
-        return self._root if self._root is not None else Path(".")
-
-    def consume_cases(self):
-        pass  # TODO: implement case consumption
-
-    def scan_dir_to_code_graph(self, root_dir: str = None) -> Dict[str, Any]:
-        """
-        Walk a local directory, scan all .py files, and convert each to graph format
-        using self.inspector.convert_module_to_graph. Nodes are added to self.cg.G.
-
-        Args:
-            root_dir: Directory to scan. Defaults to project root (parent of relay_station).
-
-        Returns:
-            Dict with keys: scanned (int), converted (int), errors (list of {path, error}).
-        """
-        if root_dir is None:
-            root_dir = os.path.dirname(os.path.abspath(__file__))
-        root_dir = os.path.normpath(root_dir)
-
-        result = {"scanned": 0, "converted": 0, "errors": []}
-        skip_dirs = {"__pycache__", ".git", "venv", ".venv", "node_modules"}
-
-        for dirpath, dirnames, filenames in os.walk(root_dir):
-            dirnames[:] = [d for d in dirnames if d not in skip_dirs]
-            for name in filenames:
-                if not name.endswith(".py"):
-                    continue
-                filepath = os.path.join(dirpath, name)
-                result["scanned"] += 1
-                try:
-                    with open(filepath, "r", encoding="utf-8") as f:
-                        code_content = f.read()
-                except Exception as e:
-                    result["errors"].append({"path": filepath, "error": str(e)})
-                    continue
-
-                rel = os.path.relpath(filepath, root_dir)
-                module_name = rel[:-3].replace(os.sep, ".")
-
-                try:
-                    self.inspector.convert_module_to_graph(code_content, module_name)
-                    result["converted"] += 1
-                except Exception as e:
-                    result["errors"].append({"path": filepath, "error": str(e)})
-
-        return result
 
     async def connect(self):
         try:
@@ -273,67 +165,22 @@ class Relay(
             query_params = parse_qs(query_string)
             print(f"{_RELAY_DEBUG} connect: query_params = {query_params}")
 
+            #
             received_key = (query_params.get("user_id") or [None])[0]
-            resolved_user_id = await sync_to_async(self.user_manager.get_or_create_user)(
-                received_key=received_key,
-                email=None,
-            )
-            if not resolved_user_id:
-                print(f"{_RELAY_DEBUG} connect: user resolution failed; declining")
-                await self.close()
-                return
-            self.user_id = resolved_user_id
-            print(f"{_RELAY_DEBUG} connect: user_id saved locally: {self.user_id}")
+            await self.handle_user(received_key)
 
-            def _create_orchestrator(cases, user_id):
-                return Brain(
-                    user_id=user_id,
-                    relay_cases=cases,
-                )
+            # START BRAIN
+            await self.create_brain()
 
-            self.brain = await sync_to_async(_create_orchestrator)(
-                self.relay_cases,
-                self.user_id,
-                relay=self,
-            )
-
-
-            self._grid_streamer = None
-            if os.getenv("GRID_STREAM_ENABLED", "false").lower() in ("true", "1"):
-                from jax_test.grid import GridStreamer
-                async def _send_grid_frame(b: bytes):
-                    await self.send(bytes_data=b)
-                self._grid_streamer = GridStreamer(_send_grid_frame)
-                self._grid_streamer.start()
+            # START STREAMER
+            self.create_start_streamer()
 
             print(f"{_RELAY_DEBUG} connect: core components initialized")
+            # CHECK CREATE TABLES AND ENTRIES
+            await self.handle_users_tables()
 
-            if not self.user_tables_authenticated:
-                try:
-                    print(f"{_RELAY_DEBUG} connect: running user_manager.initialize_qbrain_workflow")
-                    user_email = None
-                    workflow_results = await sync_to_async(self.user_manager.initialize_qbrain_workflow)(
-                        uid=self.user_id,
-                        email=user_email,
-                    )
-                    print(f"{_RELAY_DEBUG} connect: user workflow completed: {workflow_results}")
-                except Exception as e:
-                    print(f"{_RELAY_DEBUG} connect: user workflow error (continuing): {e}")
-                    import traceback
-                    traceback.print_exc()
-                self.user_tables_authenticated = True
-
-            session_id = await self._resolve_session()
-            if session_id is None:
-                print(f"{_RELAY_DEBUG} connect: session resolution failed for user {self.user_id}; declining")
-                await self.close()
-                return
-            self._save_session_locally(session_id)
-
-            print(f"{_RELAY_DEBUG} connect: sending session and user sessions to client")
-            await self.send_session()
-            await self._send_all_user_sessions()
-            print(f"{_RELAY_DEBUG} connect: request for user {self.user_id} ACCEPTED")
+            # GET CREATE SESSION -> SEND
+            await self.handle_session()
         except Exception as e:
             print(f"{_RELAY_DEBUG} connect: FATAL error: {e}")
             import traceback
@@ -343,6 +190,91 @@ class Relay(
             except Exception as close_err:
                 print(f"{_RELAY_DEBUG} connect: error during close: {close_err}")
 
+        # todo brain runs on qChip
+        # save front <-> brain
+        await live_data_registry.register_con(
+            self.user_id,
+            self,
+            con="front",
+        )
+        print("RELAY CONNECTED... done")
+
+
+
+    async def handle_session(self):
+        session_id = await self._resolve_session()
+        if session_id is None:
+            print(f"{_RELAY_DEBUG} connect: session resolution failed for user {self.user_id}; declining")
+            await self.close()
+            return
+        self._save_session_locally(session_id)
+        print(f"{_RELAY_DEBUG} connect: sending session and user sessions to client")
+        await self.send_session()
+        await self._send_all_user_sessions()
+        print(f"{_RELAY_DEBUG} connect: request for user {self.user_id} ACCEPTED")
+
+    async def handle_users_tables(self):
+        if not self.user_tables_authenticated:
+            try:
+                print(f"{_RELAY_DEBUG} connect: running user_manager.initialize_qbrain_workflow")
+                user_email = None
+                workflow_results = await sync_to_async(self.user_manager.initialize_qbrain_workflow)(
+                    uid=self.user_id,
+                    email=user_email,
+                )
+                print(f"{_RELAY_DEBUG} connect: user workflow completed: {workflow_results}")
+            except Exception as e:
+                print(f"{_RELAY_DEBUG} connect: user workflow error (continuing): {e}")
+                import traceback
+                traceback.print_exc()
+            self.user_tables_authenticated = True
+
+
+    async def handle_user(self, received_key):
+        resolved_user_id = await sync_to_async(self.user_manager.get_or_create_user)(
+            received_key=received_key,
+            email=None,
+        )
+
+        if not resolved_user_id:
+            print(f"{_RELAY_DEBUG} connect: user resolution failed; declining")
+            await self.close()
+            return
+        self.user_id = resolved_user_id
+        print(f"{_RELAY_DEBUG} connect: user_id saved locally: {self.user_id}")
+
+
+
+    async def create_brain(self):
+        def _create_orchestrator(cases, user_id, relay):
+            # Thalamus is the orchestrator that owns managers and the Brain
+            # graph. It exposes handle_relay_payload for all relay cases.
+            return Thalamus(
+                qdash_con=self,
+                cases=cases,
+                user_id=user_id,
+                relay=relay,
+                collect_cases_into_graph=True,
+                build_component_graph=True,
+                parse_equations=False,
+            )
+
+        self.brain = await sync_to_async(_create_orchestrator)(
+            self.relay_cases,
+            self.user_id,
+            self,
+        )
+
+
+    def create_start_streamer(self):
+        self._grid_streamer = None
+        if os.getenv("GRID_STREAM_ENABLED", "false").lower() in ("true", "1"):
+            from jax_test.grid import GridStreamer
+            async def _send_grid_frame(b: bytes):
+                await self.send(bytes_data=b)
+
+            self._grid_streamer = GridStreamer(_send_grid_frame)
+            self._grid_streamer.start()
 
     async def _resolve_session(self) -> Optional[int]:
         """
@@ -463,9 +395,6 @@ class Relay(
             raise
 
 
-
-
-
     async def receive(
             self,
             text_data=None,
@@ -477,39 +406,6 @@ class Relay(
                 payload = {"type": "UNKNOWN", "data": {}}
             data_type = payload.get("type")
 
-            # First message: optional GPU registration (type "gpu" with user_id, env_id)
-            if not getattr(self, "_first_message_received", True):
-                self._first_message_received = True
-                if data_type == "gpu":
-                    auth = payload.get("auth") or {}
-                    data = payload.get("data") or {}
-                    uid = auth.get("user_id") or data.get("user_id")
-                    eid = auth.get("env_id") or data.get("env_id")
-                    if uid is not None and eid is not None:
-                        await live_data_registry.register_gpu(uid, eid, self)
-                        self._is_gpu_connection = True
-                        self._gpu_user_id = str(uid)
-                        self._gpu_env_id = str(eid)
-                        print(f"{_RELAY_DEBUG} receive: GPU registered for user_id={uid} env_id={eid}")
-                        return
-                    # else fall through to normal handling
-
-            # GPU connection: handle LIVE_DATA by relaying to frontend clients
-            if getattr(self, "_is_gpu_connection", False) and data_type == "LIVE_DATA":
-                uid = getattr(self, "_gpu_user_id", None)
-                eid = getattr(self, "_gpu_env_id", None)
-                clients = await live_data_registry.get_clients_for_channel(uid, eid)
-                out = {"type": "LIVE_DATA", "auth": payload.get("auth") or {}, "data": payload.get("data") or {}}
-                if "auth" not in out or not out["auth"]:
-                    out["auth"] = {"user_id": uid, "env_id": eid}
-                text = json.dumps(out, default=str)
-                for client in clients:
-                    try:
-                        await client.send(text_data=text)
-                    except Exception as send_err:
-                        print(f"{_RELAY_DEBUG} receive: LIVE_DATA relay send error: {send_err}")
-                return
-
             if self.session_id:
                 if "auth" not in payload:
                     payload["auth"] = {}
@@ -519,8 +415,6 @@ class Relay(
             # Register frontend for LIVE_DATA when auth has env_id
             auth = payload.get("auth") or {}
             env_id = auth.get("env_id")
-            if env_id is not None and self.user_id is not None:
-                await live_data_registry.register_frontend(self.user_id, str(env_id), self)
 
             # Orchestrator is now the primary classifier/dispatcher for all relay cases,
             # including CHAT and START_SIM (via injected helpers).
@@ -613,3 +507,61 @@ class Relay(
             traceback.print_exc()
             raise
 
+"""
+@property
+def connection_manager(self):
+    if self._connection_manager is None:
+        self._connection_manager = ConnectionManager()
+    return self._connection_manager
+
+@property
+def utils(self):
+    if self._utils is None:
+        self._utils = Utils()
+    return self._utils
+
+@property
+def user_manager(self):
+    if self._user_manager is None:
+        from qbrain.core.managers_context import get_user_manager
+        self._user_manager = get_user_manager()
+    return self._user_manager
+
+@property
+def cg(self):
+    if self._cg is None:
+        self._cg = GUtils(nx_only=True, enable_data_store=False)
+        self._inspector = StructInspector(self._cg.G)
+        from qbrain.core.handler_inspector import register_handlers_to_gutils
+        register_handlers_to_gutils(self._cg)
+    return self._cg
+
+@property
+def inspector(self):
+    _ = self.cg  # Ensure cg (and inspector) initialized
+    return self._inspector
+
+@property
+def chat_classifier(self):
+    if self._chat_classifier is None:
+        self._chat_classifier = AIChatClassifier(case_struct=self.relay_cases)
+    return self._chat_classifier
+
+@property
+def tmp(self):
+    if self._tmp is None:
+        self._tmp = TemporaryDirectory()
+        self._root = Path(self._tmp.name)
+    return self._tmp
+
+@property
+def root(self):
+    if self._root is None:
+        _ = self.tmp
+    return self._root if self._root is not None else Path(".")
+
+def consume_cases(self):
+    pass  # TODO: implement case consumption
+
+
+"""

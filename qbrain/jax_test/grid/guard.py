@@ -99,7 +99,10 @@ class Guard:
         model_data = {"config": cfg}
 
         if db_flat is not None:
-            nodes = self._build_nodes_from_cfg(cfg, db_flat)
+            nodes = self._build_nodes_from_cfg(
+                cfg,
+                db_flat,
+            )
             model_data["db_decoded_len"] = int(len(db_flat))
             model_data["structure"] = {
                 "n_modules": len(nodes),

@@ -15,12 +15,12 @@ def calc_yterm(yukawa_coupling_sum):
     yterm = yukawa_coupling_sum
     return yterm
 
-def calc_spatial_diff(psi_, psi__, d):
+def calc_spatial_diff_psi(psi_, psi__, d):
     # Spatial central difference: (ψ_{i+1} - ψ_{i-1}) / 2d
     spatial_diff = (psi_ - psi__) / (2.0 * d)
     return spatial_diff
 
-def calc_time_diff(psi, prev_psi, dt):
+def calc_time_diff_psi(psi, prev_psi, dt):
     # Temporal backward difference: (ψ_t - ψ_{t-dt}) / dt
     time_diff = (psi - prev_psi) / dt
     return time_diff
@@ -30,9 +30,9 @@ def calc_dirac_kinetic_component(gamma_mu, dmu_psi):
     dirac_kinetic_component = gamma_mu @ dmu_psi
     return dirac_kinetic_component
 
-def calc_mass_term(_mass, psi):
+def calc_mass_term_psi(mass, psi):
     # Fermion mass contribution: -i * m * ψ
-    mass_term = -1j * _mass * psi
+    mass_term = -1j * mass * psi
     return mass_term
 
 def calc_gterm_mu(i, g, field_value, T, psi):

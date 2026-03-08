@@ -1,5 +1,3 @@
-
-import logging
 import base64
 import random
 from datetime import datetime
@@ -59,7 +57,6 @@ class ModuleWsManager:
     def _ensure_module_table(self):
         schema = {f.name: f.field_type for f in MODULE_SCHEMA}
         self.qb.get_table_schema(table_id=self.MODULES_TABLE, schema=schema, create_if_not_exists=True)
-        self.qb.insert_col(self.MODULES_TABLE, "params", "STRING")
 
     def _ensure_sessions_modules_table(self):
         schema = {f.name: f.field_type for f in SESSIONS_MODULES_SCHEMA}
@@ -69,25 +66,24 @@ class ModuleWsManager:
         schema = {f.name: f.field_type for f in MODULES_METHODS_SCHEMA}
         self.qb.get_table_schema(table_id=self.MODULES_METHODS_TABLE, schema=schema, create_if_not_exists=True)
 
-    def set_module(self, rows: List[Dict] or Dict, user_id: str):
+    def set_module(self, rows, user_id: str):
         if isinstance(rows, dict):
             rows = [rows]
 
-        now = datetime.now().isoformat()
+        now = datetime.now()
         for row in rows:
             row["user_id"] = user_id
 
             row["created_at"] = now
             row["updated_at"] = now
 
-            # parent isn't in standard list, so serialize if present
             if row.get("parent"):
                 row.pop("parent")
 
             if row.get("module_index"):
                 row.pop("module_index")
 
-        print("set module rows", len(rows))
+        print("set module rows", len(rows), rows)
         self.qb.set_item(self.MODULES_TABLE, rows)
 
     def link_session_module(self, session_id: str, module_id: str, user_id: str):

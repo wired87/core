@@ -158,7 +158,7 @@ class AuthData:
             user_id=user_id,
             session_id=session_id,
             env_id=env_id,
-            timestamp=datetime.now().isoformat()
+            timestamp=datetime.now()
         )
     
     def to_dict(self) -> Dict[str, Any]:
@@ -242,7 +242,7 @@ class InjectionData:
             data=[time_values, energy_values],
             ntype=ntype,
             user_id=user_id,
-            created_at=datetime.now().isoformat()
+            created_at=datetime.now()
         )
     
     def validate(self) -> bool:
@@ -354,7 +354,7 @@ class WebSocketResponse:
     type: str
     status: Status
     data: Any
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now())
     auth: Optional[AuthData] = None
     count: Optional[int] = None
     
@@ -481,7 +481,7 @@ class WebSocketRequest:
         return cls(
             type=type,
             data=data,
-            timestamp=datetime.now().isoformat(),
+            timestamp=datetime.now(),
             auth=auth
         )
     
@@ -500,7 +500,7 @@ class WebSocketRequest:
         auth = AuthData.from_dict(auth_data) if auth_data else None
         
         # Auto-generate timestamp if not provided by frontend
-        timestamp = data.get("timestamp", datetime.now().isoformat())
+        timestamp = data.get("timestamp", datetime.now())
         
         return cls(
             type=data["type"],

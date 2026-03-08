@@ -1,4 +1,4 @@
-"""Brain graph components (classifier, executor, hydrator, schema, workers)."""
+"""Brain graph components (classifier, executor, hydrator, schema, workers, sim_orchestrator)."""
 
 from qbrain.graph.brn.brain import Brain
 from qbrain.graph.brn.brain_schema import (
@@ -7,6 +7,7 @@ from qbrain.graph.brn.brain_schema import (
     DataCollectionResult,
     GoalDecision,
 )
+from qbrain.graph.brn.sim_orchestrator import SimOrchestrator
 
 __all__ = [
     "Brain",
@@ -14,4 +15,5 @@ __all__ = [
     "BrainNodeType",
     "DataCollectionResult",
     "GoalDecision",
+    "SimOrchestrator",
 ]

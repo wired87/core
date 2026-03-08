@@ -123,7 +123,7 @@ class SessionManager:
             while self._session_exists(session_id):
                 session_id = self._generate_session_id()
 
-            now = datetime.now().isoformat()
+            now = datetime.now()
 
             # --- Vertex RAG corpus creation (per-session) ---
             corpus_id: Optional[str] = None
@@ -267,7 +267,7 @@ class SessionManager:
             print(f"{_SESSION_DEBUG} deactivate_session: session_id={session_id}")
             updates = {
                 "is_active": False,
-                "last_activity": datetime.now().isoformat(),
+                "last_activity": datetime.now(),
                 "status": "deleted"
             }
             out = self.qb.set_item(

@@ -6,7 +6,9 @@ zeig mir alle files an
 """
 import ast
 
-from qbrain.utils.math.operator_handler import OperatorHandler, EqExtractor
+from qbrain.brn.brain import Brain
+from qbrain.brn.sim_orchestrator import SimOrchestrator
+from qbrain.utils.math.operator_handler import EqExtractor
 
 """
 Orchestrator Manager
@@ -49,7 +51,6 @@ import os
 from typing import List, Dict, Optional, Any, TypedDict
 
 from qbrain.gem_core.gem import Gem
-from qbrain.graph import Brain
 
 from qbrain.core.fields_manager.fields_lib import FieldsManager
 from qbrain.core.method_manager.method_lib import MethodManager
@@ -60,6 +61,7 @@ from qbrain.core.param_manager.params_lib import ParamsManager
 from qbrain.core.user_manager import UserManager
 from qbrain.core.file_manager.file_lib import FileManager
 from qbrain.chat_manger.main import AIChatClassifier
+from qbrain.core.thalamic_classifier import ThalamicEventClassifier
 from qbrain.core.env_manager.env_lib import EnvManager
 from qbrain.core.guard import Guard, ComponentGraphCreator
 from qbrain.core.model_manager.model_lib import ModelManager
@@ -71,6 +73,8 @@ from qbrain.predefined_case import RELAY_CASES_CONFIG
 from qbrain.qf_utils.qf_utils import QFUtils
 
 from qbrain.core.managers_context import set_orchestrator, reset_orchestrator
+from qbrain.core.workflows.create_env_from_components import validate_env_components
+from qbrain.core.sim_analyzer.sim_result_analyzer import SimResultAnalyzer
 
 
 class StartSimInput(TypedDict):
@@ -90,32 +94,12 @@ class Thalamus:
 
     Serves as a primary integration point that connects multiple subsystems and allows
     efficient handling of user commands, simulation execution, and communication handling.
-
-    :ivar DATASET_ID: Constant representing the dataset identifier associated with the orchestrator.
-    :type DATASET_ID: str
-    :ivar user_id: The unique identifier for a user interacting with the orchestrator.
-    :type user_id: str
-    :ivar cases: A collection of cases or datasets used by the orchestrator to process information.
-    :type cases: Any
-    :ivar relay: Relay WebSocket interface for communication and handling payloads.
-    :type relay: Optional[Any]
-    :ivar last_files: Tracks the list of recently processed files in the orchestrator.
-    :type last_files: List[Any]
-    :ivar history: Stores historical records or events the orchestrator processes.
-    :type history: List[Any]
-    :ivar chat_contexts: A map of chat sessions containing messages exchanged during conversations.
-        Key is session_key (str), and Value is a List of Dict with role and content.
-    :type chat_contexts: Dict[str, List[Dict[str, str]]]
-    :ivar simulation_drafts: A dictionary storing draft data for simulations.
-        Key corresponds to session keys and the value includes respective draft details.
-    :type simulation_drafts: Dict[str, Dict[str, Any]]
-    :ivar goal_request_struct: A dictionary representing structured goals required for specific cases.
-    :type goal_request_struct: Dict[str, Dict[str, Any]]
     """
     DATASET_ID = "QBRAIN"
     
     def __init__(
         self,
+        qdash_con,
         cases,
         user_id: str = "public",
         relay=None,
@@ -124,7 +108,6 @@ class Thalamus:
         build_component_graph: bool = True,
         parse_equations: bool = False,
     ):
-        _dr_backend = os.environ.get("DEEP_RESEARCH_BACKEND", "chatgpt").strip().lower()
 
         # Use the shared/global QBrainTableManager (DuckDB by default unless configured otherwise).
         from qbrain.core.qbrain_manager import get_qbrain_table_manager
@@ -140,21 +123,22 @@ class Thalamus:
         self.model_manager = ModelManager(qb=self._qb, gem=self.gem)
         self.module_db_manager = ModuleWsManager(self._qb)
         self.field_manager = FieldsManager(self._qb)
-        self.method_manager = MethodManager(self._qb)
-        self.user_manager = UserManager(self._qb)
         self.params_manager = ParamsManager(self._qb)
+        self.method_manager = MethodManager(self._qb, self.params_manager)
+        self.user_manager = UserManager(self._qb)
 
         self.research_agent = ResearchAgent(
             self.file_manager,
             self.gem,
-            deep_research_backend=_dr_backend,
+            deep_research_backend=qdash_con,
         )
 
         # init Brain empty
         self.g = Brain(
-            _dr_backend,
+            qdash_con,
             user_id,
         )
+
         self.qfu = QFUtils(g=self.g)
 
         # Discover all manager relay case structs and mirror them into the Brain graph.
@@ -212,10 +196,28 @@ class Thalamus:
             params_manager=self.params_manager,
         )
 
-        self.chat_classifier = AIChatClassifier(cases, gem=self.gem)
+        self.sim_orchestrator = SimOrchestrator(
+            brain=self.g,
+            guard=self.guard,
+            env_manager=self.env_manager,
+            sim_analyzer=SimResultAnalyzer(env_manager=self.env_manager),
+            injection_manager=self.injection_manager,
+            params_manager=self.params_manager,
+            qb=self._qb,
+            relay=None,
+            session_manager=self.session_manager,
+        )
+
+        ai_chat = AIChatClassifier(cases, gem=self.gem)
+        self.chat_classifier = ThalamicEventClassifier(
+            relay_cases=cases,
+            embed_fn=self.g._embed_text,
+            ai_chat_classifier=ai_chat,
+        )
         self.user_id = user_id
 
         self.relay = relay
+        self.sim_orchestrator.relay = relay
         self.cases = cases
         self.last_files = []
         self.history = []
@@ -247,7 +249,7 @@ class Thalamus:
         if data_type:
             if data_type == "START_SIM":
                 response_stuff = await asyncio.to_thread(
-                    self._handle_start_sim_process,
+                    self._run_start_sim,
                     payload,
                     user_id,
                     session_id=session_id,
@@ -753,6 +755,29 @@ class Thalamus:
                 print(f"handle_relay_payload: FileManager error: {e}")
 
 
+    def _run_start_sim(
+            self,
+            payload: dict,
+            user_id: str,
+            session_id: Optional[str] = None,
+    ):
+        """
+        Delegate to SimOrchestrator when configured; fall back to legacy _handle_start_sim_process.
+        """
+        if self.sim_orchestrator is not None:
+            result = self.sim_orchestrator.run(
+                payload=payload,
+                user_id=user_id or self.user_id,
+                session_id=session_id,
+            )
+            if result:
+                return result
+        return self._handle_start_sim_process(
+            payload=payload,
+            user_id=user_id,
+            session_id=session_id,
+        )
+
     def _handle_start_sim_process(
             self,
             payload: dict,
@@ -761,12 +786,33 @@ class Thalamus:
     ):
         """
         Handles the START_SIM case.
+        Pre-check: validate env_data has modules/fields. If missing, return need_data.
         Delegates to Guard.main to fetch data, build graph, and compile pattern.
         Deactivates session upon success.
         """
+        print("_handle_start_sim_process...")
         try:
             response_items = []
             config = payload.get("data", {}).get("config", {})
+            if not config:
+                session_key = self._session_key(session_id, user_id)
+                msg = (
+                    "To start a simulation, provide an env with modules and fields. "
+                    "Use create_env_from_components with module_id, field_ids, and method_ids."
+                )
+                return self._return_follow_up_chat(msg, session_key)
+
+            for k, v in config.items():
+                is_valid, missing = validate_env_components(v if isinstance(v, dict) else None)
+                if not is_valid:
+                    session_key = self._session_key(session_id, user_id)
+                    missing_str = ", ".join(missing)
+                    msg = (
+                        f"Env {k} is missing: {missing_str}. "
+                        "Please add modules with fields, or use create_env_from_components."
+                    )
+                    return self._return_follow_up_chat(msg, session_key)
+
             for k, v in config.items():
                 try:
                     grid_streamer = getattr(self.relay, "_grid_streamer", None) if self.relay else None
@@ -837,6 +883,7 @@ class Thalamus:
                 "status": {"state": "error", "code": 500, "msg": str(e)},
                 "data": {}
             })
+        print("_handle_start_sim_process... done")
         return response_items
 
 

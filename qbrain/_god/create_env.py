@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 from typing import List
 
 from utils import deserialize
-from qbrain.utils.utils import Utils
+from qbrain.graph.utils import Utils
 
 from dotenv import load_dotenv
 load_dotenv()

@@ -110,15 +110,6 @@ class GridAnimationRecorder:
     def _save_to_envs(self, animation_path: str) -> None:
         """Update envs table row with animation_path."""
         try:
-            if hasattr(self.env_manager.qb, "insert_col"):
-                self.env_manager.qb.insert_col(
-                    self.env_manager.TABLE_ID,
-                    "animation_path",
-                    "STRING",
-                )
-        except Exception:
-            pass
-        try:
             self.env_manager.qb.set_item(
                 self.env_manager.TABLE_ID,
                 {"animation_path": animation_path},

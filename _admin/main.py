@@ -113,6 +113,12 @@ def main() -> None:
         metavar="PATH",
         help="Output path for demo MP4 (with --record-qdash-demo). Default: project_root/qdash_demo.mp4",
     )
+    # Gemini CLI settings.json (root + .gemini/) per https://geminicli.com/docs/reference/configuration
+    parser.add_argument(
+        "--write-gemini-settings",
+        action="store_true",
+        help="Write Gemini CLI settings.json to project root and .gemini/settings.json.",
+    )
     # Build MCP Docker -> run MCP server + workflow -> app publish checklist (OpenAI Apps SDK)
     parser.add_argument(
         "--publish-app",
@@ -126,6 +132,12 @@ def main() -> None:
     if args.run_local_scan_only:
         from _admin.run_local import run_local_scan_only
         run_local_scan_only(project_root)
+        sys.exit(0)
+
+    if args.write_gemini_settings:
+        from _admin.gemini_settings import write_settings
+        paths = write_settings(project_root=_project_root)
+        print("[Admin] Wrote Gemini CLI settings:", paths)
         sys.exit(0)
 
     if args.scan_only:

@@ -32,7 +32,7 @@ def test_managers():
     user_data = {
         "uid": user_id,
         "email": f"{user_id}@test.com",
-        "created_at": datetime.now().isoformat(),
+        "created_at": datetime.now(),
         "status": "active",
         "sm_stack_status": "ready"
     }
@@ -48,7 +48,7 @@ def test_managers():
         "id": module_id,
         "code": "print('hello')",
         "file_type": "py",
-        "created_at": datetime.now().isoformat(),
+        "created_at": datetime.now(),
         "params": {"p1": "v1"}
     }
     

@@ -5,8 +5,7 @@ from datetime import timedelta
 
 import dotenv
 
-
-
+from _admin.mcp_master import MCPMaster
 
 dotenv.load_dotenv()
 
@@ -113,6 +112,16 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'qbrain.bm.urls'
 
+MCP_MASTER = MCPMaster()
+
+# MCP servers config (Gemini CLI / Cursor compatible).
+# Set GITHUB_PERSONAL_ACCESS_TOKEN in .env; paste token -> written into config.
+# Full options: https://geminicli.com/docs/reference/configuration
+# MCP setup: https://geminicli.com/docs/cli/tutorials/mcp-setup
+from _admin.gemini_settings import get_mcp_servers_for_django, write_settings
+
+MCP_SERVERS = get_mcp_servers_for_django()
+# Write settings.json (root + .gemini/) via: python -m _admin.gemini_settings
 
 # JWT
 SIMPLE_JWT = {

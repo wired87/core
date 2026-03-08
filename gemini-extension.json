@@ -1,0 +1,17 @@
+{
+  "name": "qBrain",
+  "version": "1.0.0",
+  "description": "Decode realities electrical pattern",
+  "mcpServers": {
+    "my-server": {
+      "command": "node",
+      "args": ["${extensionPath}/my-server.js"],
+      "cwd": "${extensionPath}"
+    }
+  },
+  "contextFileName": "GEMINI.md",
+  "excludeTools": ["run_shell_command"],
+  "plan": {
+    "directory": ".gemini/plans"
+  }
+}

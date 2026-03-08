@@ -7,7 +7,7 @@ from qbrain.qf_utils.all_subs import ALL_SUBS
 from qbrain.qf_utils.field_utils import FieldUtils
 from qbrain.qf_utils.qf_utils import QFUtils
 from qbrain.graph.local_graph_utils import GUtils
-from qbrain.utils.utils import Utils
+from qbrain.graph.utils import Utils
 
 
 class Relay(

@@ -11,10 +11,16 @@ from qbrain.core.module_manager.ws_modules_manager.case import RELAY_MODULE
 from qbrain.core.param_manager.case import RELAY_PARAM
 from qbrain.core.session_manager.case import RELAY_SESSION
 from qbrain.control_engine import RELAY_CONTROL_ENGINE
+from qbrain.core.collector_manager.case import RELAY_COLLECT_INFORMATION
+from qbrain.core.sim_analyzer.case import RELAY_ANALYZE_SIM_RESULTS
+from qbrain.core.researcher2.case import RELAY_START_RESEARCH
 
 # Manually composed RELAY_CASES_CONFIG from case structs
-# Order: ENV, FIELD, INJECTION, SESSION, MODULE, PARAMS, METHOD, FILE, CONTROL_ENGINE
+# Order: COLLECT_INFORMATION, ANALYZE_SIM_RESULTS, START_RESEARCH, then ENV, FIELD, ...
 RELAY_CASES_CONFIG = [
+    *RELAY_COLLECT_INFORMATION,
+    *RELAY_ANALYZE_SIM_RESULTS,
+    *RELAY_START_RESEARCH,
     *RELAY_ENV,
     *RELAY_FIELD,
     *RELAY_INJECTION,

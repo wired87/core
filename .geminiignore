@@ -1,0 +1,56 @@
+# Frontend / UI (not core backend)
+qdash/
+
+# Credentials and secrets
+.env
+.env.*
+!.env.example
+**/credentials.json
+**/credentials*.json
+*.pem
+*secret*
+*key*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.eggs/
+
+# Node / build
+node_modules/
+/build
+dist/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Local data / DB
+*.duckdb
+db.sqlite3
+static_root/
+
+# Non-relevant docs (runbooks, plans, agent summaries)
+run_local.md
+DEV_ENV_COMMANDS.md
+startup.md
+implementation_plan_run_local.md
+visualization-workflow.md
+todo.md
+*.done/
+qbrain/done/
+.agent/
+qdash/.agent/
+
+# Demo / test fixtures
+_admin/app_handler/openai_asdk/
+qbrain/jax_test/
+qdash/threejs-object-selection/
+
+# MCP descriptors (internal tool schemas)
+mcps/

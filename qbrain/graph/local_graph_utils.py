@@ -6,13 +6,11 @@ from tempfile import TemporaryDirectory
 
 from typing import List, Dict
 import networkx as nx
-import queue
 
 from qbrain.utils.serialize_complex import check_serialize_dict
 from qbrain.graph.visual import create_g_visual
 from qbrain.utils.manipulator import Manipulator
-from qbrain.utils.queue_handler import QueueHandler
-from qbrain.utils.utils import Utils
+from qbrain.graph.utils import Utils
 
 class GUtils(Utils):
     """
@@ -49,7 +47,6 @@ class GUtils(Utils):
             self.demo_G_save_path = r"C:\Users\bestb\PycharmProjects\BestBrain\admin_data\demo_G.json" if os.name == "nt" else "admin_data/demo_G.json"
 
         self.manipulator = Manipulator()
-        self.q_handler = QueueHandler(queue)
 
         if self.enable_data_store is True:
             self.datastore = nx.Graph()
@@ -82,7 +79,11 @@ class GUtils(Utils):
         return self.G
 
     def get_node(self, nid):
-        return self.G.nodes[nid]
+        try:
+            return self.G.nodes[nid]
+        except Exception as e:
+            print("Err get_node:", e)
+            return None
 
     def print_edges(self, trgt_l, src_l):
         print("len edges", len([
@@ -92,17 +93,16 @@ class GUtils(Utils):
             and attrs.get("trgt_layer").upper() == trgt_l.upper()
         ]))
 
+
     def add_node(self, attrs: dict, flatten=False):
         try:
             #print("Add node:", attrs)
             attrs = self.manipulator.clean_attr_keys(
-                attrs,
-                flatten
+                attrs,                flatten
             )
 
             if attrs.get("type") is None:
-                print("NEW NODE ATTRS")
-                # pprint.pp(attrs)
+                raise Exception("NODE HAS NO ATTR type")
 
             attrs["type"] = attrs["type"].upper()
             nid = attrs["id"]
@@ -110,6 +110,7 @@ class GUtils(Utils):
             if self.nx_only is False:
                 self.local_batch_loader(attrs)
 
+            # CHECK UPDATE
             if self.G.has_node(nid):
                 self.G.nodes[nid].update(attrs)
 
@@ -709,10 +710,10 @@ class GUtils(Utils):
             filter_value:str or list=None,
             just_id=False,
     ) -> list[int] or list[tuple]:
-        print("G:", self.G)
+        #print("G:", self.G)
         nodes = self.G.nodes(data=True)
 
-        print(f"len nodes: {len(nodes)}")
+        #print(f"len nodes: {len(nodes)}")
 
         if filter_key is not None and filter_value is not None:
             new_nodes = []
@@ -730,7 +731,7 @@ class GUtils(Utils):
                             (nid, attrs)
                         )
             nodes = new_nodes
-
+        print("get_nodes... done")
         return nodes
 
     

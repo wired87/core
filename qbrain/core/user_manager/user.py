@@ -178,11 +178,39 @@ class UserManager:
             traceback.print_exc()
             return False
 
+    def ensure_user(self, uid, email=None) -> bool:
+        try:
+            print(f"ensure_user")
+
+            # ensure user table
+            table_item: dict = next(
+                item
+                for item in self.qb.MANAGERS_INFO
+                if "users" == item["default_table"]
+            )
+
+            schema = self.qb.db.create_sql_schema(table_item["schema"])
+
+            self.qb.db.create_table("users", schema_sql=schema)
+            query, params = db_queries.duck_ensure_user_exists(uid)
+            result = self.qb.db.run_query(query, conv_to_dict=True, params=params)
+            if not result or not len(result):
+                user_data = {"id": uid, "email": email or None, "status": "active"}
+                print(f"_ensure_user_record: creating user")
+                self.qb.set_item("users", user_data)
+            print(f"_ensure_user_record: created")
+            return True
+        except Exception as e:
+            print(f"_ensure_user_record: error: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+
     def set_standard_stack(self, user_id):
         try:
             print(f"{_USER_DEBUG} set_standard_stack: user_id={user_id}")
-            self._ensure_user_record(user_id)
-            self.qb.set_item("users", {"sm_stack_status": "created"}, keys={"id": user_id})
+            self.ensure_user(user_id)
+
             print(f"{_USER_DEBUG} set_standard_stack: done")
         except Exception as e:
             print(f"{_USER_DEBUG} set_standard_stack: error: {e}")
@@ -190,38 +218,6 @@ class UserManager:
             traceback.print_exc()
             raise
 
-    def _ensure_user_record(self, uid: str, email: Optional[str] = None) -> bool:
-        """
-        Create user record if it doesn't exist, or verify existing record.
-        
-        Args:
-            uid: User unique identifier
-            email: User email address
-            
-        Returns:
-            True if user record was created or already exists
-        """
-        try:
-            print(f"{_USER_DEBUG} _ensure_user_record: uid={uid}")
-            if self.qb.db.local:
-                query, params = db_queries.duck_ensure_user_exists(uid)
-                result = self.qb.db.run_query(query, conv_to_dict=True, params=params)
-            else:
-                query, job_config = self.qb.bqcore.q_ensure_user_exists(self.pid, self.DATASET_ID, uid)
-                result = self.qb.db.run_query(query, conv_to_dict=True, job_config=job_config)
-            if result:
-                print(f"{_USER_DEBUG} _ensure_user_record: user already exists")
-                return True
-            user_data = {"id": uid, "email": email or None, "status": "active"}
-            print(f"{_USER_DEBUG} _ensure_user_record: creating user")
-            self.qb.set_item("users", user_data, keys={"id": uid})
-            print(f"{_USER_DEBUG} _ensure_user_record: created")
-            return True
-        except Exception as e:
-            print(f"{_USER_DEBUG} _ensure_user_record: error: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
 
     def _ensure_payment_record(self, uid: str) -> bool:
         """

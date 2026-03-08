@@ -3,21 +3,8 @@ import os
 from typing import Union, List, Any
 
 from qbrain.auth.set_gcp_auth_creds_path import set_gcp_auth_path
-
-# Prefer the original top-level imports when available (e.g. installed as packages),
-# but fall back to the in-repo qbrain implementations when running locally.
-try:
-    from compute_engine import VMMaster  # type: ignore
-except Exception:  # pragma: no cover - compatibility fallback for local runs
-    from qbrain.compute_engine import VMMaster
-
-try:
-    from create_env import EnvCreatorProcess  # type: ignore
-except Exception:  # pragma: no cover - compatibility fallback for local runs
-    from qbrain.create_env import EnvCreatorProcess
-
+from qbrain.create_env import EnvCreatorProcess
 from qbrain.utils.run_subprocess import exec_cmd
-
 
 class CloudBatchMaster:
     """
@@ -187,7 +174,7 @@ class CloudBatchMaster:
 
 
 
-class DeploymentHandler(VMMaster):
+class DeploymentHandler:
     """
     A class to deploy a local Docker image to a new GCP Compute Engine VM.
     All gcloud/docker commands are executed via a simple function.
@@ -197,7 +184,6 @@ class DeploymentHandler(VMMaster):
         project_id = self._get_env("GCP_PROJECT_ID", "Project ID")
         zone = self._get_env("GCP_ZONE", "Compute Engine Zone")
         region = self._get_env("GCP_REGION", "GCP Region")
-        VMMaster.__init__(self, project_id=project_id, zone=zone)
         self.project_id = project_id
         self.region = region
         self.zone = zone

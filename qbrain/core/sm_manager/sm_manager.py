@@ -25,7 +25,6 @@ class SMManager:
         self.param_manager = get_param_manager()
         self.method_manager = get_method_manager()
         self.qb = get_qbrain_table_manager()
-        # METHODS
 
     def check_sm_exists(self, user_id: str = "public"):
         try:
@@ -47,9 +46,12 @@ class SMManager:
 
     def main(self, user_id: str = "public"):
         """
-        Upsert standard nodes and edges from QFUtils to BigQuery tables.
+        Upsert standard nodes and edges from QFUtils to DB tables.
         """
         print("PROCESSING STANDARD MANAGER WORKFLOW")
+
+        # Ensure tables exist (prod, test, CLI all use same canonical DB)
+        self.qb.initialize_all_tables()
 
         # Create module stack
         qf:QFUtils = self._initialize_graph()
@@ -124,7 +126,7 @@ class SMManager:
                         "user_id": user_id,
                         "status": "active",
                         "created_at": now,
-                        "updated_at": now
+                        "updated_at": now,
                     })
 
             # Upsert
@@ -167,8 +169,11 @@ class SMManager:
             qf = QFUtils(G=nx.Graph())
             qf.build_interacion_G()
             qf.build_parameter()
+
             module_creator = ModuleCreator(G=qf.g.G, qfu=qf)
             module_creator.load_sm()
+
+            qf.extend_param_props()
             print(f"{_SM_DEBUG} _initialize_graph: finished")
             return qf
         except Exception as e:
@@ -247,6 +252,7 @@ class SMManager:
                             "id",
                             "params",
                             "code",
+                            "module_index"
                         ]
                     },
                 }
@@ -264,6 +270,16 @@ class SMManager:
                     print(f"Skipping malformed FIELD node {attrs}. Keys/Values missing.")
                     continue
 
+                # extend with neighbor vals
+                # todo: rm values -> receive in process param attrs
+                param_neighbors = qf.g.get_neighbor_list(nid, "PARAM")
+                for pid, pattrs in param_neighbors.items():
+                    if pid not in keys:
+                        # add val stack
+                        values.append(pattrs.get("value", [0]))
+                        keys.append(pattrs.get(pid))
+                        list(axis_def).append(0)
+
                 # Ensure list types for JSON serialization
                 if keys is not None and not isinstance(keys, list):
                     keys = list(keys)
@@ -276,12 +292,13 @@ class SMManager:
                     "id": nid,
                     "keys": keys,
                     "values": values,
-                    "axis_def": axis_def,
+                    #"axis_def": axis_def,
                     "module_id": attrs.get(
                         "module_id",
                         attrs["parent"][0]
                     ),
                     "origin": "SM",
+                    "description": "",
                     "interactant_fields": interactant_fields,
                 }
                 field_rows.append(field_data)
@@ -294,7 +311,7 @@ class SMManager:
                     "description": "",
                     "origin": "SM",
                     "const": attrs.get("const"),
-                    "axis_def": attrs.get("axis_def"),
+                    "axis_def": attrs.get("axis_def", 0),
                     "value": attrs.get("value"),
                     "shape": attrs.get("shape"),
                 }
@@ -317,7 +334,12 @@ class SMManager:
                     "axis_def": attrs.get("axis_def", None),
                 }
                 method_rows.append(method_data)
-        
+
+        print("ROWS CREATED:")
+        print("modules", len(modules))
+        print("field_rows", len(field_rows))
+        print("param_rows", len(param_rows))
+        print("method_rows", len(method_rows))
         return modules, field_rows, param_rows, method_rows
 
     def _extract_edges(self, qf: QFUtils, user_id: str) -> Tuple[List[Dict], List[Dict]]:

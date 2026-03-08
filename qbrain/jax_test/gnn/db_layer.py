@@ -3,12 +3,10 @@ import jax.numpy as jnp
 from jax import jit, vmap, lax
 import numpy as np
 
-from dtypes import TimeMap
 from jax import ops
-
+from qbrain.jax_test.dtypes import TimeMap
 
 class DBLayer:
-
 
     def  __init__(
             self,

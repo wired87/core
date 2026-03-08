@@ -1,7 +1,7 @@
 # Run frontend + backend locally
 
 ## Backend (Django + Daphne, port 8000)
-
+py -m _admin.main --run-local --run-local-project qdash
 From **project root** (BestBrain):
 
 ```powershell

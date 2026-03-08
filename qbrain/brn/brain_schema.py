@@ -25,6 +25,7 @@ class BrainEdgeRel:
     REFERENCES_TABLE_ROW = "references_table_row"
     FOLLOWS = "follows"
     PARENT_OF = "parent_of"
+    HISTORY = "history"
 
 
 @dataclass

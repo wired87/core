@@ -31,100 +31,6 @@ class ParamsManager:
         self.pid = qb.pid
         self.table = f"{self.PARAMS_TABLE}"
         self._extract_prompt = None  # built lazily to avoid circular import with case
-        # Ensure envs table schema has columns for all existing params.
-        try:
-            self._ensure_env_columns_for_all_params()
-        except Exception as e:
-            print(f"{_PARAMS_DEBUG} __init__: env schema sync warning: {e}")
-
-    # -----------------------------
-    # Internal env-schema helpers
-    # -----------------------------
-
-    def _sanitize_param_column_name(self, raw_id: str) -> str:
-        """
-        Map a param id to a safe column name for the envs table.
-
-        Keeps alphanumeric characters, replaces others with '_', and prefixes
-        with 'p_' to avoid collisions with existing core columns.
-        """
-        safe = "".join(ch if ch.isalnum() else "_" for ch in str(raw_id))
-        if not safe:
-            safe = "param"
-        # Avoid starting with a digit for SQL column identifiers.
-        if safe[0].isdigit():
-            safe = f"p_{safe}"
-        return f"p_{safe}"
-
-    def _infer_bq_type_for_param(self, param_type_value: Any) -> str:
-        """
-        Infer a reasonable BigQuery type for a param column from param_type.
-        """
-        if param_type_value is None:
-            return "STRING"
-        pt = str(param_type_value).strip().lower()
-        if any(tok in pt for tok in ("float", "double", "number")):
-            return "FLOAT64"
-        if any(tok in pt for tok in ("int", "integer")):
-            return "INT64"
-        if "bool" in pt:
-            return "BOOL"
-        return "STRING"
-
-    def _ensure_env_columns_for_param_rows(self, rows: list[dict]) -> None:
-        """
-        Given param rows (with id and optional param_type), ensure envs table has
-        corresponding columns.
-        """
-        if not rows:
-            return
-
-        # Ensure envs table exists and get current schema.
-        try:
-            env_schema = self.qb.get_table_schema(
-                table_id="envs",
-                schema=self.qb.TABLES_SCHEMA.get("envs", {}),
-                create_if_not_exists=True,
-            )
-        except Exception as e:
-            print(f"{_PARAMS_DEBUG} _ensure_env_columns_for_param_rows: schema fetch error: {e}")
-            return
-
-        existing_cols = set(env_schema.keys())
-
-        for row in rows:
-            raw_id = str(row.get("id") or "").strip()
-            if not raw_id:
-                continue
-            col_name = self._sanitize_param_column_name(raw_id)
-            if col_name in existing_cols:
-                continue
-
-            bq_type = self._infer_bq_type_for_param(row.get("param_type"))
-
-            try:
-                print(f"{_PARAMS_DEBUG} _ensure_env_columns_for_param_rows: add column envs.{col_name} {bq_type}")
-                self.qb.insert_col("envs", col_name, bq_type)
-                existing_cols.add(col_name)
-            except Exception as e:
-                print(f"{_PARAMS_DEBUG} _ensure_env_columns_for_param_rows: add column warning for {col_name}: {e}")
-
-    def _ensure_env_columns_for_all_params(self) -> None:
-        """
-        On manager init, sync envs table schema with all existing params.
-        """
-        try:
-            tbl = getattr(self.qb, "_table_ref", None)
-            params_ref = tbl("params") if callable(tbl) else "params"
-            rows = self.qb.run_db(
-                f"SELECT id, param_type FROM {params_ref}",
-                conv_to_dict=True,
-            ) or []
-        except Exception as e:
-            print(f"{_PARAMS_DEBUG} _ensure_env_columns_for_all_params: query error: {e}")
-            return
-
-        self._ensure_env_columns_for_param_rows(rows)
 
     def get_axis(self, params:dict):
         # get axis for pasm from BQ
@@ -147,6 +53,92 @@ class ParamsManager:
             )
 
         return self._extract_prompt
+
+    def extract_prompt(self, instructions: str, content: str, users_params: List[Dict[str, Any]]) -> str:
+        """Static prompt for extraction. Used by intelligent_extraction as manager_prompt_ext."""
+        from qbrain.core.param_manager import case as param_case
+        set_case = next((c for c in param_case.RELAY_PARAM if c.get("case") == "SET_PARAM"), None)
+        req_struct = set_case.get("req_struct", {}) if set_case else {}
+        return xtract_params_prompt(req_struct, instructions, content, users_params)
+
+    def get_schema_for_extraction(self, param_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Return key:type struct for intelligent_extraction.
+        Uses param row if param_id given; else req_struct from SET_PARAM.
+        """
+        if param_id:
+            rows = self.qb.row_from_id([param_id], "params")
+            if rows:
+                row = rows[0]
+                for field in ("shape", "axis_def"):
+                    val = row.get(field)
+                    if isinstance(val, str):
+                        try:
+                            struct = json.loads(val)
+                            if isinstance(struct, dict):
+                                return struct
+                        except json.JSONDecodeError:
+                            pass
+                    elif isinstance(val, dict):
+                        return val
+
+        from qbrain.core.param_manager import case as param_case
+        set_case = next((c for c in param_case.RELAY_PARAM if c.get("case") == "SET_PARAM"), None)
+        req_struct = set_case.get("req_struct", {}) if set_case else {}
+        data_struct = req_struct.get("data", req_struct) or {}
+        param_def = data_struct.get("param", data_struct) if isinstance(data_struct, dict) else data_struct
+        if isinstance(param_def, dict) and param_def and not isinstance(param_def.get("type"), type):
+            return param_def
+        return {
+            "id": "string",
+            "name": "string",
+            "type": "string",
+            "description": "string",
+            "value": "any",
+            "const": "bool",
+            "axis_def": "any",
+        }
+
+    def intelligent_processor(
+        self,
+        raw_payload: Dict[str, Any] | List[Dict[str, Any]],
+        user_id: str,
+        **kwargs,
+    ) -> List[Dict[str, Any]]:
+        """
+        Process raw extraction payload into normalized param dicts for set_item.
+        Sets params from fields keys, params section. Returns list ready for set_param.
+        """
+        items = []
+        if isinstance(raw_payload, list):
+            items = [p for p in raw_payload if isinstance(p, dict)]
+        elif isinstance(raw_payload, dict):
+            for key in ("param", "params", "items"):
+                val = raw_payload.get(key)
+                if isinstance(val, list):
+                    items = [p for p in val if isinstance(p, dict)]
+                    break
+                elif isinstance(val, dict):
+                    items = [val]
+                    break
+
+        result = []
+        for p in items:
+            pid = p.get("id") or p.get("name") or generate_numeric_id()
+            p["id"] = pid
+            p["name"] = p.get("name") or p.get("id")
+            p["user_id"] = user_id
+            if "value" in p and p["value"] is not None:
+                if isinstance(p["value"], (np.ndarray,)):
+                    p["value"] = json.dumps(p["value"].tolist())
+                else:
+                    p["value"] = json.dumps(p["value"], default=str)
+            if ("axis_def" not in p or p.get("axis_def") is None) and "const" in p:
+                p["axis_def"] = 0
+            if "type" in p and "param_type" not in p:
+                p["param_type"] = p["type"]
+            result.append(p)
+        return result
 
 
 
@@ -212,7 +204,9 @@ class ParamsManager:
             print(f"{_PARAMS_DEBUG} set_param: user_id={user_id}, count={1 if not isinstance(param_data, list) else len(param_data)}")
             if not isinstance(param_data, list):
                 param_data = [param_data]
+
             prev_params = []
+
             for p in param_data:
                 # Normalize id/name from extraction (LLM may return only "name")
                 p["id"] = p.get("id") or p.get("name") or generate_numeric_id()
@@ -234,17 +228,18 @@ class ParamsManager:
                             p["embedding"] = json.loads(p["embedding"])
                         except Exception:
                             pass
+
                 prev_param = p.copy()
                 prev_param["id"] = f"prev_{p['id']}"
                 prev_param["description"] = "Prev variation to trac emergence over time. The val field is empty and taks the prev val of its parent at each iteration"
                 prev_param["value"] = None
                 prev_params.append(prev_param)
-            self.qb.set_item(self.PARAMS_TABLE, param_data)
-            # Ensure envs table has matching columns for newly created/updated params.
-            try:
-                self._ensure_env_columns_for_param_rows(param_data)
-            except Exception as e:
-                print(f"{_PARAMS_DEBUG} set_param: env schema sync warning: {e}")
+
+            self.qb.set_item(
+                self.PARAMS_TABLE,
+                param_data,
+            )
+
             print(f"{_PARAMS_DEBUG} set_param: done")
         except Exception as e:
             print(f"{_PARAMS_DEBUG} set_param: error: {e}")
@@ -275,7 +270,7 @@ class ParamsManager:
         if isinstance(data, dict):
             data = [data]
 
-        now = datetime.now().isoformat()
+        now = datetime.now()
         
         for item in data:
             row = {

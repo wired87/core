@@ -17,12 +17,12 @@ def calc_dV_dh(vev, lambda_H, h, mu_sq):
     dV_dh = -mu_sq * (vev + h) + lambda_H * (vev + h) ** 3
     return dV_dh
 
-def calc_spatial_diff(h_, h__, d):
+def calc_spatial_diff_h(h_, h__, d):
     # Central difference for spatial derivative: (ψ_p - ψ_m) / 2d
     spatial_diff = (h_ - h__) / (2.0 * d)
     return spatial_diff
 
-def calc_time_diff(field_current, field_prev, dt):
+def calc_time_diff_h(field_current, field_prev, dt):
     # First order backward difference for time: (ψ_t - ψ_t-dt) / dt
     time_diff = (field_current - field_prev) / dt
     return time_diff
@@ -32,7 +32,7 @@ def calc_laplacian_h(spatial_diff_sum):
     laplacian_h = sum(spatial_diff_sum)
     return laplacian_h
 
-def calc_mass_term(mass, h):
+def calc_mass_term_h(mass, h):
     # Mass contribution to the Klein-Gordon equation: -m^2 * h
     mass_term = -(mass ** 2) * h
     return mass_term
