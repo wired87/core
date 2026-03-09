@@ -176,6 +176,7 @@ class QBrainTableManager:
                 "description": "STRING",
                 "status": "STRING",
                 "shape": "STRING",
+                # keep vlaue for const -> optional for field specific params
                 "value": "STRING",
                 "created_at": "TIMESTAMP",
                 "updated_at": "TIMESTAMP",
@@ -625,7 +626,7 @@ class QBrainTableManager:
 
             # filter out deleted entries
             result = [entry for entry in result if entry["status"] != "deleted"]
-            print("users params: ", result)
+            print("users params: ", len(result))
             return result
         except Exception as e:
             print(f"Error in get_users_entries: {e}")
@@ -702,7 +703,7 @@ class QBrainTableManager:
         
 
     def row_from_id(self, nid:list or str, table, select="*", user_id=None):
-        print("retrieve_env_from_id...", nid)
+        #print("retrieve_env_from_id...", nid)
         if isinstance(nid, str):
             nid = [nid]
 
@@ -714,7 +715,7 @@ class QBrainTableManager:
         )
 
         items = self.db.run_query(query, params=params, conv_to_dict=True)
-        #print("row_from_id: ", items)
+        print(f"row_from_id fetched items for {nid}: ", len(items))
         return items
 
 

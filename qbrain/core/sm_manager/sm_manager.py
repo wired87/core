@@ -278,7 +278,7 @@ class SMManager:
                         # add val stack
                         values.append(pattrs.get("value", [0]))
                         keys.append(pattrs.get(pid))
-                        list(axis_def).append(0)
+                        list(axis_def).append(0) # todo
 
                 # Ensure list types for JSON serialization
                 if keys is not None and not isinstance(keys, list):
@@ -291,11 +291,11 @@ class SMManager:
                 field_data = {
                     "id": nid,
                     "keys": keys,
-                    "values": values,
-                    #"axis_def": axis_def,
+                    "values": values, # values are field specific
+                    "axis_def": axis_def,
                     "module_id": attrs.get(
                         "module_id",
-                        attrs["parent"][0]
+                        attrs["parent"][0],
                     ),
                     "origin": "SM",
                     "description": "",

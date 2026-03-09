@@ -176,15 +176,12 @@ def duck_row_from_id(
     if user_id:
         params.append(user_id)
     query = f"""
-        SELECT {select}
-        FROM (
-            SELECT {select}, ROW_NUMBER() OVER (PARTITION BY id ORDER BY created_at DESC) AS row_num
-            FROM {table}
-            WHERE id IN ({id_placeholders}) AND (status != 'deleted' OR status IS NULL){user_filter}
-        )
+    FROM {table}
+    WHERE id IN ({id_placeholders})
+    AND (status != 'deleted' OR status IS NULL){user_filter}
+    ORDER BY created_at DESC
+    LIMIT 1;
     """
-    print("query", query)
-    print("params", params)
     return query, params
 
 

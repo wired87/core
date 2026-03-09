@@ -172,7 +172,7 @@ class MethodManager:
             print("CALC METHOD TESTWISE WITH:")
             print("code:", code)
             print("return_key:", return_key)
-            print("params:", params)
+            #print("params:", params)
 
             param_entry = return_key_param_entries.get(return_key)
             param_shape = None

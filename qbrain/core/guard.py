@@ -85,8 +85,9 @@ class ComponentGraphCreator:
         self.params_manager = params_manager
 
 
-    def main(self, env_id: str = "universe", env_data: dict | None = None):
+    def main(self, env_data:dict, env_id: str = "universe"):
         """
+        prev: create cfg -> now -> deploy
         1. Parse payload to get IDs.
         2. Batch fetch data.
         3. Convert to pattern (Graph).
@@ -94,48 +95,7 @@ class ComponentGraphCreator:
         """
         print("[ComponentGraphCreator] main: start")
 
-        # If no explicit env_data is provided, try to hydrate from DB.
-        if env_data is None:
-            try:
-                # Prefer user‑scoped envs when user_id is set.
-                env_rows: list[dict] = []
-                if getattr(self, "env_manager", None) is not None and self.user_id:
-                    payload = self.env_manager.retrieve_send_user_specific_env_table_rows(
-                        user_id=self.user_id
-                    )
-
-                    env_rows = payload.get("envs") or []
-                # Fallback: all envs from local DuckDB.
-                if not env_rows and getattr(self.qb, "db", None) is not None:
-                    tbl = self.qb._table_ref(self.env_manager.TABLE_ID)
-                    query = (
-                        f"SELECT id, data FROM {tbl} "
-                        "WHERE (status != 'deleted' OR status IS NULL)"
-                    )
-                    env_rows = self.qb.db.run_query(query, conv_to_dict=True)
-
-                if not env_rows:
-                    print("[ComponentGraphCreator] main: no envs found, aborting graph build")
-                    return
-
-                # For now, build graph for the first env row.
-                row = env_rows[0]
-                env_id = row.get("id", env_id) or env_id
-                raw_data = row.get("data")
-                parsed: dict | None = None
-                if isinstance(raw_data, str) and raw_data:
-                    try:
-                        parsed = json.loads(raw_data)
-                    except Exception as e:
-                        print(f"[ComponentGraphCreator] main: failed to parse env.data JSON: {e}")
-                if isinstance(raw_data, dict):
-                    parsed = raw_data
-                env_data = parsed or {}
-            except Exception as e:
-                print(f"[ComponentGraphCreator] main: error hydrating env_data from DB: {e}")
-                return
-
-        print(f"[ComponentGraphCreator] main: building graph for env_id={env_id}")
+        # VLAIDATE ENV DATA
         env_exists: bool = self._validate_env_data(env_id, env_data)
         if not env_exists:
             print(f"[ComponentGraphCreator] main: invalid env_data for {env_id}, aborting")
@@ -155,15 +115,16 @@ class ComponentGraphCreator:
 
         self.check_create_ghost_mod(env_id)
 
-
         # handler
         self.handle_env(env_id)
-        self.handle_methods(module_ids=list(module_ids))
+        self.handle_methods(
+            module_ids=list(module_ids)
+        )
+
         self.handle_field_interactants(
             list(field_ids),
             env_id
         )
-
 
         # ETEND FIELDS PARAMS WITH RETURN KEYS
         self.extend_fields_keys()
@@ -185,14 +146,21 @@ class ComponentGraphCreator:
 
     def create_param_nodes(self, fid, param_ids):
         """Add PARAM nodes and FIELD->PARAM edges."""
-        res = self.qb.row_from_id(param_ids, table="params")
+        param_ids = [p for p in (param_ids or []) if p is not None]
+        if not param_ids:
+            return
+        params = self.qb.row_from_id(
+            param_ids,
+            table="params",
+        )
 
-
-        pprint.pp(res)
-        print("params fetched... done")
-        for item in res:
+        for item in params:
             pid = item["id"]
-            self.g.add_node(item)
+            node = {
+                    **{k:json.dumps(v) if k=="value" else v for k, v in item.items() if "row_num" not in k},
+                    "type": "PARAM",
+                }
+            self.g.add_node(node)
 
             self.g.add_edge(
                 fid,
@@ -203,7 +171,6 @@ class ComponentGraphCreator:
                     "trgt_layer": "PARAM",
                 }
             )
-        print("create_param_nodes... done")
 
 
     def _validate_env_data(self, env_id: str, env_data: dict) -> bool:
@@ -240,23 +207,51 @@ class ComponentGraphCreator:
         """Fetch fields from BQ and add FIELD nodes."""
         if not field_ids:
             return
-        res = self.qb.row_from_id(list(field_ids), table=self.field_manager.FIELDS_TABLE)
-        for i, item in enumerate(res):
+
+        # GET FIELDS
+        fields = self.qb.row_from_id(
+            list(field_ids),
+            table=self.field_manager.FIELDS_TABLE
+        )
+
+        for i, item in enumerate(fields):
             fid = item["id"].upper()
+
+            # DESERIALIZE
             if item.get("interactant_fields") and isinstance(item["interactant_fields"], str):
                 try:
                     item["interactant_fields"] = json.loads(item["interactant_fields"])
                 except json.JSONDecodeError:
                     pass
 
-            extra = {k: v for k, v in item.items() if k not in ("id", "id", "type")}
-            extra["field_index"] = i
+            if item.get("keys") and isinstance(item["keys"], str):
+                try:
+                    item["keys"] = json.loads(item["keys"])
+                except json.JSONDecodeError:
+                    pass
 
+            if item.get("values") and isinstance(item["values"], str):
+                try:
+                    item["values"] = json.loads(item["values"])
+                except json.JSONDecodeError:
+                    pass
+
+            extra = {
+                k: v
+                for k, v in item.items()
+                if k not in ("id", "type") and "num_row" not in k
+            }
+
+            extra["field_index"] = i
+            self._node(fid, "FIELD", **extra)
+
+            # CREATE FIELDS PARAMS
+            """
             self.create_param_nodes(
                 fid,
                 item["keys"],
             )
-            self._node(fid, "FIELD", **extra)
+            """
 
     def _collect_injections(self, env_data: dict) -> dict:
         """Collect injections from env_data. Supports top-level or nested under modules->fields."""
@@ -276,19 +271,18 @@ class ComponentGraphCreator:
         """Reset graph and create ENV, MODULE, FIELD, INJECTION nodes."""
         self.g.G = nx.Graph()
         module_ids = set()
-        param_ids = set()
         field_ids = set()
 
         self._node(env_id, "ENV")
-
         module_ids_raw = env_data.get("modules", [])
 
+        # GET MODULES
         if isinstance(module_ids_raw, dict):
             module_ids_raw = list(module_ids_raw.keys())
-        module_ids_raw = list(dict.fromkeys(str(m).upper() for m in module_ids_raw))
         res = self.qb.row_from_id(module_ids_raw, table=self.module_db_manager.MODULES_TABLE) if module_ids_raw else []
         fetched = {item["id"].upper(): item for item in res}
 
+        #
         for i, (mod_id, mod) in enumerate(fetched.items()):
             module_ids.add(mod_id)
             self._node(mod_id, "MODULE", module_index=i, **{k: v for k, v in mod.items() if k not in ["id", "module_index"]})
@@ -299,12 +293,9 @@ class ComponentGraphCreator:
                     field_list = json.loads(field_list) or []
                 except json.JSONDecodeError:
                     field_list = []
-            if isinstance(field_list, dict):
-                field_list = list(field_list.keys())
 
+            # CREATE FIELD NODES FR MODULE
             self.create_fields(field_list)
-
-
 
         inj_ids = self._add_injections(self._collect_injections(env_data))
         return module_ids, field_ids, inj_ids
@@ -344,12 +335,17 @@ class ComponentGraphCreator:
                         self._edge(mod_id, fid, "has_field", "MODULE", "FIELD")
                         try:
                             fn = self.g.get_node(fid)
-                            self.qfu.add_params_link_fields(
-                                fn.get("keys", []),
-                                fn.get("values", []),
-                                fid,
-                                mod_id
-                            )
+                            keys = fn.get("keys", [])
+                            values = fn.get("values", [])
+                            if isinstance(keys, str):
+                                keys = json.loads(keys) if keys else []
+                            if isinstance(values, str):
+                                values = json.loads(values) if values else []
+                            # Filter out None keys and align values
+                            valid = [(k, v) for k, v in zip(keys, values) if k is not None]
+                            if valid:
+                                keys, values = zip(*valid)
+                                self.qfu.add_params_link_fields(list(keys), list(values), fid, mod_id)
                         except Exception as e:
                             print(f"Error linking params for {fid}: {e}")
                 except Exception as e:
@@ -364,9 +360,16 @@ class ComponentGraphCreator:
                 self._edge(mod_id, field_id, "has_field", "MODULE", "FIELD")
                 try:
                     fn = self.g.get_node(field_id)
-                    self.qfu.add_params_link_fields(
-                        fn.get("keys", []), fn.get("values", []), field_id, mod_id
-                    )
+                    keys = fn.get("keys", [])
+                    values = fn.get("values", [])
+                    if isinstance(keys, str):
+                        keys = json.loads(keys) if keys else []
+                    if isinstance(values, str):
+                        values = json.loads(values) if values else []
+                    valid = [(k, v) for k, v in zip(keys, values) if k is not None]
+                    if valid:
+                        keys, values = zip(*valid)
+                        self.qfu.add_params_link_fields(list(keys), list(values), field_id, mod_id)
                 except Exception as e:
                     print(f"Error linking params for {field_id}: {e}")
 
@@ -424,8 +427,13 @@ class ComponentGraphCreator:
                     if isinstance(keys, str):
                         keys = json.loads(keys) if keys else []
                     extra = {k: v for k, v in item.items() if k not in ("values", "keys", "id")}
-                    self._node(mfid, "FIELD", keys=keys, values=vals, **extra)
                     mod_id = item.get("module_id")
+                    if mod_id and self.g.G.has_node(mod_id):
+                        existing = self.g.get_neighbor_list_rel(node=mod_id, trgt_rel="has_field")
+                        extra["field_index"] = len(existing)
+                    else:
+                        extra["field_index"] = 0
+                    self._node(mfid, "FIELD", keys=keys, values=vals, **extra)
                     if mod_id and self.g.G.has_node(mod_id):
                         self._edge(mod_id, mfid, "has_field", "MODULE", "FIELD")
                     elif mod_id:
@@ -583,16 +591,20 @@ class ComponentGraphCreator:
                     return_key = eqattrs.get("return_key", [])
 
                     for fid, fattrs in fields.items():
-                        if isinstance(fattrs["keys"], str):
-                            fattrs["keys"] = json.loads(fattrs["keys"])
+                        keys = fattrs.get("keys", [])
+                        values = fattrs.get("values", [])
+                        if isinstance(keys, str):
+                            keys = json.loads(keys) if keys else []
+                        if isinstance(values, str):
+                            values = json.loads(values) if values else []
+                        fattrs["keys"] = keys
+                        fattrs["values"] = values
 
-                        if isinstance(fattrs["values"], str):
-                            fattrs["values"] = json.loads(fattrs["values"])
-
-                        # extend field with return key of method since
-                        if return_key not in fattrs["keys"]:
-                            fattrs["keys"].append(return_key)
-                            fattrs["values"].append([])
+                        if return_key and return_key not in keys:
+                            keys.append(return_key)
+                            values.append([])
+                            fattrs["keys"] = keys
+                            fattrs["values"] = values
 
                         result = self.add_field_index(fid)
                         if result:
@@ -699,6 +711,21 @@ class Guard(
         self.fields = []
         print("Guard Initialized!")
 
+    def _ensure_field_index(self, fid: str, fattrs: dict, fallback_idx: int = 0) -> int:
+        """Ensure field_index is set on field attrs; resolve from module if missing. Returns field_index."""
+        if "field_index" in fattrs:
+            return fattrs["field_index"]
+        mod_id = fattrs.get("module_id")
+        if mod_id and self.g.G.has_node(mod_id):
+            fields_list = self.g.get_neighbor_list_rel(node=mod_id, trgt_rel="has_field")
+            for i, (nid, _) in enumerate(fields_list):
+                if nid == fid:
+                    fattrs["field_index"] = i
+                    self.g.update_node({"id": fid, "field_index": i})
+                    return i
+        fattrs["field_index"] = fallback_idx
+        self.g.update_node({"id": fid, "field_index": fallback_idx})
+        return fallback_idx
 
     def data_handler(self, env_id: str, env_data: dict | None) -> None:
         """
@@ -741,9 +768,15 @@ class Guard(
         print(jax.devices())
         batch_rcs = jax.devices()
         if batch_rcs:
-            self.start_grid_local(cfg_path, components)
+            self.start_grid_local(
+                cfg_path,
+                components,
+            )
         else:
-            self.start_grid_local(cfg_path, components)
+            self.start_grid_local(
+                cfg_path,
+                components,
+            )
             #self.handle_deployment(env_id, components)
             # Save model path to envs table
 
@@ -836,9 +869,12 @@ class Guard(
             f.write(json.dumps(components, indent=4))
         print(f"[LOCAL_DB] cfg written to {cfg_file}")
 
-        # EXEC GRID
-        from qbrain.jax_test.guard import Guard
-        Guard().main()
+        # EXEC GRID (optional: requires equinox/jax)
+        try:
+            from qbrain.jax_test.guard import Guard
+            Guard().main()
+        except ImportError as e:
+            print(f"[guard] start_grid_local: optional grid deps not available ({e})")
         print("start_grid_local... done")
 
 
@@ -888,9 +924,6 @@ class Guard(
 
 
 
-
-
-
     def converter(self, env_id:str):
         """
         CREATE/COLL ECT PATTERNS FOR ALL ENVS AND CREATE VM
@@ -904,13 +937,8 @@ class Guard(
             filter_value="MODULE",
         )
 
-        self.DB = self.create_db(
-            modules,
-        )
-
-        # create emthod strucutre to fill with
-        #self.operator_handler.method_schema = self.get_empty_method_structure()
-
+        #
+        self.DB = self.create_db(modules)
 
         # create iterator last
         iterators = self.set_iterator_from_humans()
@@ -922,7 +950,6 @@ class Guard(
                 filter_key="type",
                 filter_value="MODULE",
             ),
-            #db_to_method_struct["VARIATION_INDICES"],
         )
 
         method_to_db = self.set_edge_method_to_db()
@@ -964,6 +991,7 @@ class Guard(
                 out[k] = []
         if "METHOD_TO_DB" in out and not isinstance(out["METHOD_TO_DB"], list):
             out["METHOD_TO_DB"] = []
+
         if "DB_TO_METHOD_EDGES" in out and not isinstance(out["DB_TO_METHOD_EDGES"], list):
             out["DB_TO_METHOD_EDGES"] = []
         return out
@@ -1098,8 +1126,8 @@ class Guard(
                     as_dict=True
                 )
 
-                for fid, fattrs in fields.items():
-                    fi:int = fattrs["field_index"]
+                for fidx, (fid, fattrs) in enumerate(fields.items()):
+                    fi: int = self._ensure_field_index(fid, fattrs, fallback_idx=fidx)
                     f_keys=fattrs.get("keys", [])
 
                     for key_opt in trgt_keys:
@@ -1116,31 +1144,25 @@ class Guard(
                                 node=fid,
                                 trgt_rel="has_injection",
                             )
-                            #print(f"INJs for FIELD {fid}:", len(injections))
-                            if len(injections) == 0:
-                                continue
-                            else:
-                                print(f"injection for field {fid}", injections)
-                            if not injections or not len(injections):
+                            if not injections or len(injections) == 0:
                                 continue
 
                             for inj_id, inj_attrs in injections:
+                                try:
+                                    pos_index_slice = schema_positions.index(
+                                        tuple(eval(inj_id.split("__")[0]))
+                                    )
+                                except (ValueError, IndexError, SyntaxError):
+                                    continue
 
-                                # set the index within the extracted value slice of the 1d db
+                                freq = inj_attrs.get("frequency") or []
+                                ampl = inj_attrs.get("amplitude") or []
+                                if isinstance(freq, str):
+                                    freq = json.loads(freq) if freq else []
+                                if isinstance(ampl, str):
+                                    ampl = json.loads(ampl) if ampl else []
 
-                                pos_index_slice:int or None = schema_positions.index(
-                                    tuple(eval(inj_id.split("__")[0]))
-                                )
-
-                                # check str
-                                if isinstance(inj_attrs["frequency"], str):
-                                    inj_attrs["frequency"] = json.loads(inj_attrs["frequency"])
-
-                                if isinstance(inj_attrs["amplitude"], str):
-                                    inj_attrs["amplitude"] = json.loads(inj_attrs["amplitude"])
-
-                                ### BAUSTELLE
-                                for time, strenth in zip(inj_attrs["frequency"], inj_attrs["amplitude"]):
+                                for time, strenth in zip(freq, ampl):
                                     if time not in INJECTOR["INJECTOR_TIME"]:
                                         INJECTOR["INJECTOR_TIME"].append(time)
                                         INJECTOR["INJECTOR_INDICES"].append([])
@@ -1150,7 +1172,7 @@ class Guard(
                                     INJECTOR["INJECTOR_INDICES"][tidx].append((midx, fi, field_rel_param_trgt_index, pos_index_slice))
                                     INJECTOR["INJECTOR_VALUES"][tidx].append(strenth)
 
-                                print(f"set param pathway db from mod {midx} -> field {fattrs['nid']}({fi})")
+                                print(f"set param pathway db from mod {midx} -> field {fattrs.get('id', fid)}({fi})")
                             break
 
             # flatten E_KEY_MAP_PER_FIELD
@@ -1249,54 +1271,49 @@ class Guard(
                 )
                 print("fields loaded:", len(fields))
 
-                for fid, fattrs in fields.items():
-                    print("processing field:", fid, fattrs)
-
-                    fidx = fattrs["field_index"]
-                    print("field_index:", fidx)
-
+                for f_enum_idx, (fid, fattrs) in enumerate(fields.items()):
+                    fidx = self._ensure_field_index(fid, fattrs, fallback_idx=f_enum_idx)
+                    #
                     # keys (param IDs for this field)
                     keys = fattrs.get("keys", [])
+                    values = fattrs.get("values") or []
+
                     if isinstance(keys, str):
                         keys = json.loads(keys) if keys else []
-                    if not keys:
-                        print(f"[create_db] skip field {fid}: keys empty")
-                        continue
 
+                    if isinstance(values, str):
+                        values = json.loads(values) if values else []
+                        if isinstance(values, list):
+                            values = [json.loads(v) for v in values]
                     # Build param map: param_id -> (value, axis_def) for lookup by key
-                    shapes = []
-                    xdef = []
-                    vals = []
-                    for k in keys:
-                        node = self.g.get_node(k)
-                        #
-                        if node:
-                            shapes.append(node["shape"])
-                            xdef.append(node["axis_def"])
-                            vals.append(node["values"])
+                    xdef = [self.g.get_node(k).get("axis_def", 0) for k in keys]
+                    field_shapes = [self.g.get_node(k).get("shape", get_shape(v)) for k, v in zip(keys, values)]
 
-                    print("start sorting...")
-                    pctlr_item =[len(item) for item in vals]
-                    # --- assign per module / field ---
-                    db[m_idx][fidx] = vals
+                    pctlr_item = [
+                        1
+                        if isinstance(item, list)
+                        else sum(item)
+                        for item in values
+                    ]
+                    db[m_idx][fidx] = values
                     axis[m_idx][fidx] = xdef
-                    shapes[m_idx][fidx] = shapes
+                    shapes[m_idx][fidx] = field_shapes
                     item_len_collection[m_idx][fidx] = pctlr_item
-                    param_len_collection[m_idx][fidx] = len(vals)
+                    param_len_collection[m_idx][fidx] = len(values)
                     db_keys[m_idx][fidx] = keys
                     field_ids[m_idx][fidx] = fid
 
-                    print("field assignment completed:", fid)
+                    print("m_idx:", m_idx, "fidx:", fidx)
+                    print("vals:", values)
+                    print("axis:", xdef)
+                    print("shapes:", field_shapes)
+                    print("item_len:", pctlr_item)
+                    print("param_len:", len(values))
+                    print("keys:", keys)
+                    print("field_id:", fid)
+                    print("-" * 40)
 
-                    print("collected_values", pctlr_item)
-                    print("xdef", xdef)
-                    print("shape_struct", shapes)
-                    print("vals_item_lens", vals)
-                    print("len(vals)", len(vals))
-                    print("keys", keys)
-                    print("fid", fid)
-
-            print("param_len_collection", param_len_collection)
+            print("[create_db] param_len_collection:", param_len_collection)
             # len is correctly set
             for i, (m_db, m_axis, m_shape, m_len, plen_item, db_key_struct) in enumerate(
                     zip(db, axis, shapes, item_len_collection, param_len_collection, db_keys)):
@@ -1311,14 +1328,17 @@ class Guard(
                     # int len each single param in db unscaled (e.g. 3 for 000)
                     DB["DB_PARAM_CONTROLLER"].extend(f_len)
 
-                    # AMOUNT_PARAMS_PER_FIELD
-                    # int len param / f
-                    print("add splen_field", plen_field)
                     DB["AMOUNT_PARAMS_PER_FIELD"].append(plen_field)
                     DB["DB_KEYS"].extend(db_key)
 
+            flat_db = []
+            for item in DB["DB"]:
+                extract_complex(item, flat_db)
+
             DB["DB"] = base64.b64encode(
-                np.array(DB["DB"], dtype=np.complex64).tobytes()
+                np.array(
+                    flat_db,
+                    dtype=np.complex64).tobytes()
             ).decode("utf-8")
 
             if not DB["DB"] and not DB["DB_KEYS"]:
@@ -1579,7 +1599,7 @@ class Guard(
                     if not return_key:
                         continue
 
-                    for fid, fattrs in fields.items():
+                    for fidx, (fid, fattrs) in enumerate(fields.items()):
                         keys = fattrs.get("keys", [])
                         if isinstance(keys, str):
                             keys = json.loads(keys) if keys else []
@@ -1588,7 +1608,7 @@ class Guard(
                             # return_key not yet in field keys (sync may not have run)
                             continue
 
-                        field_index = fattrs["field_index"]
+                        field_index = self._ensure_field_index(fid, fattrs, fallback_idx=fidx)
                         rindex = keys.index(return_key)
 
                         return_key_map[m_idx].append(
@@ -1656,272 +1676,278 @@ class Guard(
                     raise Exception(f"Err: no fields found for module {mid}")
 
                 for eq_idx, (eqid, eqattrs) in enumerate(methods.items()):
+                    try:
 
+                        EQ_AMOUNT_VRIATIONS = 0
 
-                    EQ_AMOUNT_VRIATIONS = 0
+                        params = eqattrs.get("params", [])
+                        if isinstance(params, str): params = json.loads(params)
 
-                    params = eqattrs.get("params", [])
-                    if isinstance(params, str): params = json.loads(params)
+                        params_origin = eqattrs.get("origin", [])
+                        if isinstance(params_origin, str): params_origin = json.loads(params_origin)
+                        if not params_origin: params_origin = [""] * len(params)
 
-                    params_origin = eqattrs.get("origin", [])
-                    if isinstance(params_origin, str): params_origin = json.loads(params_origin)
-                    if not params_origin: params_origin = [""] * len(params)
+                        if params_origin is None:
+                            params_origin = [
+                                ""
+                                for _ in range(len(params))
+                            ]
 
-                    if params_origin is None:
-                        params_origin = [
-                            ""
-                            for _ in range(len(params))
-                        ]
+                        #
+                        if isinstance(params, str):
+                            params = json.loads(params)
 
-                    #
-                    if isinstance(params, str):
-                        params = json.loads(params)
+                        for fidx, (fid, fattrs) in enumerate(fields.items()):
+                            field_index = self._ensure_field_index(fid, fattrs, fallback_idx=fidx)
+                            field_eq_param_struct = []
 
-                    for fid, fattrs in fields.items():
-                        field_index = fattrs["field_index"]
-                        # Space to save all variations for all inteactions for all equations
-                        field_eq_param_struct = []
+                            keys = fattrs.get("keys", [])
+                            if isinstance(keys, str):
+                                keys = json.loads(keys) if keys else []
+                            fattrs["keys"] = keys
 
-                        if isinstance(fattrs["keys"], str):
-                            fattrs["keys"] = json.loads(fattrs["keys"])
+                            if isinstance(keys, str):
+                                keys = json.loads(keys)
 
-                        keys: list[str] or str = fattrs.get("keys", [])
-
-                        if isinstance(keys, str):
-                            keys = json.loads(keys)
-
-                        fneighbors = self.g.get_neighbor_list_rel(
-                            node=fid,
-                            trgt_rel="has_finteractant",
-                            as_dict=True
-                        )
-
-                        # CLASSFIY EQ TYPE
-                        is_differential = any(p.endswith("__") or p.endswith("__") for p in params)
-
-                        EQ_TYPE: "differential" or "core" or "interaction"
-                        if is_differential:
-                            EQ_TYPE = "differential"
-
-                        elif any(pid not in keys for pid in params):
-                            EQ_TYPE = "interaction"
-
-                        else:
-                            EQ_TYPE = "core"
-
-                        # SAVE CHANGES
-                        self.g.G.nodes[eqid]["eq_type"] = EQ_TYPE
-                        #print("updated node after EQ_TYPE def", eqid, self.g.G.nodes[eqid]["eq_type"])
-
-                        # todo if 3 (or more) identical keys include dict field, bool - map
-                        worked_params = {}
-                        for pidx, pid in enumerate(params):
-                            pid_orig = pid  # keep original for worked_params lookup
-                            if pid not in worked_params:
-                                # space collect fields
-                                worked_params[pid] = []
-
-                            collected = False
-
-                            param_collector = []
-                            param_origin_key_collector = []
-                            #print("work pid", pid)
-
-                            # Field's own param
-                            is_prefixed = pid.endswith("_")
-                            is_self_prefixed = pid.startswith("_")
-                            is_prev_pre = pid.startswith("prev_")
-                            is_prev_after = pid.endswith("_prev")
-
-                            # rm _ before and after
-                            filtered_key = clean_underscores_front_back(
-                                text=pid
+                            fneighbors = self.g.get_neighbor_list_rel(
+                                node=fid,
+                                trgt_rel="has_finteractant",
+                                as_dict=True
                             )
 
-                            final_key = rm_prev_mark(filtered_key)
+                            # CLASSFIY EQ TYPE
+                            is_differential = any(p.endswith("__") or p.endswith("__") for p in params)
 
-                            # is_double_after_marked = pid.endswih("__")
+                            EQ_TYPE: "differential" or "core" or "interaction"
+                            if is_differential:
+                                EQ_TYPE = "differential"
 
-                            EXCLUDED_ORIGINS = ["neighbor", "interactant"]
+                            elif any(pid not in keys for pid in params):
+                                EQ_TYPE = "interaction"
 
-                            # Require final_key in keys to avoid ValueError; params linked to module
-                            # but not in field keys fall through to neighbor/ghost handling
-                            if (
-                                final_key in keys
-                                and (not is_prefixed or is_self_prefixed)
-                                and params_origin[pidx] not in EXCLUDED_ORIGINS
-                                and (
-                                    fid not in worked_params[pid_orig]
-                                    or not is_self_prefixed
-                                    or (is_prev_pre or is_prev_after)
-                                )
-                            ):
-                                #print(f"{pid} in {fid}")
-
-                                # Add field to param collection
-                                worked_params[pid_orig].append(fid)
-
-                                time_dim = None
-
-                                # RM start "_"
-                                if is_prev_pre:
-                                    #print("prev etected:", pid)
-                                    # _prev must be in keys!!!
-                                    pid = pid.replace("prev_","").strip()
-
-                                    time_dim = 1
-                                elif is_prev_after:
-                                    pid = pid.replace("_prev","").strip()
-                                    time_dim = 1
-
-                                elif is_self_prefixed:
-                                    pid = pid[:-1]
-
-                                # directly sort in param arrays
-                                if time_dim is None:
-                                    time_dim = 0
-
-
-                                # todo problem: params of method apply to field keys
-                                # A: SMManager: params liked tomodule not in field (for each) append to it -> how infer type? scale to nDim struct?
-
-                                pindex = keys.index(final_key)
-
-                                result = self.get_db_index(
-                                    m_idx,
-                                    field_index,
-                                    pindex,
-                                    time_dim,
-                                )
-
-                                field_eq_param_struct.append(
-                                    result
-                                )
-
-                                collected = True
-                                continue
                             else:
+                                EQ_TYPE = "core"
 
-                                # COLLECT PARAM FROM NEIGHBOR
-                                for finid, fiattrs in fneighbors.items():
-                                    ikeys = fiattrs.get("keys")
+                            # SAVE CHANGES
+                            self.g.G.nodes[eqid]["eq_type"] = EQ_TYPE
+                            #print("updated node after EQ_TYPE def", eqid, self.g.G.nodes[eqid]["eq_type"])
 
-                                    if isinstance(ikeys, str):
-                                        ikeys = json.loads(ikeys)
+                            # todo if 3 (or more) identical keys include dict field, bool - map
+                            worked_params = {}
+                            for pidx, pid in enumerate(params):
+                                pid_orig = pid  # keep original for worked_params lookup
+                                if pid not in worked_params:
+                                    # space collect fields
+                                    worked_params[pid] = []
 
-                                    # param key in interactant field?
-                                    if final_key in ikeys and finid not in worked_params[pid_orig]:
+                                collected = False
 
-                                        # Add field to param collection
-                                        worked_params[pid_orig].append(fid)
+                                param_collector = []
+                                param_origin_key_collector = []
+                                #print("work pid", pid)
 
-                                        fmod = self.g.get_node(fiattrs.get("module_id"))
+                                # Field's own param
+                                is_prefixed = pid.endswith("_")
+                                is_self_prefixed = pid.startswith("_")
+                                is_prev_pre = pid.startswith("prev_")
+                                is_prev_after = pid.endswith("_prev")
 
-                                        nfield_index = fiattrs["field_index"]
+                                # rm _ before and after
+                                filtered_key = clean_underscores_front_back(
+                                    text=pid
+                                )
 
-                                        pindex = ikeys.index(final_key)
-                                        #print("interactant pindex", pindex, o)
+                                final_key = rm_prev_mark(filtered_key)
 
-                                        param_collector.append(
-                                            self.get_db_index(
-                                                fmod["module_index"],
-                                                nfield_index,
-                                                pindex,
+                                # is_double_after_marked = pid.endswih("__")
+
+                                EXCLUDED_ORIGINS = ["neighbor", "interactant"]
+
+                                # PRE CHECK METHOD PARAM ORIGINS
+                                is_fields_method = self.is_field_method(
+                                    method_params=params,
+                                    ikeys=keys,
+                                    fneighbors=fneighbors
+                                )
+                                if not is_fields_method:
+                                    continue
+
+                                if (
+                                    final_key in keys
+                                    and (not is_prefixed or is_self_prefixed)
+                                    and params_origin[pidx] not in EXCLUDED_ORIGINS
+                                    and (
+                                        fid not in worked_params[pid_orig]
+                                        or not is_self_prefixed
+                                        or (is_prev_pre or is_prev_after)
+                                    )
+                                ):
+                                    #print(f"{pid} in {fid}")
+
+                                    # Add field to param collection
+                                    worked_params[pid_orig].append(fid)
+
+                                    time_dim = None
+
+                                    # RM start "_"
+                                    if is_prev_pre:
+                                        #print("prev etected:", pid)
+                                        # _prev must be in keys!!!
+                                        pid = pid.replace("prev_","").strip()
+
+                                        time_dim = 1
+                                    elif is_prev_after:
+                                        pid = pid.replace("_prev","").strip()
+                                        time_dim = 1
+
+                                    elif is_self_prefixed:
+                                        pid = pid[:-1]
+
+                                    # directly sort in param arrays
+                                    if time_dim is None:
+                                        time_dim = 0
+
+
+                                    # todo problem: params of method apply to field keys
+                                    # A: SMManager: params liked tomodule not in field (for each) append to it -> how infer type? scale to nDim struct?
+
+                                    pindex = keys.index(final_key)
+
+                                    result = self.get_db_index(
+                                        m_idx,
+                                        field_index,
+                                        pindex,
+                                        time_dim,
+                                    )
+
+                                    field_eq_param_struct.append(
+                                        result
+                                    )
+
+                                    collected = True
+                                    continue
+                                else:
+                                    # COLLECT PARAM FROM NEIGHBOR
+                                    for finid, fiattrs in fneighbors.items():
+                                        ikeys = fiattrs.get("keys")
+
+                                        if isinstance(ikeys, str):
+                                            ikeys = json.loads(ikeys)
+
+                                        # param key in interactant field?
+                                        if final_key in ikeys and finid not in worked_params[pid_orig]:
+
+                                            # Add field to param collection
+                                            worked_params[pid_orig].append(fid)
+
+                                            fmod = self.g.get_node(fiattrs.get("module_id"))
+
+                                            nfield_index = self._ensure_field_index(finid, fiattrs)
+
+                                            pindex = ikeys.index(final_key)
+                                            #print("interactant pindex", pindex, o)
+
+                                            param_collector.append(
+                                                self.get_db_index(
+                                                    fmod["module_index"],
+                                                    nfield_index,
+                                                    pindex,
+                                                )
                                             )
-                                        )
-                                        # collect field interaction keys
-                                        param_origin_key_collector.append(finid)
-                                        collected = True
+                                            # collect field interaction keys
+                                            param_origin_key_collector.append(finid)
+                                            collected = True
 
-                                #print(f"param {pid} is not in interactant -> check GHOST FIELDS")
-                                for gfid, gfattrs in ghost_fields:
-                                    gikeys = gfattrs.get("keys")
+                                    for gfi, (gfid, gfattrs) in enumerate(ghost_fields):
+                                        gikeys = gfattrs.get("keys")
 
-                                    if isinstance(gikeys, str):
-                                        #print("convert ikeys", gikeys)
-                                        gikeys = json.loads(gikeys)
+                                        if isinstance(gikeys, str):
+                                            #print("convert ikeys", gikeys)
+                                            gikeys = json.loads(gikeys)
 
-                                    if final_key in gikeys and gfid not in worked_params[pid_orig]:
+                                        if final_key in gikeys and gfid not in worked_params[pid_orig]:
 
-                                        # Add field to param collection
-                                        worked_params[pid_orig].append(fid)
+                                            # Add field to param collection
+                                            worked_params[pid_orig].append(fid)
 
-                                        gfield_index = gfattrs["field_index"]
+                                            gfield_index = self._ensure_field_index(gfid, gfattrs, fallback_idx=gfi)
 
-                                        pindex = gikeys.index(final_key)
-                                        #print("interactant pindex", pindex)
-                                        #print(f"{pid} found in gfid ({gfield_index}) (pindex {pindex})", gfield_index)
+                                            pindex = gikeys.index(final_key)
+                                            #print("interactant pindex", pindex)
+                                            #print(f"{pid} found in gfid ({gfield_index}) (pindex {pindex})", gfield_index)
 
+                                            gmod = self.g.get_node("GHOST_MODULE")
+
+                                            # ADD PARAM TO
+                                            param_collector.append(
+                                                self.get_db_index(
+                                                    gmod["module_index"],
+                                                    gfield_index,
+                                                    pindex,
+                                                )
+                                            )
+                                            collected = True
+
+                                    if collected is False:
+                                        # Fallback: param not in field/interactant/ghost keys (e.g. module-linked
+                                        # or derived like spatial_diff_sum). Use env FIELD "None" slot if present.
                                         gmod = self.g.get_node("GHOST_MODULE")
-
-                                        # ADD PARAM TO
+                                        env_field = self.g.get_node(env_id)
+                                        env_field_index = self._ensure_field_index(env_id, env_field, fallback_idx=0)
+                                        ekeys = env_field.get("keys") or []
+                                        if isinstance(ekeys, str):
+                                            ekeys = json.loads(ekeys) if ekeys else []
+                                        pindex = ekeys.index("None") if "None" in ekeys else 0
                                         param_collector.append(
                                             self.get_db_index(
                                                 gmod["module_index"],
-                                                gfield_index,
+                                                env_field_index,
                                                 pindex,
                                             )
                                         )
-                                        collected = True
 
-                                if collected is False:
-                                    # Fallback: param not in field/interactant/ghost keys (e.g. module-linked
-                                    # or derived like spatial_diff_sum). Use env FIELD "None" slot if present.
-                                    gmod = self.g.get_node("GHOST_MODULE")
-                                    env_field = self.g.get_node(env_id)
-                                    ekeys = env_field.get("keys") or []
-                                    if isinstance(ekeys, str):
-                                        ekeys = json.loads(ekeys) if ekeys else []
-                                    pindex = ekeys.index("None") if "None" in ekeys else 0
-                                    param_collector.append(
-                                        self.get_db_index(
-                                            gmod["module_index"],
-                                            env_field["field_index"],
-                                            pindex,
-                                        )
-                                    )
+                                field_eq_param_struct.append(param_collector)
 
-                            field_eq_param_struct.append(param_collector)
+                            # get scaled soa [[a,a], [b,b]
+                            expand_field_eq_variation_struct = expand_structure(
+                                struct=field_eq_param_struct
+                            )
 
-                        # get scaled soa [[a,a], [b,b]
-                        expand_field_eq_variation_struct = expand_structure(
-                            struct=field_eq_param_struct
-                        )
+                            param_struct = {}
+                            for key, value in zip(params, expand_field_eq_variation_struct):
+                                param_struct[key] = value
 
-                        param_struct = {}
-                        for key, value in zip(params, expand_field_eq_variation_struct):
-                            param_struct[key] = value
+                            #db_to_method["VARIATION_INDICES"][m_idx].append(param_struct)
 
-                        #db_to_method["VARIATION_INDICES"][m_idx].append(param_struct)
+                            # todo: untertiele method nach modul index.
+                            #  mach heir das gleiche und flatte im Anschlusse
 
-                        # todo: untertiele method nach modul index.
-                        #  mach heir das gleiche und flatte im Anschlusse
+                            # extend variation single eq
+                            for item in expand_field_eq_variation_struct:
+                                db_to_method["DB_TO_METHOD_EDGES"][m_idx].extend(item)
+                                #print(f"module {mid} ({m_idx}) expand_field_eq_variation_struct item {eqid}", item)
+                                # todo calc just / len(method_param) to sort them
 
-                        # extend variation single eq
-                        for item in expand_field_eq_variation_struct:
-                            db_to_method["DB_TO_METHOD_EDGES"][m_idx].extend(item)
-                            #print(f"module {mid} ({m_idx}) expand_field_eq_variation_struct item {eqid}", item)
-                            # todo calc just / len(method_param) to sort them
+                            field_variations_eq = len(expand_field_eq_variation_struct)
+                            EQ_AMOUNT_VRIATIONS += field_variations_eq
 
-                        field_variations_eq = len(expand_field_eq_variation_struct)
-                        EQ_AMOUNT_VRIATIONS += field_variations_eq
+                            # add len field var to emthod struct
+                            db_to_method[
+                                "LEN_FEATURES_PER_EQ"
+                            ][eq_idx].append(field_variations_eq)
 
-                        # add len field var to emthod struct
-                        db_to_method[
-                            "LEN_FEATURES_PER_EQ"
-                        ][eq_idx].append(field_variations_eq)
+                            db_to_method[
+                                "DB_CTL_VARIATION_LEN_PER_FIELD"
+                            ][m_idx].append(len(expand_field_eq_variation_struct))
+
+                        # todo combine amount variation / field -&- shape / field / eq:
+                        #  DB_CTL_VARIATION_LEN_PER_FIELD, LEN_FEATURES_PER_EQ
 
                         db_to_method[
-                            "DB_CTL_VARIATION_LEN_PER_FIELD"
-                        ][m_idx].append(len(expand_field_eq_variation_struct))
-
-                    # todo combine amount variation / field -&- shape / field / eq:
-                    #  DB_CTL_VARIATION_LEN_PER_FIELD, LEN_FEATURES_PER_EQ
-
-                    db_to_method[
-                        "DB_CTL_VARIATION_LEN_PER_EQUATION"
-                    ][m_idx].append(EQ_AMOUNT_VRIATIONS)
-
+                            "DB_CTL_VARIATION_LEN_PER_EQUATION"
+                        ][m_idx].append(EQ_AMOUNT_VRIATIONS)
+                    except Exception as e:
+                        print("Err set_edge_db_to_method", e, eqid)
             flatten_variations = []
             for i, item in enumerate(db_to_method["DB_TO_METHOD_EDGES"]):
                 flatten_variations.extend(item)
@@ -1943,6 +1969,33 @@ class Guard(
             print(f"Err set_edge_db_to_method: {e}")
             raise
         return db_to_method
+
+
+    def is_field_method(
+            self,
+            method_params,
+            ikeys,
+            fneighbors,
+    ):
+        print("is_field_method...")
+        # CHECK IS PARAM IN FIELD KEYS OR INTERACTANT?
+        self_param:bool = any(pid in ikeys for pid in method_params)
+        self_all_param: bool = all(pid in ikeys for pid in method_params)
+        interactant_param = False
+        for node in fneighbors:
+            if node:
+                fikeys = node.get("keys")
+                if any(pid in fikeys for pid in method_params):
+                    interactant_param = True
+                    break
+        if (self_param and interactant_param) or self_all_param:
+            print("is_field_method: true")
+            return True
+        print("is_field_method: false")
+        return False
+
+
+
 
 
 
@@ -1979,13 +2032,18 @@ class Guard(
 
                     # Pro Gleichung: Wie viele Parameter erwartet sie insgesamt?
 
-                    for fid, fattrs in fields.items():
+                    for fidx, (fid, fattrs) in enumerate(fields.items()):
                         # Vorbereitung der Keys des aktuellen Feldes
                         keys = fattrs.get("keys", [])
                         if isinstance(keys, str): keys = json.loads(keys)
 
-                        field_index = fattrs["field_index"]
-                        fneighbors = self.g.get_neighbor_list_rel(node=fid, trgt_rel="has_finteractant", as_dict=True)
+                        field_index = self._ensure_field_index(fid, fattrs, fallback_idx=fidx)
+
+                        fneighbors = self.g.get_neighbor_list_rel(
+                            node=fid,
+                            trgt_rel="has_finteractant",
+                            as_dict=True,
+                        )
 
                         # Struktur für die Parameter-Zuweisung dieses Feldes
                         field_eq_param_struct = []
@@ -2016,8 +2074,11 @@ class Guard(
 
                                     if clean_pid in ikeys:
                                         pindex = ikeys.index(clean_pid)
-                                        nfield_index = fiattrs["field_index"]
-                                        pmod = self.g.get_node(fiattrs["module_id"])
+                                        nfield_index = self._ensure_field_index(finid, fiattrs)
+                                        pmod_id = fiattrs.get("module_id")
+                                        if not pmod_id or not self.g.G.has_node(pmod_id):
+                                            continue
+                                        pmod = self.g.get_node(pmod_id)
                                         param_collector.append(
                                             self.get_db_index(
                                                 pmod["module_index"],
@@ -2028,9 +2089,9 @@ class Guard(
 
                                 # 3. Check: Ghost-Felder (Globaler Fallback)
                                 if not collected:
-                                    for gfid, gfattrs in ghost_fields:
+                                    for gfi, (gfid, gfattrs) in enumerate(ghost_fields):
                                         gikeys = gfattrs.get("keys", [])
-                                        gfield_index = gfattrs["field_index"]
+                                        gfield_index = self._ensure_field_index(gfid, gfattrs, fallback_idx=gfi)
                                         pmod = self.g.get_node("GHOST_MODULE")
 
                                         if isinstance(gikeys, str): gikeys = json.loads(gikeys)
@@ -2220,12 +2281,11 @@ class Guard(
         try:
 
             #nit with size max_index + 1
-            print("modules_struct initialized size:", len(modules_struct))
+            print("modules_struct initialized size:", len(modules))
 
             for mid, m in modules:
                 if include_ghost_mod is False:
                     if "GHOST" in mid.upper(): continue
-
 
                 # get module fields
                 fields = self.g.get_neighbor_list_rel(
@@ -2240,8 +2300,6 @@ class Guard(
                 field_struct = []
                 for _ in range(len(keys)):
                     field_struct.append([])
-
-                #print(f">>>{mid} field_struct:", keys, len(keys))
 
                 # SET EMPTY FIELDS STRUCT AT MODULE INDEX
                 modules_struct.append(field_struct)
@@ -2390,6 +2448,9 @@ async def run_start_sim_via_ws():
                     break
     except Exception as e:
         print(f"Failed: {e}")
+
+
+
 
 """
 

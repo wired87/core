@@ -71,7 +71,7 @@ class DBManager:
             cur = self._con.execute(sql)
 
         result = cur.fetchall()
-        print("result:", len(result))
+        # print("result:", len(result))
 
         if conv_to_dict and result:
             cols = [d[0] for d in cur.description] if cur.description else []
@@ -232,9 +232,7 @@ class DBManager:
             return [r[0] for r in rows]
 
         def _render_table(tbl_name: str):
-
             query = f"SELECT * FROM {tbl_name} LIMIT {limit}"
-
             try:
                 rows = self.run_query(query, conv_to_dict=True)
             except Exception as e:

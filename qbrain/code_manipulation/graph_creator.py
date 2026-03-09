@@ -61,9 +61,8 @@ class StructInspector(ast.NodeVisitor):
     """
 
     def __init__(self, G=None):
-
         self.current_class: Optional[str] = None
-        self.g = GUtils(G=G)
+        self.g:GUtils = GUtils(G=G)
 
     def visit_ClassDef(self, node: ast.ClassDef):
         """Track current class for method resolution."""
@@ -159,6 +158,8 @@ class StructInspector(ast.NodeVisitor):
         # 3. Process Parameters
         #print("process_method_params node", node, type(method_id))
         filtered_args = []
+        return_key = return_key.strip()
+
         for arg in node.args.args:
             try:
                 if arg.arg == 'self': continue
@@ -219,10 +220,13 @@ class StructInspector(ast.NodeVisitor):
                 ))
 
             # MODULE -> PARAM
-            if not self.g.G.has_edge(self.module_name, return_key):
+            if not self.g.G.has_edge(
+                    self.module_name,
+                    return_key
+            ):
                 self.g.add_edge(
                     src=self.module_name,
-                    trt=return_key,
+                    trt=return_key.strip(),
                     attrs=dict(
                         rel='returns_param',
                         trgt_layer='PARAM',

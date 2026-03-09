@@ -2009,24 +2009,13 @@ Return only valid JSON, no markdown or extra text."""
         if isinstance(nid, str):
             nid = [nid]
 
-        if self._local:
-            query, params = db_queries.duck_row_from_id(
-                table=self._table_ref(table),
-                ids=nid,
-                select=select,
-                user_id=user_id,
-            )
-            items = self.db.run_query(query, params=params, conv_to_dict=True)
-        else:
-            ds_ref = f"{self.pid}.{self.DATASET_ID}"
-            query, job_config = self.bqcore.q_row_from_id(
-                ds_ref=ds_ref,
-                table=table,
-                ids=nid,
-                select=select,
-                user_id=user_id,
-            )
-            items = self.run_query(query, conv_to_dict=True, job_config=job_config)
+        query, params = db_queries.duck_row_from_id(
+            table=self._table_ref(table),
+            ids=nid,
+            select=select,
+            user_id=user_id,
+        )
+        items = self..run_query(query, params=params, conv_to_dict=True)
         return items
 
     def upsert_copy(self, table_name: str, keys: Dict[str, Any], updates: Dict[str, Any]) -> bool:
