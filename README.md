@@ -185,9 +185,8 @@ BestBrain/
 │   │   ├── user_manager/        # UserManager (get_or_create_user, initialize_qbrain_workflow)
 │   │   └── managers_context.py  # set_orchestrator, reset_orchestrator
 │   ├── _db/
-│   │   ├── manager.py           # DBManager (DuckDB / BigQuery), get_db_manager()
-│   │   ├── vector_store.py      # VectorStore (create_store, upsert_vectors, similarity_search, classify)
-│   │   └── workflows.py         # db_connect, db_exec, duck_insert
+│   │   ├── manager.py           # DBManager (DuckDB), get_db_manager(), db_check, db_status
+│   │   └── vector_store.py      # VectorStore (create_store, upsert_vectors, similarity_search, classify)
 │   ├── chat_manger/             # AIChatClassifier (case classification from message)
 │   ├── qf_utils/                # QFUtils, FieldUtils, runtime_utils_creator
 │   ├── utils/                   # Utils, Manipulator, QueueHandler, serialize_complex, run_subprocess (pop_cmd)

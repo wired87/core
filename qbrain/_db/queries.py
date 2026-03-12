@@ -7,7 +7,6 @@ Centralized SQL query builders for QBrainTableManager.
 
 All queries use parameter placeholders for safety.
 """
-
 from __future__ import annotations
 
 import json

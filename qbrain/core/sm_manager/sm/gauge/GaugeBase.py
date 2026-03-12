@@ -6,7 +6,7 @@ from itertools import product
 
 import jax.numpy as jnp
 
-from qbrain.core.sm.gauge.gauge_utils import GaugeUtils
+from qbrain.core.sm_manager.sm.gauge.gauge_utils import GaugeUtils
 
 """
 #Vertex

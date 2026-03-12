@@ -1,5 +1,5 @@
 import numpy as np
-from qbrain.core.sm.higgs.phi_utils import HiggsUtils
+from qbrain.core.sm_manager.sm.higgs.phi_utils import HiggsUtils
 from qbrain.qf_utils.field_utils import FieldUtils
 from _admin._ray_core.utils.ray_validator import RayValidator
 

@@ -1,23 +1,32 @@
 """
 DB Manager: unified interface for DuckDB (local).
 """
+from __future__ import annotations
+
 import json
+import os
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from datetime import datetime
 
+import duckdb
 from duckdb import DuckDBPyConnection
 
+from qbrain._db.queries import duck_row_from_id
+
+try:
+    from _duckdb import DuckDBPyConnection as ddb_res
+except ImportError:
+    ddb_res = DuckDBPyConnection  # type: ignore
+
+try:
+    import pandas as pd  # type: ignore
+except Exception:
+    pd = None  # type: ignore
+
+from qbrain._db.config import duck_db_path, duck_db_verbose
 from qbrain._db.log_facade import db_log
-from qbrain._db.workflows import (
-    db_check,
-    db_connect,
-    db_close,
-    db_exec,
-    db_create_table,
-    db_status,
-    duck_insert,
-)
 
 _db_mgr: Optional["DBManager"] = None
 
@@ -35,12 +44,122 @@ class DBManager:
     """
 
     def __init__(self):
-        self._con:DuckDBPyConnection = db_connect()
+        self._con: DuckDBPyConnection = self._connect()
+
+    def _connect(self) -> DuckDBPyConnection:
+        path = duck_db_path()
+        directory = os.path.dirname(path)
+        if directory and not os.path.exists(directory):
+            os.makedirs(directory)
+        try:
+            con = duckdb.connect(path)
+            db_log("info", "[duck] connect: ok", path=path)
+            return con
+        except Exception as e:
+            msg = str(e).lower()
+            if "being used by another process" in msg or "file is already open" in msg:
+                try:
+                    con = duckdb.connect(path, read_only=True)
+                    db_log("warn", f"DuckDB file locked: {path}. Opened read_only.")
+                    return con
+                except Exception:
+                    pass
+                alt = str(Path(path).with_name(f"{Path(path).stem}.{os.getpid()}{Path(path).suffix}"))
+                alt_dir = os.path.dirname(alt)
+                if alt_dir and not os.path.exists(alt_dir):
+                    os.makedirs(alt_dir)
+                db_log("warn", f"DuckDB file locked: {path}. Falling back to {alt}")
+                return duckdb.connect(alt)
+            raise
 
     def close(self):
         if self._con:
-            db_close(self._con)
+            self._con.close()
+            db_log("info", "[duck] close: ok")
             self._con = None
+
+    def _check(self) -> bool:
+        """Quick health check: connection alive and DB reachable."""
+        try:
+            self._con.execute("SELECT 1").fetchone()
+            return True
+        except Exception:
+            return False
+
+    def _status(self) -> dict:
+        """Return DB status: path, tables, connection_alive."""
+        tables = []
+        try:
+            rows = self._con.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'main' ORDER BY table_name"
+            ).fetchall()
+            tables = [r[0] for r in rows]
+        except Exception:
+            pass
+        return {
+            "path": duck_db_path(),
+            "tables": tables,
+            "connection_alive": self._check(),
+        }
+
+    def _exec(self, sql: str, params: Optional[List[Any]] = None):
+        r: ddb_res = self._con.execute(sql, params) if params is not None else self._con.execute(sql)
+        db_log("info", "[duck] exec: ok")
+        return r
+
+    def _create_table(self, table_name: str, schema_sql: str) -> None:
+        try:
+            self._con.execute(f"CREATE TABLE IF NOT EXISTS {table_name} ({schema_sql})")
+            db_log("info", f"[duck] create_table: ok {table_name}")
+        except Exception as e:
+            db_log("error", f"[duck] create_table: err {table_name}", error=str(e))
+
+    def _duck_insert(
+        self,
+        table_name: str,
+        rows: list,
+        upsert: bool = False,
+        conflict_columns: Optional[tuple] = None,
+    ) -> bool:
+        try:
+            if not rows:
+                return True
+            cols = []
+            for row in rows:
+                for k in row.keys():
+                    if k not in cols:
+                        cols.append(k)
+            cols_sql = ", ".join(cols)
+            placeholders = ", ".join(["?"] * len(cols))
+
+            if upsert and conflict_columns:
+                # INSERT OR REPLACE (DuckDB) or ON CONFLICT DO UPDATE
+                conflict_cols = ", ".join(conflict_columns)
+                set_parts = [f"{c} = excluded.{c}" for c in cols if c not in conflict_columns]
+                if set_parts:
+                    sql = (
+                        f"INSERT INTO {table_name} ({cols_sql}) VALUES ({placeholders}) "
+                        f"ON CONFLICT ({conflict_cols}) DO UPDATE SET {', '.join(set_parts)}"
+                    )
+                else:
+                    sql = (
+                        f"INSERT OR REPLACE INTO {table_name} ({cols_sql}) VALUES ({placeholders})"
+                    )
+                for row in rows:
+                    vals = [row.get(c) for c in cols]
+                    self._con.execute(sql, vals)
+            else:
+                values = [[row.get(c) for c in cols] for row in rows]
+                self._con.executemany(
+                    f"INSERT INTO {table_name} ({cols_sql}) VALUES ({placeholders})",
+                    values,
+                )
+            db_log("info", f"[duck] insert: ok {table_name} {len(rows)} rows")
+            return True
+        except Exception as e:
+            db_log("error", f"[duck] insert: err {table_name}", error=str(e))
+            return False
 
     def create_sql_schema(self, schema):
         cols = []
@@ -48,7 +167,6 @@ class DBManager:
             cols.append(f"{k} {v}")
         schema_sql = ", ".join(cols)
         return schema_sql
-
 
     def run_query(
         self,
@@ -71,14 +189,12 @@ class DBManager:
             cur = self._con.execute(sql)
 
         result = cur.fetchall()
-        # print("result:", len(result))
 
         if conv_to_dict and result:
             cols = [d[0] for d in cur.description] if cur.description else []
             return [dict(zip(cols, row)) for row in result]
 
         return list(result) if result else []
-
 
     def execute(
         self,
@@ -92,17 +208,28 @@ class DBManager:
                 if k in params:
                     ordered.append(params[k])
             sql = re.sub(r"@\w+", "?", sql)
-            db_exec(self._con, sql, ordered)
+            self._exec(sql, ordered)
         else:
-            db_exec(self._con, sql, params)
-
+            self._exec(sql, params)
 
     def insert(
         self,
         table: str,
         rows: Union[Dict, List[Dict]],
         upsert: bool = False,
+        conflict_columns: Optional[tuple] = None,
+        schema: Optional[Dict[str, str]] = None,
     ) -> bool:
+        """
+        Insert rows into table. Optionally upsert on conflict.
+
+        Args:
+            table: Table name.
+            rows: Single dict or list of dicts.
+            upsert: If True, replace existing rows on conflict.
+            conflict_columns: Columns for conflict detection (default: ("id",)).
+            schema: Optional schema for create_if_not_exists; also used for type coercion.
+        """
         db_log("info", "insert", table=table, rows=len(rows), upsert=upsert)
         if not isinstance(rows, list):
             rows = [rows]
@@ -110,7 +237,9 @@ class DBManager:
         if not rows:
             return True
 
-        schema = self._duck_get_table_schema(table, create_if_not_exists=False)
+        tbl_schema = self._duck_get_table_schema(
+            table, create_if_not_exists=bool(schema), schema=schema
+        )
 
         new_rows = []
 
@@ -123,14 +252,16 @@ class DBManager:
 
                 new_row[col] = val
 
-                if col not in schema:
-                    self._duck_insert_col(
-                        table,
-                        col,
-                    )
+                if col not in tbl_schema:
+                    self._duck_insert_col(table, col)
             new_rows.append(new_row)
 
-        ok = duck_insert(self._con, table, new_rows, upsert=upsert)
+        ok = self._duck_insert(
+            table,
+            new_rows,
+            upsert=upsert,
+            conflict_columns=("id",) if upsert and conflict_columns is None else conflict_columns,
+        )
         if not ok:
             db_log("error", "insert failed", table=table)
         return ok
@@ -149,12 +280,24 @@ class DBManager:
         except Exception as e:
             return False
 
-    def create_table(self, table_name: str, schema_sql: str):
-        db_create_table(
-            self._con,
-            table_name,
-            schema_sql,
-        )
+    def create_table(
+        self,
+        table_name: str,
+        schema: Optional[Dict[str, str]] = None,
+    ) -> None:
+        """
+        Create table if not exists.
+
+        Args:
+            table_name: Table name.
+            schema: Optional {column: type} e.g. {"id": "STRING PRIMARY KEY", "name": "STRING"}.
+                   If None, uses default: id STRING PRIMARY KEY.
+        """
+        schema_sql = self.create_sql_schema(schema) if schema else "id STRING PRIMARY KEY"
+        try:
+            self._create_table(table_name, schema_sql)
+        except Exception as e:
+            db_log("error", f"[duck] create_table: err {table_name}", error=str(e))
 
     def insert_col(self, table_id: str, column_name: str, column_type: str):
         return self._duck_insert_col(table_id, column_name, column_type)
@@ -177,7 +320,23 @@ class DBManager:
         except Exception as e:
             db_log("error", "Err _duck_insert_col", error=str(e), table=table_id)
 
-
+    def get_table_schema(self, table_name: str) -> Dict[str, str]:
+        """
+        Return schema from table (column_name -> data_type).
+        Returns {} if table does not exist.
+        """
+        r = self._con.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'main' AND table_name = ?",
+            [table_name],
+        ).fetchone()
+        if not r:
+            return {}
+        rows = self._con.execute(
+            "SELECT column_name, data_type FROM information_schema.columns "
+            "WHERE table_schema = 'main' AND table_name = ? ORDER BY ordinal_position",
+            [table_name],
+        ).fetchall()
+        return {row[0]: row[1] for row in rows}
 
     def _duck_get_table_schema(
         self,
@@ -202,11 +361,8 @@ class DBManager:
             return {row[0]: row[1] for row in rows}
 
         if create_if_not_exists and schema:
-            col_defs = [
-                f"{col} STRING"
-                for col, dt in schema.items()
-            ]
-            db_create_table(self._con, table_id, ", ".join(col_defs))
+            col_defs = [f"{col} {dt}" for col, dt in schema.items()]
+            self._create_table(table_id, ", ".join(col_defs))
             return schema
         return schema
 
@@ -285,17 +441,15 @@ class DBManager:
 
     def status(self) -> dict:
         """Return DB status: path, tables, connection_alive."""
-        return db_status(self._con)
+        return self._status()
 
     def check(self) -> bool:
         """Quick health check: connection alive and DB reachable."""
-        return db_check(self._con)
+        return self._check()
 
     def get_state(self) -> dict:
         """Extended state: status + table row counts (for debug)."""
-        from qbrain._db.config import duck_db_verbose
-
-        state = db_status(self._con)
+        state = self._status()
         if duck_db_verbose() >= 2:
             counts = {}
             for tbl in state.get("tables", []):
@@ -307,10 +461,176 @@ class DBManager:
             state["row_counts"] = counts
         return state
 
+    # --- Additional workflow methods (from former workflows module) ---
+
+    def query(self, sql: str, params: Optional[List[Any]] = None):
+        """Execute query and return rows."""
+        rows = self._con.execute(sql, params).fetchall() if params is not None else self._con.execute(sql).fetchall()
+        db_log("info", f"[duck] query: ok {len(rows)} rows")
+        return rows
+
+    def query_df(self, sql: str):
+        """Execute query and return DataFrame."""
+        if pd is None:
+            raise ImportError("pandas is required for query_df(). Install pandas to use this helper.")
+        df = self._con.execute(sql).df()
+        db_log("info", f"[duck] query_df: ok {len(df)} rows")
+        return df
+
+    def drop_table(self, table_name: str) -> None:
+        self._con.execute(f"DROP TABLE IF EXISTS {table_name}")
+        db_log("info", f"[duck] drop_table: ok {table_name}")
+
+    def reset_table(
+        self,
+        table_name: str,
+        schema: Optional[Dict[str, str]] = None,
+    ) -> None:
+        """
+        Recreate table with schema. Drops and recreates.
+
+        Args:
+            table_name: Table name.
+            schema: {column: type} e.g. {"id": "STRING PRIMARY KEY", "name": "STRING"}.
+                   If None, uses id STRING PRIMARY KEY.
+        """
+        schema_sql = self.create_sql_schema(schema) if schema else "id STRING PRIMARY KEY"
+        self._con.execute(f"CREATE OR REPLACE TABLE {table_name} ({schema_sql})")
+        db_log("info", f"[duck] reset_table: ok {table_name}")
+
+    def insert_raw(self, table: str, columns: List[str], values: List[Any]) -> None:
+        placeholders = ",".join(["?"] * len(values))
+        cols = ",".join(columns)
+        self._con.execute(
+            f"INSERT INTO {table} ({cols}) VALUES ({placeholders})",
+            values,
+        )
+        db_log("info", f"[duck] db_insert: ok {table} 1 row")
+
+    def replace(
+        self,
+        table: str,
+        rows: Union[Dict, List[Dict]],
+        conflict_columns: tuple = ("id",),
+        schema: Optional[Dict[str, str]] = None,
+    ) -> bool:
+        """
+        Replace rows (upsert). Uses schema for create_if_not_exists and type coercion.
+
+        Args:
+            table: Table name.
+            rows: Single dict or list of dicts.
+            conflict_columns: Columns for ON CONFLICT (default: id).
+            schema: Optional schema for create_if_not_exists; used when table is missing.
+        """
+        return self.insert(
+            table,
+            rows=rows,
+            upsert=True,
+            conflict_columns=conflict_columns,
+            schema=schema,
+        )
+
+    def update(
+        self,
+        table: str,
+        set_clause: str,
+        where_clause: str,
+        params: Optional[List[Any]] = None,
+    ) -> None:
+        """
+        Update rows. Params for prepared statement placeholders.
+        """
+        if params is not None:
+            self._con.execute(
+                f"UPDATE {table} SET {set_clause} WHERE {where_clause}",
+                params,
+            )
+        else:
+            self._con.execute(f"UPDATE {table} SET {set_clause} WHERE {where_clause}")
+        db_log("info", f"[duck] update: ok {table}")
+
+    def delete(
+        self,
+        table: str,
+        where_clause: str,
+        params: Optional[List[Any]] = None,
+    ) -> None:
+        """Delete rows. Params for prepared statement placeholders in where_clause."""
+        if params is not None:
+            self._con.execute(f"DELETE FROM {table} WHERE {where_clause}", params)
+        else:
+            self._con.execute(f"DELETE FROM {table} WHERE {where_clause}")
+        db_log("info", f"[duck] delete: ok {table}")
+
+    def register_df(self, df: "pd.DataFrame", view_name: str) -> None:
+        if pd is None:
+            raise ImportError("pandas is required for register_df(). Install pandas to use this helper.")
+        self._con.register(view_name, df)
+
+    def insert_df(self, table_name: str, df: "pd.DataFrame") -> None:
+        if pd is None:
+            raise ImportError("pandas is required for insert_df(). Install pandas to use this helper.")
+        self._con.register("tmp_df", df)
+        self._con.execute(f"INSERT INTO {table_name} SELECT * FROM tmp_df")
+        db_log("info", f"[duck] insert_df: ok {table_name} {len(df)} rows")
+
+    def read_csv(self, path: str, table_name: str) -> None:
+        self._con.execute(
+            f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM read_csv_auto('{path}')"
+        )
+        db_log("info", f"[duck] read_csv: ok {table_name}")
+
+    def read_parquet(self, path: str, table_name: str) -> None:
+        self._con.execute(
+            f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM read_parquet('{path}')"
+        )
+        db_log("info", f"[duck] read_parquet: ok {table_name}")
+
+    def export_csv(self, table_name: str, path: str) -> None:
+        self._con.execute(
+            f"COPY {table_name} TO '{path}' (HEADER, DELIMITER ',')"
+        )
+        db_log("info", f"[duck] export_csv: ok {table_name} -> {path}")
+
+    def export_parquet(self, table_name: str, path: str) -> None:
+        self._con.execute(
+            f"COPY {table_name} TO '{path}' (FORMAT PARQUET)"
+        )
+        db_log("info", f"[duck] export_parquet: ok {table_name} -> {path}")
+
+
+    def row_from_id(self, nid:list or str, table, select="*", user_id=None):
+        #print("retrieve_env_from_id...", nid)
+        if isinstance(nid, str):
+            nid = [nid]
+
+        query, params = duck_row_from_id(
+            table=table,
+            ids=nid,
+            select=select,
+            user_id=user_id,
+        )
+
+        items = self.run_query(query, params=params, conv_to_dict=True)
+        print(f"row_from_id fetched items for {nid}: ", len(items))
+        return items
+
+
+
     @property
     def connection(self):
         return self._con
 
+
+def db_check() -> bool:
+    """Standalone health check (uses singleton manager)."""
+    return get_db_manager().check()
+
+
+def db_status() -> dict:
+    """Standalone status (uses singleton manager)."""
+    return get_db_manager().status()
 
 if __name__ == "__main__":
     db = DBManager()

@@ -9,7 +9,7 @@ pip install duckdb
 from qbrain._db import queries as queries
 from qbrain._db.log_facade import db_log
 from qbrain._db.manager import DBManager, get_db_manager
-from qbrain._db.workflows import db_check, db_status
+from qbrain._db.manager import db_check, db_status
 
 
 __all__ = [

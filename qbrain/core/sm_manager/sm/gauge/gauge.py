@@ -1,5 +1,5 @@
 from _admin._ray_core.utils.ray_validator import RayValidator
-from qbrain.core.sm.gauge.gauge_utils import GaugeUtils
+from qbrain.core.sm_manager.sm.gauge.gauge_utils import GaugeUtils
 from qbrain.utils.serialize_complex import deserialize_complex, check_serialize_dict
 from itertools import product
 

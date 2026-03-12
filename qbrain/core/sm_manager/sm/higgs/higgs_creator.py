@@ -1,4 +1,4 @@
-from qbrain.core.sm.higgs.phi_utils import HiggsUtils
+from qbrain.core.sm_manager.sm.higgs.phi_utils import HiggsUtils
 
 class HiggsCreator(HiggsUtils):
     """

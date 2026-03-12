@@ -1,7 +1,5 @@
-import numpy as np
-
 from qbrain.data import FERM_PARAMS
-from qbrain.core.sm.fermion.ferm_utils import FermUtils
+from qbrain.core.sm_manager.sm.fermion.ferm_utils import FermUtils
 
 
 

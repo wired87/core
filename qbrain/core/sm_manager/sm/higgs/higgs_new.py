@@ -2,7 +2,7 @@ import jax.numpy as jnp
 from jax import jit, vmap
 from typing import List, Dict, Any, Tuple
 
-from qbrain.core.sm.higgs.phi_utils import HiggsUtils
+from qbrain.core.sm_manager.sm.higgs.phi_utils import HiggsUtils
 from qbrain.qf_utils.field_utils import FieldUtils
 from _admin._ray_core.utils.ray_validator import RayValidator
 from qbrain.utils.serialize_complex import check_serialize_dict

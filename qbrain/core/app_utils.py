@@ -89,7 +89,7 @@ TABLE_NAME=ENV_ID
 
 # ENV VARS
 DOMAIN = os.environ.get("DOMAIN")
-MODULE_PATH=os.environ.get("MODULE_PATH", r"sm")
+MODULE_PATH=os.environ.get("MODULE_PATH", r"sm_manager/sm")
 SESSION_ID = os.environ.get("SESSION_ID")
 
 
