@@ -1,4 +1,10 @@
 # BestBrain
+DO NOT USE THIS PACKAGE
+ITS MY FIRST ATTEMPT TO BUILD A QUANTUM SIMULATOR.
+yOU CAN USE AN AGENT TO ANAYLZE AND EXTRACT PARTS OF IT.
+I CURRENTLY DO IT BY HAND SINCE IT HAS SOME USEFUL FEATURES INCLUDE.
+
+
 under development nothing runs currently . leave a star and keep updated
 BestBrain is a case-driven orchestration engine for simulation workflows across WebSocket + HTTP, manager buses, and QBRAIN-backed persistence.
 
